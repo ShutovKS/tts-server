@@ -1,0 +1,63 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+.venv311/
+venv/
+env/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local runtime artifacts
+speech.wav
+custom.wav
+design.wav
+clone.wav
+/tmp/
+tmp_*/
+tmp_stage3_debug/
+*.log
+
+# Temporary audio conversion artifacts
+temp_*/
+temp_convert_*.wav
+*_converted.wav
+
+# User-generated data (preserve directory structure)
+.voices/*
+!.voices/.gitkeep
+.outputs/*
+!.outputs/.gitkeep
+
+# Models are local/downloaded artifacts and should not be committed
+.models/*
+!.models/.gitkeep
+
+# Reference repositories are read-only local research sources
+reference-Qwen3-TTS/
+reference-Qwen3-TTS_server/
+
+# Local package / tooling outputs
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+docs/plans/
