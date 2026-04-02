@@ -1,0 +1,33 @@
+[Unit]
+Description=Qwen3-TTS Telegram Bot Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=%u
+Group=%g
+WorkingDirectory=/path/to/qwen3-tts-apple-silicon
+Environment="PYTHONPATH=/path/to/qwen3-tts-apple-silicon"
+ExecStart=/usr/bin/python3 -m telegram_bot
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qwen3-tts-telegram
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/path/to/qwen3-tts-apple-silicon/.outputs /path/to/qwen3-tts-apple-silicon/.uploads
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=2G
+
+# Health check (optional - uncomment if using systemd的健康检查)
+# ExecStartPost=/bin/bash -c 'sleep 5 && systemctl is-active --quiet telegram-bot || exit 1'
+
+[Install]
+WantedBy=multi-user.target

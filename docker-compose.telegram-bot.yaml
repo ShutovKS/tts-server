@@ -1,0 +1,36 @@
+services:
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: telegram_bot/Dockerfile
+    image: qwen3-tts-telegram-bot:dev
+    command: ["python", "-m", "telegram_bot"]
+    environment:
+      QWEN_TTS_BACKEND: ${QWEN_TTS_BACKEND:-torch}
+      QWEN_TTS_BACKEND_AUTOSELECT: ${QWEN_TTS_BACKEND_AUTOSELECT:-true}
+      QWEN_TTS_MODELS_DIR: /app/.models
+      QWEN_TTS_OUTPUTS_DIR: /app/.outputs
+      QWEN_TTS_VOICES_DIR: /app/.voices
+      QWEN_TTS_UPLOAD_STAGING_DIR: /app/.uploads
+      QWEN_TTS_TELEGRAM_BOT_TOKEN: ${QWEN_TTS_TELEGRAM_BOT_TOKEN}
+      QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS: ${QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS:-}
+      QWEN_TTS_TELEGRAM_ADMIN_USER_IDS: ${QWEN_TTS_TELEGRAM_ADMIN_USER_IDS:-}
+      QWEN_TTS_TELEGRAM_DEV_MODE: ${QWEN_TTS_TELEGRAM_DEV_MODE:-false}
+      QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED: ${QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED:-true}
+      QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE: ${QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE:-20}
+      QWEN_TTS_TELEGRAM_LOG_LEVEL: ${QWEN_TTS_TELEGRAM_LOG_LEVEL:-info}
+      QWEN_TTS_TELEGRAM_DEFAULT_SPEAKER: ${QWEN_TTS_TELEGRAM_DEFAULT_SPEAKER:-Vivian}
+      QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH: ${QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH:-1000}
+      QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH: /app/.state/telegram_delivery_store.json
+      QWEN_TTS_TELEGRAM_POLL_INTERVAL_SECONDS: ${QWEN_TTS_TELEGRAM_POLL_INTERVAL_SECONDS:-1.0}
+      QWEN_TTS_TELEGRAM_MAX_RETRIES: ${QWEN_TTS_TELEGRAM_MAX_RETRIES:-3}
+    volumes:
+      - ./.models:/app/.models
+      - ./.outputs:/app/.outputs
+      - ./.uploads:/app/.uploads
+      - ./.voices:/app/.voices
+      - telegram_bot_state:/app/.state
+    restart: unless-stopped
+
+volumes:
+  telegram_bot_state:

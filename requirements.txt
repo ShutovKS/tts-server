@@ -36,7 +36,8 @@ pycryptodomex==3.23.0
 pyloudnorm==0.2.0
 pydantic==2.12.3
 PyYAML==6.0.3
-pytest==8.1.2
+pytest==8.3.0
+pytest-asyncio==0.24.0
 python-multipart==0.0.20
 regex==2026.1.15
 requests==2.32.5
@@ -59,6 +60,7 @@ typer-slim==0.21.1
 typing_extensions==4.15.0
 urllib3==2.6.3
 uvicorn==0.38.0
+httpx==0.28.1
 accelerate==1.10.1
 transformers==5.4.0; platform_system == "Darwin"
 transformers==4.57.3; platform_system != "Darwin"
