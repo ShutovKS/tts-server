@@ -1,16 +1,15 @@
 services:
-  api-linux-torch:
-    profiles:
-      - dev
+  server:
     build:
       context: .
-      dockerfile: Dockerfile
-    image: qwen3-tts-api-linux-torch:dev
+      dockerfile: server/Dockerfile
+    image: qwen3-tts-server:dev
+    command: ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
-      - "8000:8000"
+      - "${QWEN_TTS_SERVER_PORT:-8000}:8000"
     environment:
-      QWEN_TTS_BACKEND: torch
-      QWEN_TTS_BACKEND_AUTOSELECT: "true"
+      QWEN_TTS_BACKEND: ${QWEN_TTS_BACKEND:-torch}
+      QWEN_TTS_BACKEND_AUTOSELECT: ${QWEN_TTS_BACKEND_AUTOSELECT:-true}
       QWEN_TTS_HOST: 0.0.0.0
       QWEN_TTS_PORT: "8000"
       QWEN_TTS_MODELS_DIR: /app/.models

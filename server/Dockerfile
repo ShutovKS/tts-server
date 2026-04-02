@@ -32,7 +32,8 @@ filtered = [line for line in lines if not line.strip().startswith('flash-attn')]
 target.write_text('\n'.join(filtered) + '\n', encoding='utf-8')
 PY
 RUN pip install --upgrade pip setuptools wheel \
-    && pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.docker.txt
+    && pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.docker.txt \
+    && pip install qwen-tts==0.1.1
 
 COPY cli ./cli
 COPY core ./core

@@ -1,27 +1,44 @@
-# TTS Server
+# Qwen3 TTS on Apple Silicon
+
+Русская версия: [README.ru.md](README.ru.md)
+
+## Overview
+
+This repository provides a local text-to-speech stack built around Qwen3 TTS models and split into three transport adapters:
+
+- [server/](server/README.md) — FastAPI HTTP API
+- [telegram_bot/](telegram_bot/README.md) — Telegram bot based on long polling
+- [cli/](cli/README.md) — interactive local CLI
+- [core/](core/README.md) — shared runtime, model registry, backends, jobs, and observability
+
+The repository layout was updated so Docker assets now live next to the components they build:
+
+- server image: [server/Dockerfile](server/Dockerfile)
+- Telegram bot image: [telegram_bot/Dockerfile](telegram_bot/Dockerfile)
+- server compose scenario: [docker-compose.server.yaml](docker-compose.server.yaml)
+- Telegram bot compose scenario: [docker-compose.telegram-bot.yaml](docker-compose.telegram-bot.yaml)
+
+Legacy root-level Docker assets such as the removed `Dockerfile` and `compose.yaml` are no longer part of the project.
 
 ## Features
 
-- Local text-to-speech inference using `mlx_audio`
-- Interactive CLI package in [`cli/`](cli)
-- CLI package entry point via [`cli/__main__.py`](cli/__main__.py)
-- API server entry point via [`server/__init__.py`](server/__init__.py)
-- OpenAI-style compatible `POST /v1/audio/speech`
-- Extended endpoints for custom voice, voice design, and voice cloning
-- Unified JSON error format with request id correlation
-- Deep readiness/liveness probes with model, runtime, and configuration diagnostics
-- Structured request and service logs with request tracing
+- Local Qwen3 TTS inference with shared runtime from [core/](core/README.md)
+- OpenAI-style speech endpoint `POST /v1/audio/speech`
+- Extended HTTP endpoints for custom voice, voice design, and voice cloning
+- Telegram bot commands `/start`, `/help`, `/tts`, `/design`, `/clone`
+- Interactive CLI for local synthesis workflows
+- Optional async job flow in the HTTP server
+- Structured logging, request correlation, and operational metrics
+- Isolated staging directory for uploaded clone references in [`.uploads/`](.uploads)
 - Optional output persistence in [`.outputs/`](.outputs)
-- Isolated temporary upload staging in [`.uploads/`](.uploads) for clone requests
-- Multi-layer test suite split into unit, integration, smoke, and architecture tests
 
 ## Requirements
 
 - Python 3.11+
 - `ffmpeg` available in `PATH`
-- Local model directories placed in [`.models/`](.models)
-- For macOS Apple Silicon: MLX-compatible dependencies and local MLX-converted artifacts
-- For Linux and Windows: an environment compatible with PyTorch + Transformers
+- Local model directories available in [`.models/`](.models)
+- On macOS Apple Silicon: MLX-compatible environment and MLX-ready model artifacts
+- On Linux or Windows: environment compatible with PyTorch/Transformers
 
 ## Installation
 
@@ -46,7 +63,9 @@ pip install -r requirements.txt
 
 ## Models
 
-Place downloaded model directories in [`.models/`](.models). Supported local directories are defined in [`core/services/model_registry.py`](core/services/model_registry.py):
+Place downloaded model directories in [`.models/`](.models). The supported local model IDs are registered by [`ModelRegistry`](core/services/model_registry.py:20) and described in [core/models/manifest.v1.json](core/models/manifest.v1.json).
+
+Typical directories include:
 
 - `Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit`
 - `Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit`
@@ -55,162 +74,82 @@ Place downloaded model directories in [`.models/`](.models). Supported local dir
 - `Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit`
 - `Qwen3-TTS-12Hz-0.6B-Base-8bit`
 
-## CLI Mode
+## Running the CLI
 
 ```bash
 source .venv311/bin/activate
 python -m cli
 ```
 
-- [`cli/__main__.py`](cli/__main__.py) is the thin package entry point;
-- [`cli/main.py`](cli/main.py) remains the explicit module entry point;
-- [`cli/runtime.py`](cli/runtime.py) manages the interactive runtime flow;
-- [`cli/bootstrap.py`](cli/bootstrap.py) wires CLI components together;
-- [`cli/runtime_config.py`](cli/runtime_config.py) resolves CLI settings using shared parsing helpers from [`core/config.py`](core/config.py).
+See [cli/README.md](cli/README.md) for adapter-specific details.
 
-## API Server Mode
+## Running the HTTP server
 
-Run the API server through Uvicorn from an activated virtual environment:
+### Local environment
 
 ```bash
 source .venv311/bin/activate
 python -m uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-### Environment Variables
+### Docker Compose
 
-Shared core-layer environment parsing now lives in [`core/config.py`](core/config.py). [`server/bootstrap.py`](server/bootstrap.py) only adds server-specific adapter settings on top of it:
+```bash
+docker compose -f docker-compose.server.yaml up --build
+```
+
+The compose scenario builds from [server/Dockerfile](server/Dockerfile) with repository-root build context, mounts shared working directories, and exposes port `8000` by default.
+
+See [server/README.md](server/README.md) for endpoints, async jobs, and configuration details.
+
+## Running the Telegram bot
+
+### Local environment
+
+```bash
+source .venv311/bin/activate
+export QWEN_TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
+export QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+export QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+export QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
+export QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
+export QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
+python -m telegram_bot
+```
+
+### Docker Compose
+
+```bash
+docker compose -f docker-compose.telegram-bot.yaml up --build
+```
+
+The compose scenario builds from [telegram_bot/Dockerfile](telegram_bot/Dockerfile), mounts shared model/output directories, and persists delivery metadata in the named volume declared by [docker-compose.telegram-bot.yaml](docker-compose.telegram-bot.yaml).
+
+### Telegram token note
+
+Container startup and basic bot process startup were validated, but full end-to-end Telegram interaction still depends on a real and valid bot token. Without it, the bot cannot complete external API checks or process live updates.
+
+See [telegram_bot/README.md](telegram_bot/README.md) for command syntax, operational notes, and deployment details.
+
+## Key environment variables
+
+Shared settings are parsed by [`CoreSettings.from_env()`](core/config.py:112). Common variables include:
 
 - `QWEN_TTS_MODELS_DIR`
 - `QWEN_TTS_OUTPUTS_DIR`
 - `QWEN_TTS_VOICES_DIR`
-- `QWEN_TTS_UPLOAD_STAGING_DIR` — isolated temporary storage for uploaded clone reference audio before inference
+- `QWEN_TTS_UPLOAD_STAGING_DIR`
 - `QWEN_TTS_BACKEND`
 - `QWEN_TTS_BACKEND_AUTOSELECT`
-- `QWEN_TTS_HOST`
-- `QWEN_TTS_PORT`
-- `QWEN_TTS_LOG_LEVEL`
-- `QWEN_TTS_DEFAULT_SAVE_OUTPUT`
-- `QWEN_TTS_ENABLE_STREAMING` — retained as a runtime flag, but already materialized audio responses are returned as regular non-streaming HTTP bodies
-- `QWEN_TTS_MAX_UPLOAD_SIZE_BYTES`
-- `QWEN_TTS_MAX_INPUT_TEXT_CHARS` — maximum accepted text length for JSON and form TTS inputs; over-limit requests return the standard `validation_error` response
-- `QWEN_TTS_REQUEST_TIMEOUT_SECONDS` — adapter-level timeout for inference execution; timed out requests return `request_timeout` with HTTP 504
-- `QWEN_TTS_INFERENCE_BUSY_STATUS_CODE`
 - `QWEN_TTS_SAMPLE_RATE`
-- `QWEN_TTS_FILENAME_MAX_LEN`
-- `QWEN_TTS_AUTO_PLAY_CLI`
+- `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
 
-Example:
+Server-specific settings are documented in [server/README.md](server/README.md), and Telegram-specific settings are documented in [telegram_bot/README.md](telegram_bot/README.md).
 
-```bash
-export QWEN_TTS_BACKEND=torch
-export QWEN_TTS_BACKEND_AUTOSELECT=true
-export QWEN_TTS_DEFAULT_SAVE_OUTPUT=false
-export QWEN_TTS_UPLOAD_STAGING_DIR=.uploads
-export QWEN_TTS_MAX_UPLOAD_SIZE_BYTES=26214400
-export QWEN_TTS_MAX_INPUT_TEXT_CHARS=5000
-export QWEN_TTS_REQUEST_TIMEOUT_SECONDS=300
-python -m uvicorn server --host 0.0.0.0 --port 8000
-```
+## Repository map
 
-## API Endpoints
-
-The public endpoints are unchanged. [`server/app.py`](server/app.py) is now only the composition root, while handlers are split across adapter modules:
-
-- [`server/api/routes_health.py`](server/api/routes_health.py)
-- [`server/api/routes_models.py`](server/api/routes_models.py)
-- [`server/api/routes_tts.py`](server/api/routes_tts.py)
-- [`server/api/responses.py`](server/api/responses.py)
-- [`server/api/errors.py`](server/api/errors.py)
-
-Endpoints:
-
-- `GET /health/live`
-- `GET /health/ready`
-- `GET /api/v1/models`
-- `POST /v1/audio/speech`
-- `POST /api/v1/tts/custom`
-- `POST /api/v1/tts/design`
-- `POST /api/v1/tts/clone`
-
-### Runtime Notes
-
-- Audio responses from `POST /v1/audio/speech` and the extended TTS endpoints are returned as regular HTTP response bodies after audio generation completes. The server no longer uses pseudo-streaming for already materialized audio only because `QWEN_TTS_ENABLE_STREAMING` is enabled.
-- Adapter-level inference work is offloaded from the event loop and bounded by `QWEN_TTS_REQUEST_TIMEOUT_SECONDS`. When the timeout is exceeded, the API returns the unified JSON error `request_timeout` with HTTP 504.
-- Voice clone uploads are staged under `QWEN_TTS_UPLOAD_STAGING_DIR` and cleaned up after the request. Temporary upload artifacts are no longer written into [`.outputs/`](.outputs).
-- Structured observability emits execution lifecycle events for inference wrapper start, worker start, completion, timeout, and failure paths in [`server/api/routes_tts.py`](server/api/routes_tts.py).
-
-## Request Examples
-
-### OpenAI-style Speech
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/audio/speech \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
-    "input": "Hello from Qwen3-TTS",
-    "voice": "Vivian",
-    "response_format": "wav",
-    "speed": 1.0
-  }' \
-  --output speech.wav
-```
-
-### Custom Voice
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/tts/custom \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "text": "This is a custom voice request",
-    "speaker": "Vivian",
-    "emotion": "Calm and warm",
-    "speed": 1.0,
-    "save_output": true
-  }' \
-  --output custom.wav
-```
-
-### Voice Design
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/tts/design \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "text": "Design a new narrator voice",
-    "voice_description": "deep calm documentary narrator"
-  }' \
-  --output design.wav
-```
-
-### Voice Clone
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/tts/clone \
-  -F 'text=Clone this sentence' \
-  -F 'ref_text=Clone this sentence' \
-  -F 'ref_audio=@./sample.wav' \
-  --output clone.wav
-```
-
-## Error Format
-
-Non-audio errors use the unified schema from [`server/schemas/errors.py`](server/schemas/errors.py):
-
-```json
-{
-  "code": "model_not_available",
-  "message": "Requested model is not available",
-  "details": {},
-  "request_id": "..."
-}
-```
-
-Current API error semantics relevant to operations:
-
-- Unknown model identifiers and requests for a mode without a corresponding local model are normalized to `model_not_available` with HTTP 404 through [`server/api/errors.py`](server/api/errors.py).
-- Backend availability problems remain `backend_not_available` with HTTP 503.
-- Backend capability mismatches remain `backend_capability_missing` with HTTP 422.
-- Requests that exceed `QWEN_TTS_MAX_INPUT_TEXT_CHARS` return the standard `validation_error` payload with HTTP 422 for both JSON and form-based TTS endpoints.
-- Inference requests that exceed `QWEN_TTS_REQUEST_TIMEOUT_SECONDS` return `request_timeout` with HTTP 504.
+- [README.md](README.md) / [README.ru.md](README.ru.md) — repository-level quick start
+- [core/README.md](core/README.md) / [core/README.ru.md](core/README.ru.md) — shared runtime and architecture
+- [server/README.md](server/README.md) / [server/README.ru.md](server/README.ru.md) — HTTP API adapter
+- [telegram_bot/README.md](telegram_bot/README.md) / [telegram_bot/README.ru.md](telegram_bot/README.ru.md) — Telegram adapter
+- [cli/README.md](cli/README.md) / [cli/README.ru.md](cli/README.ru.md) — interactive CLI adapter

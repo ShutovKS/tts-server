@@ -1,27 +1,44 @@
-# TTS Server
+# Qwen3 TTS на Apple Silicon
+
+English version: [README.md](README.md)
+
+## Обзор
+
+Репозиторий содержит локальный стек синтеза речи на базе Qwen3 TTS и разделён на три транспортных адаптера:
+
+- [server/](server/README.ru.md) — HTTP API на FastAPI
+- [telegram_bot/](telegram_bot/README.ru.md) — Telegram-бот на long polling
+- [cli/](cli/README.ru.md) — интерактивный локальный CLI
+- [core/](core/README.ru.md) — общий runtime, реестр моделей, бэкенды, jobs и observability
+
+После реорганизации Docker-структуры артефакты сборки находятся рядом с соответствующими компонентами:
+
+- образ сервера: [server/Dockerfile](server/Dockerfile)
+- образ Telegram-бота: [telegram_bot/Dockerfile](telegram_bot/Dockerfile)
+- compose-сценарий сервера: [docker-compose.server.yaml](docker-compose.server.yaml)
+- compose-сценарий Telegram-бота: [docker-compose.telegram-bot.yaml](docker-compose.telegram-bot.yaml)
+
+Старые корневые Docker-артефакты, такие как удалённые `Dockerfile` и `compose.yaml`, больше не используются.
 
 ## Возможности
 
-- Локальный text-to-speech inference с использованием `mlx_audio`
-- Интерактивный CLI-пакет в [`cli/`](cli)
-- Точка входа CLI-пакета через [`cli/__main__.py`](cli/__main__.py)
-- Точка входа API-сервера через пакет [`server/__init__.py`](server/__init__.py)
-- Совместимый с OpenAI-стилем `POST /v1/audio/speech`
-- Расширенные эндпоинты для custom voice, voice design и voice cloning
-- Единый JSON-формат ошибок с корреляцией по request id
-- Углублённые readiness/liveness probes с диагностикой модели, runtime и конфигурации
-- Структурированные логи запросов и сервиса с трассировкой запросов
-- Необязательное сохранение выходных файлов в [`.outputs/`](.outputs)
-- Изолированная временная staging-зона в [`.uploads/`](.uploads) для clone-запросов
-- Многоуровневый набор тестов, разделённый на unit, integration, smoke и architecture
+- Локальный Qwen3 TTS inference на общей платформе из [core/](core/README.ru.md)
+- OpenAI-совместимый endpoint `POST /v1/audio/speech`
+- Расширенные HTTP endpoints для custom voice, voice design и voice cloning
+- Команды Telegram-бота `/start`, `/help`, `/tts`, `/design`, `/clone`
+- Интерактивный CLI для локальных сценариев синтеза
+- Необязательный async job flow в HTTP-сервере
+- Структурированные логи, request correlation и операционные метрики
+- Изолированная staging-директория для clone-загрузок в [`.uploads/`](.uploads)
+- Необязательное сохранение результатов в [`.outputs/`](.outputs)
 
 ## Требования
 
 - Python 3.11+
 - `ffmpeg`, доступный в `PATH`
-- Локальные папки моделей, размещённые в [`.models/`](.models)
-- Для macOS Apple Silicon: MLX-совместимые зависимости и локальные MLX-конвертированные артефакты
-- Для Linux и Windows: окружение, совместимое с PyTorch + Transformers
+- Локальные директории моделей в [`.models/`](.models)
+- Для macOS Apple Silicon: MLX-совместимое окружение и MLX-подготовленные артефакты моделей
+- Для Linux или Windows: окружение, совместимое с PyTorch/Transformers
 
 ## Установка
 
@@ -46,7 +63,9 @@ pip install -r requirements.txt
 
 ## Модели
 
-Поместите загруженные папки моделей в [`.models/`](.models). Поддерживаемые локальные папки определяются в [`core/services/model_registry.py`](core/services/model_registry.py):
+Поместите загруженные директории моделей в [`.models/`](.models). Поддерживаемые локальные model ID регистрируются в [`ModelRegistry`](core/services/model_registry.py:20) и описаны в [core/models/manifest.v1.json](core/models/manifest.v1.json).
+
+Обычно используются каталоги:
 
 - `Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit`
 - `Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit`
@@ -55,162 +74,82 @@ pip install -r requirements.txt
 - `Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit`
 - `Qwen3-TTS-12Hz-0.6B-Base-8bit`
 
-## Режим CLI
+## Запуск CLI
 
 ```bash
 source .venv311/bin/activate
 python -m cli
 ```
 
-- [`cli/__main__.py`](cli/__main__.py) — это тонкая точка входа пакета;
-- [`cli/main.py`](cli/main.py) остаётся явной модульной точкой входа;
-- [`cli/runtime.py`](cli/runtime.py) управляет интерактивным потоком;
-- [`cli/bootstrap.py`](cli/bootstrap.py) отвечает за связывание CLI-компонентов;
-- [`cli/runtime_config.py`](cli/runtime_config.py) разрешает настройки CLI с использованием общих помощников парсинга из [`core/config.py`](core/config.py).
+Подробности по адаптеру — в [cli/README.ru.md](cli/README.ru.md).
 
-## Режим API-сервера
+## Запуск HTTP-сервера
 
-Запускайте API-сервер через Uvicorn из активированного виртуального окружения:
+### Локально
 
 ```bash
 source .venv311/bin/activate
 python -m uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-### Переменные окружения
+### Через Docker Compose
 
-Общий парсинг переменных окружения core-слоя теперь находится в [`core/config.py`](core/config.py). [`server/bootstrap.py`](server/bootstrap.py) добавляет поверх него только server-специфичные adapter-настройки:
+```bash
+docker compose -f docker-compose.server.yaml up --build
+```
+
+Этот сценарий собирает образ из [server/Dockerfile](server/Dockerfile) с корневым build context репозитория, монтирует общие рабочие директории и по умолчанию публикует порт `8000`.
+
+Подробности по endpoint'ам, async jobs и конфигурации — в [server/README.ru.md](server/README.ru.md).
+
+## Запуск Telegram-бота
+
+### Локально
+
+```bash
+source .venv311/bin/activate
+export QWEN_TTS_TELEGRAM_BOT_TOKEN="ваш_токен_бота"
+export QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+export QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+export QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
+export QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
+export QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
+python -m telegram_bot
+```
+
+### Через Docker Compose
+
+```bash
+docker compose -f docker-compose.telegram-bot.yaml up --build
+```
+
+Этот сценарий собирает образ из [telegram_bot/Dockerfile](telegram_bot/Dockerfile), монтирует общие директории моделей и результатов и сохраняет delivery metadata в именованном volume, описанном в [docker-compose.telegram-bot.yaml](docker-compose.telegram-bot.yaml).
+
+### Важная оговорка про Telegram-токен
+
+Сборка контейнера и базовый запуск процесса бота подтверждены, но полноценная внешняя интеграция возможна только при наличии реального и корректного Telegram-токена. Без него бот не сможет пройти live-проверки Telegram API и обрабатывать реальные обновления.
+
+Подробности по командам, эксплуатации и деплою — в [telegram_bot/README.ru.md](telegram_bot/README.ru.md).
+
+## Ключевые переменные окружения
+
+Общие настройки читаются через [`CoreSettings.from_env()`](core/config.py:112). Основные переменные:
 
 - `QWEN_TTS_MODELS_DIR`
 - `QWEN_TTS_OUTPUTS_DIR`
 - `QWEN_TTS_VOICES_DIR`
-- `QWEN_TTS_UPLOAD_STAGING_DIR` — отдельная временная директория для загруженного reference audio перед clone-inference
+- `QWEN_TTS_UPLOAD_STAGING_DIR`
 - `QWEN_TTS_BACKEND`
 - `QWEN_TTS_BACKEND_AUTOSELECT`
-- `QWEN_TTS_HOST`
-- `QWEN_TTS_PORT`
-- `QWEN_TTS_LOG_LEVEL`
-- `QWEN_TTS_DEFAULT_SAVE_OUTPUT`
-- `QWEN_TTS_ENABLE_STREAMING` — флаг конфигурации сохранён, но уже материализованное аудио возвращается как обычный non-streaming HTTP body
-- `QWEN_TTS_MAX_UPLOAD_SIZE_BYTES`
-- `QWEN_TTS_MAX_INPUT_TEXT_CHARS` — максимальная длина текста для JSON и form TTS-запросов; превышение лимита возвращает стандартный `validation_error`
-- `QWEN_TTS_REQUEST_TIMEOUT_SECONDS` — adapter-level timeout для inference execution; по превышению возвращается `request_timeout` с HTTP 504
-- `QWEN_TTS_INFERENCE_BUSY_STATUS_CODE`
 - `QWEN_TTS_SAMPLE_RATE`
-- `QWEN_TTS_FILENAME_MAX_LEN`
-- `QWEN_TTS_AUTO_PLAY_CLI`
+- `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
 
-Пример:
+Настройки HTTP-сервера описаны в [server/README.ru.md](server/README.ru.md), а настройки Telegram-бота — в [telegram_bot/README.ru.md](telegram_bot/README.ru.md).
 
-```bash
-export QWEN_TTS_BACKEND=torch
-export QWEN_TTS_BACKEND_AUTOSELECT=true
-export QWEN_TTS_DEFAULT_SAVE_OUTPUT=false
-export QWEN_TTS_UPLOAD_STAGING_DIR=.uploads
-export QWEN_TTS_MAX_UPLOAD_SIZE_BYTES=26214400
-export QWEN_TTS_MAX_INPUT_TEXT_CHARS=5000
-export QWEN_TTS_REQUEST_TIMEOUT_SECONDS=300
-python -m uvicorn server --host 0.0.0.0 --port 8000
-```
+## Карта документации
 
-## API-эндпоинты
-
-Публичные эндпоинты не изменились. [`server/app.py`](server/app.py) теперь является только composition root, а обработчики разделены по adapter-модулям:
-
-- [`server/api/routes_health.py`](server/api/routes_health.py)
-- [`server/api/routes_models.py`](server/api/routes_models.py)
-- [`server/api/routes_tts.py`](server/api/routes_tts.py)
-- [`server/api/responses.py`](server/api/responses.py)
-- [`server/api/errors.py`](server/api/errors.py)
-
-Эндпоинты:
-
-- `GET /health/live`
-- `GET /health/ready`
-- `GET /api/v1/models`
-- `POST /v1/audio/speech`
-- `POST /api/v1/tts/custom`
-- `POST /api/v1/tts/design`
-- `POST /api/v1/tts/clone`
-
-### Эксплуатационные заметки
-
-- Аудио-ответы от `POST /v1/audio/speech` и расширенных TTS-эндпоинтов возвращаются как обычный HTTP body после завершения генерации. Сервер больше не использует псевдо-streaming для уже готового аудио только из-за включённого `QWEN_TTS_ENABLE_STREAMING`.
-- Inference в HTTP adapter выносится из event loop и ограничивается настройкой `QWEN_TTS_REQUEST_TIMEOUT_SECONDS`. При превышении таймаута API возвращает единый JSON error `request_timeout` с HTTP 504.
-- Upload-файлы для voice clone временно размещаются в `QWEN_TTS_UPLOAD_STAGING_DIR` и удаляются после завершения запроса. Временные upload-артефакты больше не пишутся в [`.outputs/`](.outputs).
-- Structured observability теперь публикует события жизненного цикла inference wrapper: start, worker start, completed, timeout и failed path в [`server/api/routes_tts.py`](server/api/routes_tts.py).
-
-## Примеры запросов
-
-### Speech в OpenAI-стиле
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/audio/speech \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
-    "input": "Hello from Qwen3-TTS",
-    "voice": "Vivian",
-    "response_format": "wav",
-    "speed": 1.0
-  }' \
-  --output speech.wav
-```
-
-### Custom voice
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/tts/custom \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "text": "This is a custom voice request",
-    "speaker": "Vivian",
-    "emotion": "Calm and warm",
-    "speed": 1.0,
-    "save_output": true
-  }' \
-  --output custom.wav
-```
-
-### Voice design
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/tts/design \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "text": "Design a new narrator voice",
-    "voice_description": "deep calm documentary narrator"
-  }' \
-  --output design.wav
-```
-
-### Voice clone
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/tts/clone \
-  -F 'text=Clone this sentence' \
-  -F 'ref_text=Clone this sentence' \
-  -F 'ref_audio=@./sample.wav' \
-  --output clone.wav
-```
-
-## Формат ошибок
-
-Ошибки, не связанные с аудио, используют единую схему из [`server/schemas/errors.py`](server/schemas/errors.py):
-
-```json
-{
-  "code": "model_not_available",
-  "message": "Requested model is not available",
-  "details": {},
-  "request_id": "..."
-}
-```
-
-Актуальная error semantics для эксплуатационных сценариев:
-
-- неизвестные model identifier и запросы mode, для которого нет соответствующей локальной модели, нормализуются в `model_not_available` с HTTP 404 через [`server/api/errors.py`](server/api/errors.py)
-- проблемы доступности backend остаются `backend_not_available` с HTTP 503
-- несовпадение backend capability остаётся `backend_capability_missing` с HTTP 422
-- запросы, превышающие `QWEN_TTS_MAX_INPUT_TEXT_CHARS`, возвращают стандартный `validation_error` с HTTP 422 как для JSON, так и для form-based TTS endpoints
-- inference-запросы, превышающие `QWEN_TTS_REQUEST_TIMEOUT_SECONDS`, возвращают `request_timeout` с HTTP 504
+- [README.md](README.md) / [README.ru.md](README.ru.md) — корневой quick start
+- [core/README.md](core/README.md) / [core/README.ru.md](core/README.ru.md) — общий runtime и архитектура
+- [server/README.md](server/README.md) / [server/README.ru.md](server/README.ru.md) — HTTP API
+- [telegram_bot/README.md](telegram_bot/README.md) / [telegram_bot/README.ru.md](telegram_bot/README.ru.md) — Telegram-адаптер
+- [cli/README.md](cli/README.md) / [cli/README.ru.md](cli/README.ru.md) — интерактивный CLI
