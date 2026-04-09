@@ -1,0 +1,344 @@
+<VerificationPlan VERSION="1.0.0">
+  <GlobalPolicy>
+    <log-format>[ModuleName][functionName][BLOCK_NAME] message</log-format>
+    <deterministic-first>true</deterministic-first>
+    <module-level-focus>Fast deterministic checks close to the module using pytest -m unit.</module-level-focus>
+    <wave-level-focus>Integration checks for adapter wiring and endpoint behavior using pytest -m integration.</wave-level-focus>
+    <phase-level-focus>Full regression suite including architecture boundary checks using pytest.</phase-level-focus>
+    <redaction>Never log secrets, credentials, bearer tokens, or raw audio payloads.</redaction>
+  </GlobalPolicy>
+
+  <CriticalFlows>
+    <VF-001 NAME="SyncTTSHappyPath" USE_CASES="UC-001" DATA_FLOW="DF-SYNC-TTS" PRIORITY="high">
+      <scenario>API client submits a valid custom TTS request through the HTTP adapter and receives audio.</scenario>
+      <expected-outcome>WAV audio bytes are returned with 200 status, request context is preserved, and route-level inference markers are emitted.</expected-outcome>
+      <required-signals>
+        <log-marker>[RoutesTTS][openai_speech][BLOCK_LOG_OPENAI_REQUEST]</log-marker>
+        <log-marker>[RoutesTTS][run_inference_with_timeout][BLOCK_EXECUTE_SYNTHESIS]</log-marker>
+        <log-marker>[RoutesTTS][run_inference_with_timeout][BLOCK_LOG_INFERENCE_COMPLETION]</log-marker>
+        <log-marker>[Responses][build_audio_response][BUILD_AUDIO_RESPONSE]</log-marker>
+        <trace-sequence>[RoutesTTS][openai_speech][BLOCK_LOG_OPENAI_REQUEST] -> [RoutesTTS][run_inference_with_timeout][BLOCK_EXECUTE_SYNTHESIS] -> [RoutesTTS][run_inference_with_timeout][BLOCK_LOG_INFERENCE_COMPLETION] -> [Responses][build_audio_response][BUILD_AUDIO_RESPONSE]</trace-sequence>
+      </required-signals>
+    </VF-001>
+
+    <VF-002 NAME="CloneTTSHappyPath" USE_CASES="UC-003" DATA_FLOW="DF-CLONE-TTS" PRIORITY="high">
+      <scenario>API client submits a valid clone request with reference audio and receives cloned audio.</scenario>
+      <expected-outcome>Reference audio is normalized when needed, clone synthesis completes, and the response returns WAV audio.</expected-outcome>
+      <required-signals>
+        <log-marker>[RoutesTTS][tts_clone][BLOCK_LOG_CLONE_REQUEST]</log-marker>
+        <log-marker>[TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO]</log-marker>
+        <log-marker>[TTSService][synthesize_clone][BLOCK_EXECUTE_CLONE]</log-marker>
+        <log-marker>[TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]</log-marker>
+        <trace-sequence>[RoutesTTS][tts_clone][BLOCK_LOG_CLONE_REQUEST] -> [TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO] -> [TTSService][synthesize_clone][BLOCK_EXECUTE_CLONE] -> [TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]</trace-sequence>
+      </required-signals>
+    </VF-002>
+
+    <VF-003 NAME="AsyncJobLifecycle" USE_CASES="UC-004" DATA_FLOW="DF-ASYNC-JOB" PRIORITY="medium">
+      <scenario>Client submits an async job, polls status, and retrieves the completed audio result.</scenario>
+      <expected-outcome>Job ID is returned immediately, status transitions through queued/running/terminal states, and result retrieval returns audio bytes.</expected-outcome>
+      <required-signals>
+        <trace-sequence>POST /v1/audio/speech/jobs -> queued snapshot -> running or succeeded snapshot -> GET /api/v1/tts/jobs/{job_id}/result returns audio payload</trace-sequence>
+      </required-signals>
+    </VF-003>
+
+    <VF-004 NAME="BackendAutoselection" USE_CASES="UC-008" DATA_FLOW="DF-BACKEND-SELECTION" PRIORITY="high">
+      <scenario>Runtime starts with explicit or autoselect backend configuration and resolves an operational backend.</scenario>
+      <expected-outcome>BackendRegistry chooses a usable backend and ModelRegistry readiness reporting exposes selected backend and model availability.</expected-outcome>
+      <required-signals>
+        <trace-sequence>BackendRegistry chooses explicit or autoselected backend -> ModelRegistry readiness_report exposes selected backend and available models</trace-sequence>
+      </required-signals>
+    </VF-004>
+  </CriticalFlows>
+
+  <ModuleVerification>
+    <V-M-CONFIG MODULE="M-CONFIG" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_config_and_bootstrap.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_config_and_bootstrap.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Default settings use local runtime defaults for job backends, auth, manifest path, preload policy, rate limiting, and quota.</scenario-1>
+        <scenario-2 kind="success">Environment variables override manifest, preload, auth, rate-limit, and quota settings with normalized values.</scenario-2>
+        <scenario-3 kind="success">Explicit models, outputs, voices, and upload staging directories are parsed into the resulting settings object.</scenario-3>
+      </scenarios>
+    </V-M-CONFIG>
+
+    <V-M-ERRORS MODULE="M-ERRORS" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_backend_registry.py</file>
+        <file>tests/unit/core/test_job_execution.py</file>
+        <file>tests/unit/core/test_mlx_backend.py</file>
+        <file>tests/unit/test_telegram_bot/test_audio_sender_client.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_backend_registry.py tests/unit/core/test_job_execution.py tests/unit/core/test_mlx_backend.py tests/unit/test_telegram_bot/test_audio_sender_client.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="failure">Backend selection and model affinity failures surface typed BackendNotAvailableError, BackendCapabilityError, and ModelNotAvailableError cases.</scenario-1>
+        <scenario-2 kind="failure">Conflicting async job idempotency reuse raises JobIdempotencyConflictError.</scenario-2>
+        <scenario-3 kind="failure">MLX runtime loading failures surface ModelLoadError with detailed diagnostic context.</scenario-3>
+        <scenario-4 kind="failure">Telegram audio conversion failures surface AudioConversionError without hiding the root cause.</scenario-4>
+      </scenarios>
+    </V-M-ERRORS>
+
+    <V-M-OBSERVABILITY MODULE="M-OBSERVABILITY" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_tts_service.py</file>
+        <file>tests/integration/test_api.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_tts_service.py tests/integration/test_api.py -m "unit or integration"</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Structured request logs include request_id, path, status, and endpoint context for HTTP flows.</scenario-1>
+        <scenario-2 kind="failure">Timeout and worker-failure logs preserve request_id and inference_operation context.</scenario-2>
+        <scenario-3 kind="success">TTS service structured logs include mode, text length, language, and persistence context for clone synthesis.</scenario-3>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[ServerApp][request_context_middleware][BLOCK_LOG_REQUEST_START]</marker-1>
+        <marker-2>[ServerApp][request_context_middleware][BLOCK_LOG_SUCCESS_RESPONSE]</marker-2>
+        <marker-3>[RoutesTTS][run_inference_with_timeout][BLOCK_HANDLE_INFERENCE_TIMEOUT]</marker-3>
+        <marker-4>[RoutesTTS][run_inference_with_timeout][BLOCK_HANDLE_INFERENCE_FAILURE]</marker-4>
+      </required-log-markers>
+    </V-M-OBSERVABILITY>
+
+    <V-M-METRICS MODULE="M-METRICS" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_metrics_observability.py</file>
+        <file>tests/unit/server/test_health_routes.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_metrics_observability.py tests/unit/server/test_health_routes.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Execution metrics collect submitted, started, completed, and queue-depth counters through the local job manager lifecycle.</scenario-1>
+        <scenario-2 kind="success">MLX metrics collect cache hits, cache misses, load durations, and load failures.</scenario-2>
+        <scenario-3 kind="success">Server readiness reporting exposes the operational metrics snapshot from the runtime registry.</scenario-3>
+      </scenarios>
+    </V-M-METRICS>
+
+    <V-M-CONTRACTS MODULE="M-CONTRACTS" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_job_execution.py</file>
+        <file>tests/unit/core/test_tts_service.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_job_execution.py tests/unit/core/test_tts_service.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Async job submissions preserve operation, request_id, owner principal, and execution timeout metadata.</scenario-1>
+        <scenario-2 kind="success">InMemoryJobExecutor dispatches command DTOs across custom, design, and clone operations.</scenario-2>
+        <scenario-3 kind="success">VoiceCloneCommand and GenerationResult remain compatible with the TTS service clone flow and structured log assertions.</scenario-3>
+      </scenarios>
+    </V-M-CONTRACTS>
+
+    <V-M-BACKENDS MODULE="M-BACKENDS" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_backend_registry.py</file>
+        <file>tests/unit/core/test_mlx_backend.py</file>
+        <file>tests/unit/core/test_model_manifest.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_backend_registry.py tests/unit/core/test_mlx_backend.py tests/unit/core/test_model_manifest.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">BackendRegistry honors explicit backend selection and autoselection preference ordering.</scenario-1>
+        <scenario-2 kind="failure">Unsupported mode, missing local artifacts, and backend-affinity mismatches raise typed capability or availability errors.</scenario-2>
+        <scenario-3 kind="success">Manifest artifact validation rules match the runtime requirements expected by MLX and Torch backends.</scenario-3>
+        <scenario-4 kind="success">Listed preload policy preloads requested models and exposes cache diagnostics through the registry surface.</scenario-4>
+        <scenario-5 kind="failure">MLX normalized runtime loading fails fast with ModelLoadError when tokenizer initialization is incomplete.</scenario-5>
+      </scenarios>
+    </V-M-BACKENDS>
+
+    <V-M-INFRASTRUCTURE MODULE="M-INFRASTRUCTURE" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_job_execution.py</file>
+        <file>tests/unit/core/test_admission_control.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_job_execution.py tests/unit/core/test_admission_control.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">LocalInMemoryJobStore creates, transitions, cancels, purges, and replays async job snapshots deterministically.</scenario-1>
+        <scenario-2 kind="success">LocalBoundedExecutionManager executes jobs to success, handles timeouts, rejects queue overflow, and enforces cancellation rules.</scenario-2>
+        <scenario-3 kind="success">LocalJobArtifactHandler removes staged input files during terminal cleanup.</scenario-3>
+        <scenario-4 kind="success">Local rate limiting and quota guards remain principal-scoped and deterministic under parallel contention.</scenario-4>
+      </scenarios>
+    </V-M-INFRASTRUCTURE>
+
+    <V-M-MODEL-REGISTRY MODULE="M-MODEL-REGISTRY" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_backend_registry.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_backend_registry.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">ModelRegistry readiness_report reflects listed preload policy, loaded model ids, and cache diagnostics.</scenario-1>
+        <scenario-2 kind="success">Readiness reporting marks preloaded models as loaded in per-item preload metadata.</scenario-2>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[ModelRegistry][get_model][GET_MODEL]</marker-1>
+      </required-log-markers>
+    </V-M-MODEL-REGISTRY>
+
+    <V-M-TTS-SERVICE MODULE="M-TTS-SERVICE" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_tts_service.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_tts_service.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Clone synthesis passes the reference audio path to backend generation as a normalized string.</scenario-1>
+        <scenario-2 kind="success">Explicit language values are normalized before clone synthesis is executed.</scenario-2>
+        <scenario-3 kind="success">Structured clone logs include the entry marker and persistence marker with mode, model, and language context.</scenario-3>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[TTSService][synthesize_clone][SYNTHESIZE_CLONE]</marker-1>
+        <marker-2>[TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO]</marker-2>
+        <marker-3>[TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]</marker-3>
+      </required-log-markers>
+    </V-M-TTS-SERVICE>
+
+    <V-M-APPLICATION MODULE="M-APPLICATION" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_job_execution.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_job_execution.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">JobExecutionGateway delegates to the store when no manager is configured.</scenario-1>
+        <scenario-2 kind="success">JobExecutionGateway delegates submit and cancel operations to the configured manager when present.</scenario-2>
+        <scenario-3 kind="success">InMemoryJobExecutor dispatches custom, design, and clone operations to the application service by operation type.</scenario-3>
+      </scenarios>
+    </V-M-APPLICATION>
+
+    <V-M-BOOTSTRAP MODULE="M-BOOTSTRAP" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_config_and_bootstrap.py</file>
+        <file>tests/architecture/test_import_boundaries.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_config_and_bootstrap.py tests/architecture/test_import_boundaries.py -m "unit or architecture"</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">build_runtime passes manifest path and preload configuration into backend and registry wiring.</scenario-1>
+        <scenario-2 kind="success">Local job artifact, metadata, and execution factories preserve the local default runtime wiring.</scenario-2>
+        <scenario-3 kind="failure">Unsupported job backend identifiers are rejected by the bootstrap wiring factories.</scenario-3>
+        <scenario-4 kind="success">Architecture checks keep bootstrap wiring config-driven and free of adapter-layer drift.</scenario-4>
+      </scenarios>
+    </V-M-BOOTSTRAP>
+
+    <V-M-SERVER MODULE="M-SERVER" PRIORITY="high">
+      <test-files>
+        <file>tests/integration/test_api.py</file>
+        <file>tests/unit/server/test_health_routes.py</file>
+        <file>tests/smoke/test_local_runtime.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/integration/test_api.py tests/unit/server/test_health_routes.py -m "integration or unit"</check-1>
+        <check-2>QWEN_TTS_RUN_SMOKE=1 python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-2>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Health live and readiness endpoints expose expected status plus deep readiness diagnostics.</scenario-1>
+        <scenario-2 kind="success">OpenAI-compatible, custom, design, and clone HTTP endpoints return audio and propagate request metadata.</scenario-2>
+        <scenario-3 kind="success">Async submit, status, result, cancel, and idempotency flows remain deterministic through the HTTP adapter.</scenario-3>
+        <scenario-4 kind="failure">Unified HTTP error responses cover validation failures, rate limits, timeouts, worker failures, and ownership checks.</scenario-4>
+        <scenario-5 kind="success">Request, inference, and response logs include request_id and GRACE block markers for observability assertions.</scenario-5>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[ServerApp][request_context_middleware][BLOCK_LOG_REQUEST_START]</marker-1>
+        <marker-2>[RoutesTTS][openai_speech][BLOCK_LOG_OPENAI_REQUEST]</marker-2>
+        <marker-3>[RoutesTTS][run_inference_with_timeout][BLOCK_EXECUTE_SYNTHESIS]</marker-3>
+        <marker-4>[Responses][build_audio_response][BUILD_AUDIO_RESPONSE]</marker-4>
+      </required-log-markers>
+    </V-M-SERVER>
+
+    <V-M-TELEGRAM MODULE="M-TELEGRAM" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/test_telegram_bot/test_config_bootstrap.py</file>
+        <file>tests/unit/test_telegram_bot/test_dispatcher.py</file>
+        <file>tests/unit/test_telegram_bot/test_audio_sender_client.py</file>
+        <file>tests/unit/test_telegram_bot/test_job_orchestrator.py</file>
+        <file>tests/unit/test_telegram_bot/test_observability.py</file>
+        <file>tests/unit/test_telegram_bot/test_operational.py</file>
+        <file>tests/integration/test_telegram_adapter/test_wiring.py</file>
+        <file>tests/integration/test_telegram_adapter/test_job_integration.py</file>
+        <file>tests/integration/test_telegram_adapter/test_delivery_recovery.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/test_telegram_bot -m unit</check-1>
+        <check-2>python -m pytest tests/integration/test_telegram_adapter -m integration</check-2>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">TelegramSettings.from_env and build_telegram_runtime validate configuration and assemble TelegramRuntime correctly.</scenario-1>
+        <scenario-2 kind="success">CommandDispatcher, TTSSynthesizer, PollingAdapter, TelegramSender, and TelegramBotClient remain correctly wired for adapter flows.</scenario-2>
+        <scenario-3 kind="success">DeliveryMetadataStore and TelegramJobOrchestrator preserve idempotency, completion polling, and restart recovery semantics.</scenario-3>
+        <scenario-4 kind="success">Telegram audio conversion, voice upload formatting, and sender delegation remain contract-compatible.</scenario-4>
+        <scenario-5 kind="success">Telegram observability helpers emit structured GRACE event markers and polling metrics remain visible to tests.</scenario-5>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]</marker-1>
+        <marker-2>[Dispatcher][handle_update][BLOCK_LOG_INCOMING_UPDATE]</marker-2>
+        <marker-3>[TTSHandler][synthesize][BLOCK_EXECUTE_TTS_SYNTHESIS]</marker-3>
+        <marker-4>[JobOrchestrator][submit_tts_job][BLOCK_SUBMIT_JOB]</marker-4>
+        <marker-5>[Poller][start][BLOCK_DISPATCH_UPDATES]</marker-5>
+      </required-log-markers>
+    </V-M-TELEGRAM>
+
+    <V-M-CLI MODULE="M-CLI" PRIORITY="low">
+      <test-files>
+        <file>tests/unit/cli/test_runtime.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/cli/test_runtime.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">CLI runtime composes only core runtime services and the package entrypoint remains a thin wrapper.</scenario-1>
+        <scenario-2 kind="success">KeyboardInterrupt exits the CLI cleanly without surfacing spurious runtime errors.</scenario-2>
+      </scenarios>
+    </V-M-CLI>
+  </ModuleVerification>
+
+  <PhaseGates>
+    <Gate-Phase-1 PHASE="Phase-1">
+      <goal>Foundation modules have deterministic local checks and basic observability.</goal>
+      <commands>
+        <command-1>python -m pytest tests/unit/ -m unit</command-1>
+      </commands>
+      <required-evidence>
+        <evidence-1>All foundation modules (M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS, M-CONTRACTS) have passing unit tests.</evidence-1>
+      </required-evidence>
+    </Gate-Phase-1>
+
+    <Gate-Phase-2 PHASE="Phase-2">
+      <goal>Core services wire correctly and pass module-local checks.</goal>
+      <commands>
+        <command-1>python -m pytest tests/ -m "unit or integration"</command-1>
+      </commands>
+      <required-evidence>
+        <evidence-1>Backend selection, model registry, and TTS service have passing tests.</evidence-1>
+      </required-evidence>
+    </Gate-Phase-2>
+
+    <Gate-Phase-4 PHASE="Phase-4">
+      <goal>All transport adapters function correctly end-to-end.</goal>
+      <commands>
+        <command-1>python -m pytest</command-1>
+      </commands>
+      <required-evidence>
+        <evidence-1>Full test suite passes including architecture boundary checks.</evidence-1>
+      </required-evidence>
+    </Gate-Phase-4>
+  </PhaseGates>
+
+  <FailurePackets>
+    <packet-template>
+      <expected-fields>scenario, expected-evidence, observed-evidence, first-divergent-block, next-action</expected-fields>
+    </packet-template>
+  </FailurePackets>
+</VerificationPlan>
