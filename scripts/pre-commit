@@ -1,0 +1,24 @@
+#!/bin/sh
+# GRACE lint pre-commit hook
+# Runs grace lint on the project before each commit.
+# Install: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+if ! command -v grace >/dev/null 2>&1; then
+    echo "⚠️  grace-cli not found. Install with: bun add -g @osovv/grace-cli"
+    echo "   Skipping GRACE lint check."
+    exit 0
+fi
+
+echo "Running grace lint..."
+grace lint --path . --format text 2>&1
+LINT_EXIT=$?
+
+if [ $LINT_EXIT -ne 0 ]; then
+    echo ""
+    echo "❌ GRACE lint found issues. Fix them before committing."
+    echo "   Run: grace lint --path . --format text"
+    exit 1
+fi
+
+echo "✅ GRACE lint passed."
+exit 0
