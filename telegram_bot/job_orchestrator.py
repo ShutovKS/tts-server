@@ -1,3 +1,30 @@
+# FILE: telegram_bot/job_orchestrator.py
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Manage async job lifecycle for Telegram: submit, poll, deliver results.
+#   SCOPE: Job submission, polling, delivery coordination
+#   DEPENDS: M-APPLICATION, M-CONTRACTS
+#   LINKS: M-TELEGRAM
+#   ROLE: RUNTIME
+#   MAP_MODE: EXPORTS
+# END_MODULE_CONTRACT
+#
+# START_MODULE_MAP
+#   LOGGER - Module logger for Telegram job orchestration
+#   TelegramSenderProtocol - Protocol for Telegram delivery used by orchestrator flows
+#   TELEGRAM_IDEMPOTENCY_SCOPE - Idempotency scope key for Telegram submissions
+#   JobSubmissionResult - Outcome payload for Telegram job submission attempts
+#   JobCompletionResult - Completion status payload for Telegram job polling
+#   JobSuccessSnapshot - Minimal successful job snapshot for Telegram delivery
+#   DeliveryMetadataStore - Persistent store for Telegram delivery metadata
+#   TelegramJobOrchestrator - Telegram service for job submission and completion checks
+#   TelegramJobPoller - Background poller for Telegram job result delivery
+# END_MODULE_MAP
+#
+# START_CHANGE_SUMMARY
+#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+# END_CHANGE_SUMMARY
+
 """
 Telegram job orchestrator for Stage 2 job integration.
 
@@ -43,9 +70,30 @@ from core.observability import log_event
 LOGGER = logging.getLogger(__name__)
 
 
+# START_CONTRACT: TelegramSenderProtocol
+#   PURPOSE: Define the Telegram delivery capabilities required by job orchestration and polling.
+#   INPUTS: {}
+#   OUTPUTS: { TelegramSenderProtocol - protocol for text and voice delivery }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: TelegramSenderProtocol
 class TelegramSenderProtocol(Protocol):
+    # START_CONTRACT: send_text
+    #   PURPOSE: Send a Telegram text message through the job delivery interface.
+    #   INPUTS: { chat_id: int - target Telegram chat identifier, text: str - message body }
+    #   OUTPUTS: { Any - transport-specific send result }
+    #   SIDE_EFFECTS: Sends a Telegram API message in concrete implementations.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: send_text
     async def send_text(self, chat_id: int, text: str) -> Any: ...
 
+    # START_CONTRACT: send_voice
+    #   PURPOSE: Send a Telegram voice message through the job delivery interface.
+    #   INPUTS: { chat_id: int - target Telegram chat identifier, audio_bytes: bytes - voice payload bytes, caption: str | None - optional caption }
+    #   OUTPUTS: { Any - transport-specific send result }
+    #   SIDE_EFFECTS: Sends a Telegram voice message in concrete implementations.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: send_voice
     async def send_voice(
         self, chat_id: int, audio_bytes: bytes, caption: str | None = None
     ) -> Any: ...
@@ -57,6 +105,13 @@ if TYPE_CHECKING:
 TELEGRAM_IDEMPOTENCY_SCOPE = "telegram"
 
 
+# START_CONTRACT: JobSubmissionResult
+#   PURPOSE: Describe the outcome of submitting a Telegram-backed synthesis job.
+#   INPUTS: { success: bool - submission result flag, job_id: str | None - core job identifier, is_duplicate: bool - idempotency reuse flag, error_message: str | None - failure detail }
+#   OUTPUTS: { JobSubmissionResult - immutable submission outcome }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: JobSubmissionResult
 @dataclass
 class JobSubmissionResult:
     """Result of job submission."""
@@ -67,6 +122,13 @@ class JobSubmissionResult:
     error_message: str | None = None
 
 
+# START_CONTRACT: JobCompletionResult
+#   PURPOSE: Describe the completion status and payload of a Telegram-linked synthesis job.
+#   INPUTS: { status: JobStatus - current job status, is_terminal: bool - terminal state flag, success: bool | None - success state when terminal, audio_bytes: bytes | None - generated audio payload, duration_ms: float | None - execution time, error_message: str | None - failure detail, error_code: str | None - failure code }
+#   OUTPUTS: { JobCompletionResult - immutable completion status payload }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: JobCompletionResult
 @dataclass
 class JobCompletionResult:
     """Result of job completion check."""
@@ -80,6 +142,13 @@ class JobCompletionResult:
     error_code: str | None = None
 
 
+# START_CONTRACT: JobSuccessSnapshot
+#   PURPOSE: Capture a minimal successful job snapshot for Telegram delivery flows.
+#   INPUTS: { job_id: str - core job identifier, status: str - serialized job status }
+#   OUTPUTS: { JobSuccessSnapshot - immutable successful job summary }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: JobSuccessSnapshot
 @dataclass
 class JobSuccessSnapshot:
     """Snapshot of successful job result."""
@@ -88,6 +157,13 @@ class JobSuccessSnapshot:
     status: str
 
 
+# START_CONTRACT: DeliveryMetadataStore
+#   PURPOSE: Persist Telegram delivery metadata so completed jobs can be delivered exactly once.
+#   INPUTS: { storage_path: Path | str - metadata storage file path }
+#   OUTPUTS: { DeliveryMetadataStore - asynchronous metadata store }
+#   SIDE_EFFECTS: Reads and writes delivery metadata on disk.
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: DeliveryMetadataStore
 class DeliveryMetadataStore:
     """
     Async store for delivery metadata with atomic writes.
@@ -139,6 +215,13 @@ class DeliveryMetadataStore:
         """Generate storage key."""
         return f"{chat_id}:{message_id}"
 
+    # START_CONTRACT: is_delivered
+    #   PURPOSE: Check whether a Telegram message has already received its final delivery.
+    #   INPUTS: { chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier }
+    #   OUTPUTS: { bool - True when delivery metadata marks the message as delivered }
+    #   SIDE_EFFECTS: Reads persisted delivery metadata from disk when needed.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: is_delivered
     async def is_delivered(self, chat_id: int, message_id: int) -> bool:
         """Check if message has been fully delivered."""
         async with self._lock:
@@ -149,6 +232,13 @@ class DeliveryMetadataStore:
                 return False
             return "delivered_at" in metadata
 
+    # START_CONTRACT: get_pending_deliveries
+    #   PURPOSE: List all Telegram deliveries that are still awaiting final result delivery.
+    #   INPUTS: {}
+    #   OUTPUTS: { list[dict[str, Any]] - pending delivery metadata records }
+    #   SIDE_EFFECTS: Reads persisted delivery metadata from disk when needed.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: get_pending_deliveries
     async def get_pending_deliveries(self) -> list[dict[str, Any]]:
         """Get all pending deliveries."""
         async with self._lock:
@@ -159,6 +249,13 @@ class DeliveryMetadataStore:
                 if "delivered_at" not in metadata
             ]
 
+    # START_CONTRACT: get_delivery_metadata
+    #   PURPOSE: Retrieve stored Telegram delivery metadata for a specific message.
+    #   INPUTS: { chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier }
+    #   OUTPUTS: { dict[str, Any] | None - delivery metadata record when present }
+    #   SIDE_EFFECTS: Reads persisted delivery metadata from disk when needed.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: get_delivery_metadata
     async def get_delivery_metadata(
         self,
         chat_id: int,
@@ -171,6 +268,13 @@ class DeliveryMetadataStore:
             metadata = self._cache.get(key)
             return metadata.copy() if metadata is not None else None
 
+    # START_CONTRACT: create
+    #   PURPOSE: Create a pending delivery metadata record for a newly queued Telegram job.
+    #   INPUTS: { chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, job_id: str - core job identifier }
+    #   OUTPUTS: { dict[str, Any] - created delivery metadata record }
+    #   SIDE_EFFECTS: Writes delivery metadata to disk.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: create
     async def create(
         self,
         chat_id: int,
@@ -208,6 +312,13 @@ class DeliveryMetadataStore:
 
             return metadata.copy()
 
+    # START_CONTRACT: get
+    #   PURPOSE: Retrieve stored Telegram delivery metadata using a convenience alias.
+    #   INPUTS: { chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier }
+    #   OUTPUTS: { dict[str, Any] | None - delivery metadata record when present }
+    #   SIDE_EFFECTS: Reads persisted delivery metadata from disk when needed.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: get
     async def get(
         self,
         chat_id: int,
@@ -216,6 +327,13 @@ class DeliveryMetadataStore:
         """Get delivery metadata for a message (alias for get_delivery_metadata)."""
         return await self.get_delivery_metadata(chat_id, message_id)
 
+    # START_CONTRACT: mark_delivered
+    #   PURPOSE: Mark Telegram job delivery as completed or failed and persist the outcome.
+    #   INPUTS: { chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, success: bool - delivery success flag, error_message: str | None - optional failure detail, job_id: str | None - optional job identifier }
+    #   OUTPUTS: { dict[str, Any] - updated delivery metadata record }
+    #   SIDE_EFFECTS: Writes delivery metadata to disk.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: mark_delivered
     async def mark_delivered(
         self,
         chat_id: int,
@@ -258,6 +376,13 @@ class DeliveryMetadataStore:
             return metadata.copy()
 
 
+# START_CONTRACT: TelegramJobOrchestrator
+#   PURPOSE: Submit Telegram synthesis jobs to the core execution layer and inspect their completion state.
+#   INPUTS: { job_execution: Any - core job execution gateway, delivery_store: DeliveryMetadataStore - delivery metadata store, settings: TelegramSettings - Telegram runtime settings, logger: logging.Logger | None - optional logger }
+#   OUTPUTS: { TelegramJobOrchestrator - Telegram job orchestration service }
+#   SIDE_EFFECTS: Submits core jobs and emits orchestration logs.
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: TelegramJobOrchestrator
 class TelegramJobOrchestrator:
     """
     Orchestrates TTS and Voice Design job submission and completion.
@@ -292,6 +417,13 @@ class TelegramJobOrchestrator:
         else:
             yield None
 
+    # START_CONTRACT: submit_tts_job
+    #   PURPOSE: Submit a custom-voice Telegram synthesis request as an idempotent core job.
+    #   INPUTS: { text: str - synthesis text, speaker: str - speaker name, speed: float - speed multiplier, chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, language: str - requested language code }
+    #   OUTPUTS: { JobSubmissionResult - submission outcome for the TTS job }
+    #   SIDE_EFFECTS: Submits a core job and emits submission logs.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: submit_tts_job
     def submit_tts_job(
         self,
         text: str,
@@ -317,6 +449,7 @@ class TelegramJobOrchestrator:
         Returns:
             JobSubmissionResult indicating success/duplicate/error
         """
+        # START_BLOCK_SUBMIT_JOB
         idempotency_key = f"telegram:{chat_id}:{message_id}"
 
         # Check if job already exists via idempotency in core store
@@ -330,7 +463,7 @@ class TelegramJobOrchestrator:
                     log_event(
                         self._logger,
                         level=logging.INFO,
-                        event="telegram.job.idempotent_reuse",
+                        event="[JobOrchestrator][submit_tts_job][BLOCK_SUBMIT_JOB]",
                         message="Reusing existing job by idempotency key",
                         chat_id=chat_id,
                         message_id=message_id,
@@ -343,7 +476,9 @@ class TelegramJobOrchestrator:
                         job_id=existing_by_idem.snapshot.job_id,
                         is_duplicate=True,
                     )
+        # END_BLOCK_SUBMIT_JOB
 
+        # START_BLOCK_CREATE_TTS_SUBMISSION
         # Create new job submission
         try:
             submission = create_job_submission(
@@ -371,7 +506,7 @@ class TelegramJobOrchestrator:
             log_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.job.submitted",
+                event="[JobOrchestrator][submit_tts_job][BLOCK_CREATE_TTS_SUBMISSION]",
                 message="TTS job submitted",
                 chat_id=chat_id,
                 message_id=message_id,
@@ -393,7 +528,7 @@ class TelegramJobOrchestrator:
             log_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.job.submit_failed",
+                event="[JobOrchestrator][submit_tts_job][BLOCK_CREATE_TTS_SUBMISSION]",
                 message=f"Job submission failed: {exc}",
                 chat_id=chat_id,
                 message_id=message_id,
@@ -407,7 +542,15 @@ class TelegramJobOrchestrator:
                 is_duplicate=False,
                 error_message=str(exc),
             )
+        # END_BLOCK_CREATE_TTS_SUBMISSION
 
+    # START_CONTRACT: submit_design_job
+    #   PURPOSE: Submit a voice-design Telegram synthesis request as an idempotent core job.
+    #   INPUTS: { voice_description: str - voice description prompt, text: str - synthesis text, chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, language: str - requested language code }
+    #   OUTPUTS: { JobSubmissionResult - submission outcome for the design job }
+    #   SIDE_EFFECTS: Submits a core job and emits submission logs.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: submit_design_job
     def submit_design_job(
         self,
         voice_description: str,
@@ -431,6 +574,7 @@ class TelegramJobOrchestrator:
         Returns:
             JobSubmissionResult indicating success/duplicate/error
         """
+        # START_BLOCK_SUBMIT_DESIGN_JOB
         # Design jobs use "design" prefix for idempotency to separate from TTS jobs
         idempotency_key = f"telegram:design:{chat_id}:{message_id}"
 
@@ -445,7 +589,7 @@ class TelegramJobOrchestrator:
                     log_event(
                         self._logger,
                         level=logging.INFO,
-                        event="telegram.job.design.idempotent_reuse",
+                        event="[JobOrchestrator][submit_design_job][BLOCK_SUBMIT_DESIGN_JOB]",
                         message="Reusing existing design job by idempotency key",
                         chat_id=chat_id,
                         message_id=message_id,
@@ -458,7 +602,9 @@ class TelegramJobOrchestrator:
                         job_id=existing_by_idem.snapshot.job_id,
                         is_duplicate=True,
                     )
+        # END_BLOCK_SUBMIT_DESIGN_JOB
 
+        # START_BLOCK_CREATE_DESIGN_SUBMISSION
         # Create new job submission
         try:
             submission = create_job_submission(
@@ -485,7 +631,7 @@ class TelegramJobOrchestrator:
             log_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.job.design.submitted",
+                event="[JobOrchestrator][submit_design_job][BLOCK_CREATE_DESIGN_SUBMISSION]",
                 message="Voice Design job submitted",
                 chat_id=chat_id,
                 message_id=message_id,
@@ -506,7 +652,7 @@ class TelegramJobOrchestrator:
             log_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.job.design.submit_failed",
+                event="[JobOrchestrator][submit_design_job][BLOCK_CREATE_DESIGN_SUBMISSION]",
                 message=f"Voice Design job submission failed: {exc}",
                 chat_id=chat_id,
                 message_id=message_id,
@@ -520,7 +666,15 @@ class TelegramJobOrchestrator:
                 is_duplicate=False,
                 error_message=str(exc),
             )
+        # END_BLOCK_CREATE_DESIGN_SUBMISSION
 
+    # START_CONTRACT: submit_clone_job
+    #   PURPOSE: Submit a voice-clone Telegram synthesis request as an idempotent core job.
+    #   INPUTS: { text: str - synthesis text, ref_text: str | None - optional reference transcript, chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, ref_audio_path: str | None - staged reference audio path, language: str - requested language code }
+    #   OUTPUTS: { JobSubmissionResult - submission outcome for the clone job }
+    #   SIDE_EFFECTS: Submits a core job and emits submission logs.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: submit_clone_job
     def submit_clone_job(
         self,
         text: str,
@@ -546,6 +700,7 @@ class TelegramJobOrchestrator:
         Returns:
             JobSubmissionResult indicating success/duplicate/error
         """
+        # START_BLOCK_SUBMIT_CLONE_JOB
         # Clone jobs use "clone" prefix for idempotency to separate from TTS/design jobs
         idempotency_key = f"telegram:clone:{chat_id}:{message_id}"
 
@@ -560,7 +715,7 @@ class TelegramJobOrchestrator:
                     log_event(
                         self._logger,
                         level=logging.INFO,
-                        event="telegram.job.clone.idempotent_reuse",
+                        event="[JobOrchestrator][submit_clone_job][BLOCK_SUBMIT_CLONE_JOB]",
                         message="Reusing existing clone job by idempotency key",
                         chat_id=chat_id,
                         message_id=message_id,
@@ -573,7 +728,9 @@ class TelegramJobOrchestrator:
                         job_id=existing_by_idem.snapshot.job_id,
                         is_duplicate=True,
                     )
+        # END_BLOCK_SUBMIT_CLONE_JOB
 
+        # START_BLOCK_CREATE_CLONE_SUBMISSION
         # Create new job submission
         try:
             # Import here to avoid circular import issues
@@ -604,7 +761,7 @@ class TelegramJobOrchestrator:
             log_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.job.clone.submitted",
+                event="[JobOrchestrator][submit_clone_job][BLOCK_CREATE_CLONE_SUBMISSION]",
                 message="Voice Clone job submitted",
                 chat_id=chat_id,
                 message_id=message_id,
@@ -625,7 +782,7 @@ class TelegramJobOrchestrator:
             log_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.job.clone.submit_failed",
+                event="[JobOrchestrator][submit_clone_job][BLOCK_CREATE_CLONE_SUBMISSION]",
                 message=f"Voice Clone job submission failed: {exc}",
                 chat_id=chat_id,
                 message_id=message_id,
@@ -639,7 +796,15 @@ class TelegramJobOrchestrator:
                 is_duplicate=False,
                 error_message=str(exc),
             )
+        # END_BLOCK_CREATE_CLONE_SUBMISSION
 
+    # START_CONTRACT: check_job_completion
+    #   PURPOSE: Inspect the current completion state and result payload for a Telegram-linked job.
+    #   INPUTS: { job_id: str - core job identifier }
+    #   OUTPUTS: { JobCompletionResult - current completion snapshot for the job }
+    #   SIDE_EFFECTS: Reads job state and result data from the core execution layer.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: check_job_completion
     def check_job_completion(self, job_id: str) -> JobCompletionResult:
         """
         Check if job has completed and get result.
@@ -650,6 +815,7 @@ class TelegramJobOrchestrator:
         Returns:
             JobCompletionResult with terminal state if completed
         """
+        # START_BLOCK_POLL_JOB_STATUS
         snapshot = self._job_execution.get_job(job_id)
         if snapshot is None:
             return JobCompletionResult(
@@ -657,7 +823,9 @@ class TelegramJobOrchestrator:
                 is_terminal=False,
                 success=None,
             )
+        # END_BLOCK_POLL_JOB_STATUS
 
+        # START_BLOCK_BUILD_COMPLETION_RESULT
         is_terminal = snapshot.status.is_terminal
 
         if snapshot.status == JobStatus.SUCCEEDED:
@@ -704,6 +872,7 @@ class TelegramJobOrchestrator:
             is_terminal=is_terminal,
             success=None,
         )
+        # END_BLOCK_BUILD_COMPLETION_RESULT
 
     @staticmethod
     def _calculate_duration_ms(snapshot: JobSnapshot) -> float | None:
@@ -714,6 +883,13 @@ class TelegramJobOrchestrator:
         return None
 
 
+# START_CONTRACT: TelegramJobPoller
+#   PURPOSE: Poll queued Telegram jobs for completion and deliver their results back to users.
+#   INPUTS: { orchestrator: TelegramJobOrchestrator - job orchestration service, sender: TelegramSenderProtocol - Telegram delivery service, delivery_store: DeliveryMetadataStore - persisted delivery metadata store, settings: TelegramSettings - Telegram runtime settings, poll_interval_seconds: float - polling cadence }
+#   OUTPUTS: { TelegramJobPoller - asynchronous Telegram job delivery poller }
+#   SIDE_EFFECTS: Polls job state, sends Telegram messages, and updates delivery metadata.
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: TelegramJobPoller
 @dataclass
 class TelegramJobPoller:
     """
@@ -731,6 +907,13 @@ class TelegramJobPoller:
     _running: bool = field(default=False, init=False)
     _task: asyncio.Task | None = field(default=None, init=False)
 
+    # START_CONTRACT: start
+    #   PURPOSE: Start the Telegram job poller loop until stopped or cancelled.
+    #   INPUTS: {}
+    #   OUTPUTS: { None - no return value }
+    #   SIDE_EFFECTS: Starts background polling of delivery metadata and job state.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: start
     async def start(self) -> None:
         """Start the job poller and keep running until stopped or cancelled."""
         if self._running:
@@ -744,6 +927,13 @@ class TelegramJobPoller:
             if self._task is asyncio.current_task():
                 self._task = None
 
+    # START_CONTRACT: stop
+    #   PURPOSE: Stop the Telegram job poller and cancel any running task safely.
+    #   INPUTS: {}
+    #   OUTPUTS: { None - no return value }
+    #   SIDE_EFFECTS: Cancels the poller task when it is running.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: stop
     async def stop(self) -> None:
         """Stop the job poller."""
         self._running = False
@@ -759,9 +949,12 @@ class TelegramJobPoller:
 
     async def _poll_loop(self) -> None:
         """Main polling loop for job completion."""
+        # START_BLOCK_RECOVER_PENDING_DELIVERIES
         # First, recover pending jobs from previous run
         await self._recover_pending_jobs()
+        # END_BLOCK_RECOVER_PENDING_DELIVERIES
 
+        # START_BLOCK_POLL_JOB_STATUS_LOOP
         while self._running:
             try:
                 await self._check_pending_deliveries()
@@ -771,11 +964,13 @@ class TelegramJobPoller:
             except Exception as exc:
                 logging.getLogger(__name__).error(f"Error in job poller: {exc}")
                 await asyncio.sleep(5.0)  # Back off on error
+        # END_BLOCK_POLL_JOB_STATUS_LOOP
 
     async def _recover_pending_jobs(self) -> None:
         """Recover and deliver results from previous session."""
         from telegram_bot.observability import METRICS
 
+        # START_BLOCK_LOAD_PENDING_DELIVERIES
         pending = await self.delivery_store.get_pending_deliveries()
 
         if not pending:
@@ -784,7 +979,9 @@ class TelegramJobPoller:
         logging.getLogger(__name__).info(
             f"Recovering {len(pending)} pending jobs from previous session"
         )
+        # END_BLOCK_LOAD_PENDING_DELIVERIES
 
+        # START_BLOCK_DELIVER_RECOVERED_RESULTS
         for metadata in pending:
             job_id = metadata.get("job_id")
             chat_id = metadata.get("chat_id")
@@ -807,13 +1004,17 @@ class TelegramJobPoller:
                     resolved_message_id,
                 )
                 METRICS.job_delivery_recovered()
+        # END_BLOCK_DELIVER_RECOVERED_RESULTS
 
     async def _check_pending_deliveries(self) -> None:
         """Check pending deliveries and deliver completed jobs."""
         from telegram_bot.observability import METRICS
 
+        # START_BLOCK_LOAD_PENDING_DELIVERY_BATCH
         pending = await self.delivery_store.get_pending_deliveries()
+        # END_BLOCK_LOAD_PENDING_DELIVERY_BATCH
 
+        # START_BLOCK_POLL_JOB_STATUS_BATCH
         for metadata in pending:
             job_id = metadata.get("job_id")
             chat_id = metadata.get("chat_id")
@@ -832,6 +1033,7 @@ class TelegramJobPoller:
                 await self._deliver_job_result(
                     resolved_job_id, result, resolved_chat_id, resolved_message_id
                 )
+        # END_BLOCK_POLL_JOB_STATUS_BATCH
 
     async def _deliver_job_result(
         self,
@@ -844,6 +1046,7 @@ class TelegramJobPoller:
         from telegram_bot.observability import METRICS
 
         try:
+            # START_BLOCK_DELIVER_RESULT
             if result.success:
                 # Send voice message
                 if result.audio_bytes:
@@ -890,8 +1093,10 @@ class TelegramJobPoller:
                     result.error_message,
                 )
                 METRICS.job_delivery_completed()
+            # END_BLOCK_DELIVER_RESULT
 
         except Exception as exc:
+            # START_BLOCK_HANDLE_JOB_FAILURE
             LOGGER.error(
                 f"Failed to deliver job result: {exc}",
                 extra={
@@ -906,6 +1111,7 @@ class TelegramJobPoller:
                 False,
                 str(exc),
             )
+            # END_BLOCK_HANDLE_JOB_FAILURE
 
     def _build_success_caption(self, duration_ms: float | None) -> str:
         """Build success caption for voice message."""
@@ -920,3 +1126,15 @@ class TelegramJobPoller:
             f"{error}\n\n"
             "Откройте `/help`, чтобы проверить синтаксис команды и примеры использования."
         )
+
+__all__ = [
+    "LOGGER",
+    "TelegramSenderProtocol",
+    "TELEGRAM_IDEMPOTENCY_SCOPE",
+    "JobSubmissionResult",
+    "JobCompletionResult",
+    "JobSuccessSnapshot",
+    "DeliveryMetadataStore",
+    "TelegramJobOrchestrator",
+    "TelegramJobPoller",
+]

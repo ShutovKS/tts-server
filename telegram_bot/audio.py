@@ -1,3 +1,22 @@
+# FILE: telegram_bot/audio.py
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Provide audio conversion utilities for Telegram bot flows.
+#   SCOPE: Audio format conversion, OGG encoding for voice messages
+#   DEPENDS: M-INFRASTRUCTURE
+#   LINKS: M-TELEGRAM
+#   ROLE: RUNTIME
+#   MAP_MODE: EXPORTS
+# END_MODULE_CONTRACT
+#
+# START_MODULE_MAP
+#   convert_wav_to_telegram_ogg - Convert WAV audio to Telegram-compatible OGG voice payloads
+# END_MODULE_MAP
+#
+# START_CHANGE_SUMMARY
+#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+# END_CHANGE_SUMMARY
+
 """
 Audio conversion utilities for Telegram voice messages.
 
@@ -19,26 +38,33 @@ from core.config import CoreSettings
 from core.errors import AudioConversionError
 
 
+# START_CONTRACT: convert_wav_to_telegram_ogg
+#   PURPOSE: Convert raw WAV audio bytes into Telegram-compatible OGG/OPUS voice payloads.
+#   INPUTS: { wav_bytes: bytes - synthesized WAV audio payload, settings: CoreSettings - audio configuration including sample rate }
+#   OUTPUTS: { Tuple[bytes, bool] - converted OGG bytes and conversion flag }
+#   SIDE_EFFECTS: Spawns an ffmpeg subprocess for audio transcoding.
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: convert_wav_to_telegram_ogg
 def convert_wav_to_telegram_ogg(
     wav_bytes: bytes,
     settings: CoreSettings,
 ) -> Tuple[bytes, bool]:
     """
     Convert WAV audio to Telegram-compatible OGG format.
-    
+
     Telegram sendVoice requires:
     - OGG container with OPUS codec
     - Typically mono audio
     - 16kHz or 48kHz sample rate (Telegram auto-converts if needed)
-    
+
     Args:
         wav_bytes: Raw WAV audio bytes
         settings: Core settings with sample_rate
-        
+
     Returns:
         Tuple of (ogg_bytes, was_converted). was_converted is False if input
         was already in valid OGG format (shouldn't happen normally).
-        
+
     Raises:
         AudioConversionError: If conversion fails
     """
@@ -48,7 +74,7 @@ def convert_wav_to_telegram_ogg(
             "ffmpeg is not available. Cannot convert audio for Telegram.",
             details={"required_tool": "ffmpeg"},
         )
-    
+
     try:
         # Use ffmpeg to convert WAV to OGG with OPUS codec
         # Telegram accepts OPUS-encoded audio in OGG container
@@ -56,35 +82,45 @@ def convert_wav_to_telegram_ogg(
             [
                 "ffmpeg",
                 "-y",  # Overwrite output
-                "-v", "error",
-                "-f", "wav",  # Input format
-                "-i", "pipe:0",  # Read from stdin
-                "-c:a", "libopus",  # OPUS codec
-                "-b:a", "32k",  # Bitrate
-                "-vbr", "on",  # Variable bitrate
-                "-application", "voip",  # Optimized for voice
-                "-f", "ogg",  # Output format
+                "-v",
+                "error",
+                "-f",
+                "wav",  # Input format
+                "-i",
+                "pipe:0",  # Read from stdin
+                "-c:a",
+                "libopus",  # OPUS codec
+                "-b:a",
+                "32k",  # Bitrate
+                "-vbr",
+                "on",  # Variable bitrate
+                "-application",
+                "voip",  # Optimized for voice
+                "-f",
+                "ogg",  # Output format
                 "pipe:1",  # Write to stdout
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        
+
         ogg_bytes, stderr = process.communicate(input=wav_bytes, timeout=60)
-        
+
         if process.returncode != 0:
-            error_msg = stderr.decode("utf-8", errors="ignore") if stderr else "Unknown error"
+            error_msg = (
+                stderr.decode("utf-8", errors="ignore") if stderr else "Unknown error"
+            )
             raise AudioConversionError(
                 f"ffmpeg conversion failed: {error_msg}",
                 details={"ffmpeg_stderr": error_msg, "return_code": process.returncode},
             )
-        
+
         if not ogg_bytes:
             raise AudioConversionError("ffmpeg produced empty output")
-        
+
         return ogg_bytes, True
-        
+
     except subprocess.TimeoutExpired:
         raise AudioConversionError("Audio conversion timed out after 60 seconds")
     except FileNotFoundError:
@@ -113,3 +149,7 @@ def _check_ffmpeg_available() -> bool:
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
+
+__all__ = [
+    "convert_wav_to_telegram_ogg",
+]

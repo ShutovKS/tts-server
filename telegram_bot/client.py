@@ -1,3 +1,25 @@
+# FILE: telegram_bot/client.py
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Provide typed HTTP client for Telegram Bot API calls.
+#   SCOPE: Telegram API wrapper for sending messages, files, and receiving updates
+#   DEPENDS: M-ERRORS
+#   LINKS: M-TELEGRAM
+#   ROLE: RUNTIME
+#   MAP_MODE: EXPORTS
+# END_MODULE_CONTRACT
+#
+# START_MODULE_MAP
+#   LOGGER - Module logger for Telegram client events
+#   RetryConfig - Retry policy for Telegram Bot API requests
+#   TelegramAPIError - Telegram Bot API error with retry metadata
+#   TelegramBotClient - HTTP client for Telegram Bot API operations
+# END_MODULE_MAP
+#
+# START_CHANGE_SUMMARY
+#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+# END_CHANGE_SUMMARY
+
 """
 Telegram Bot API client implementation with retry logic.
 
@@ -36,9 +58,18 @@ LOGGER = get_logger(__name__)
 # Retry Configuration
 # ============================================================================
 
+
+# START_CONTRACT: RetryConfig
+#   PURPOSE: Configure retry behavior for Telegram Bot API requests.
+#   INPUTS: { max_attempts: int - maximum retry attempts, initial_delay: float - initial backoff delay, max_delay: float - retry delay ceiling, multiplier: float - exponential factor, retryable_errors: tuple[str, ...] - retryable error markers }
+#   OUTPUTS: { RetryConfig - immutable retry policy }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: RetryConfig
 @dataclass(frozen=True)
 class RetryConfig:
     """Configuration for retry behavior."""
+
     max_attempts: int = 3
     initial_delay: float = 1.0
     max_delay: float = 10.0
@@ -50,16 +81,24 @@ class RetryConfig:
 # Telegram API Error
 # ============================================================================
 
+
+# START_CONTRACT: TelegramAPIError
+#   PURPOSE: Represent Telegram Bot API failures with optional status code and retry hints.
+#   INPUTS: { message: str - error description, code: int | None - Telegram or HTTP error code, retry_after: float | None - retry delay hint }
+#   OUTPUTS: { TelegramAPIError - Telegram API exception type }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: TelegramAPIError
 class TelegramAPIError(Exception):
     """
     Telegram API error with code and retry guidance.
-    
+
     Attributes:
         message: Error description
         code: Telegram error code (None for network errors)
         classified: Error classification for retry decisions
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -70,7 +109,7 @@ class TelegramAPIError(Exception):
         self.message = message
         self.code = code
         self.retry_after = retry_after
-    
+
     def __str__(self) -> str:
         if self.code:
             return f"[{self.code}] {self.message}"
@@ -81,26 +120,34 @@ class TelegramAPIError(Exception):
 # Telegram Bot Client
 # ============================================================================
 
+
+# START_CONTRACT: TelegramBotClient
+#   PURPOSE: Execute Telegram Bot API operations with retries, logging, and file transfer support.
+#   INPUTS: { bot_token: str - Telegram bot token, logger: logging.Logger | None - optional logger, retry_config: Optional[RetryConfig] - retry policy override }
+#   OUTPUTS: { TelegramBotClient - configured Telegram API client }
+#   SIDE_EFFECTS: Lazily creates and uses an async HTTP client for network requests.
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: TelegramBotClient
 class TelegramBotClient(TelegramClient):
     """
     HTTP-based Telegram Bot API client.
-    
+
     Features:
     - Automatic retry with exponential backoff for retryable errors
     - Error classification and proper error propagation
     - Rate limit handling (429 responses)
     - Structured logging with request tracking
-    
+
     Retry strategy:
     - Network timeouts and connection errors: exponential backoff
     - 429 Rate Limited: retry after specified time
     - 5xx Server errors: exponential backoff
     - 4xx Client errors: fail immediately (except 429)
     """
-    
+
     BASE_URL = "https://api.telegram.org/bot{token}/{method}"
     REQUEST_TIMEOUT = 30.0
-    
+
     def __init__(
         self,
         bot_token: str,
@@ -109,7 +156,7 @@ class TelegramBotClient(TelegramClient):
     ):
         """
         Initialize Telegram bot client.
-        
+
         Args:
             bot_token: Bot token from @BotFather
             logger: Optional logger instance
@@ -119,11 +166,11 @@ class TelegramBotClient(TelegramClient):
         self._logger = logger or LOGGER
         self._retry_config = retry_config or RetryConfig()
         self._client: httpx.AsyncClient | None = None
-        
+
         # Request metrics
         self._request_count = 0
         self._error_count = 0
-    
+
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None:
@@ -132,17 +179,24 @@ class TelegramBotClient(TelegramClient):
                 follow_redirects=True,
             )
         return self._client
-    
+
+    # START_CONTRACT: close
+    #   PURPOSE: Close the underlying async HTTP client if it has been created.
+    #   INPUTS: {}
+    #   OUTPUTS: { None - no return value }
+    #   SIDE_EFFECTS: Closes network resources held by the HTTP client.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: close
     async def close(self) -> None:
         """Close the HTTP client."""
         if self._client is not None:
             await self._client.aclose()
             self._client = None
-    
+
     def _build_url(self, method: str) -> str:
         """Build URL for API method."""
         return self.BASE_URL.format(token=self._token, method=method)
-    
+
     async def _request(
         self,
         method: str,
@@ -151,189 +205,206 @@ class TelegramBotClient(TelegramClient):
     ) -> dict[str, Any]:
         """
         Make API request with retry logic.
-        
+
         Args:
             method: API method name
             retry_count: Current retry attempt
             **kwargs: Arguments to pass to request
-            
+
         Returns:
             API response data
-            
+
         Raises:
             TelegramAPIError: On API errors
         """
+        # START_BLOCK_PREPARE_API_REQUEST
         self._request_count += 1
-        
+
         client = await self._get_client()
         url = self._build_url(method)
-        
+
         log_telegram_event(
             self._logger,
             level=logging.DEBUG,
-            event="telegram.api.request",
+            event="[TelegramClient][_request][BLOCK_PREPARE_API_REQUEST]",
             message=f"Telegram API request: {method}",
             method=method,
             retry_count=retry_count,
             request_id=self._request_count,
         )
-        
+        # END_BLOCK_PREPARE_API_REQUEST
+
         try:
+            # START_BLOCK_EXECUTE_API_REQUEST
             response = await client.post(url, **kwargs)
-            
+
             # Handle HTTP errors
             if response.status_code == 429:
                 # Rate limited
                 retry_after = self._extract_retry_after(response)
                 self._error_count += 1
-                
+
                 log_telegram_event(
                     self._logger,
                     level=logging.WARNING,
-                    event="telegram.api.rate_limited",
+                    event="[TelegramClient][_request][BLOCK_EXECUTE_API_REQUEST]",
                     message="Telegram API rate limited",
                     method=method,
                     retry_after=retry_after,
                 )
-                
+
                 if retry_count < self._retry_config.max_attempts:
                     wait_time = retry_after or self._calculate_delay(retry_count)
                     await asyncio.sleep(wait_time)
                     return await self._request(method, retry_count + 1, **kwargs)
-                
+
                 raise TelegramAPIError(
                     "Rate limit exceeded",
                     code=429,
                     retry_after=retry_after,
                 )
-            
+
             # Server errors - retryable
             if response.status_code >= 500:
                 self._error_count += 1
-                
+
                 log_telegram_event(
                     self._logger,
                     level=logging.WARNING,
-                    event="telegram.api.server_error",
+                    event="[TelegramClient][_request][BLOCK_EXECUTE_API_REQUEST]",
                     message=f"Telegram server error: {response.status_code}",
                     method=method,
                     status_code=response.status_code,
                     retry_count=retry_count,
                 )
-                
+
                 if retry_count < self._retry_config.max_attempts:
                     delay = self._calculate_delay(retry_count)
                     await asyncio.sleep(delay)
                     return await self._request(method, retry_count + 1, **kwargs)
-                
+
                 response.raise_for_status()
-            
+
             # Client errors - non-retryable
             if response.status_code >= 400:
                 response.raise_for_status()
-            
+
             # Success
             data = response.json()
-            
+
             if not data.get("ok"):
                 error_code = data.get("error_code")
                 description = data.get("description", "Unknown error")
-                
+
                 self._error_count += 1
-                
+
                 log_telegram_event(
                     self._logger,
                     level=logging.ERROR,
-                    event="telegram.api.error",
+                    event="[TelegramClient][_request][BLOCK_EXECUTE_API_REQUEST]",
                     message=f"Telegram API error: {description}",
                     method=method,
                     error_code=error_code,
                     description=description,
                     retry_count=retry_count,
                 )
-                
+
                 # Classify error for retry decisions
                 classified = classify_telegram_error(
                     TelegramAPIError(description, error_code)
                 )
-                
-                if classified.is_retryable and retry_count < self._retry_config.max_attempts:
+
+                if (
+                    classified.is_retryable
+                    and retry_count < self._retry_config.max_attempts
+                ):
                     delay = self._calculate_delay(retry_count)
                     log_telegram_event(
                         self._logger,
                         level=logging.INFO,
-                        event="telegram.api.retrying",
+                        event="[TelegramClient][_request][BLOCK_EXECUTE_API_REQUEST]",
                         message=f"Retrying after error: {delay:.2f}s",
                         delay_seconds=delay,
                     )
                     await asyncio.sleep(delay)
                     return await self._request(method, retry_count + 1, **kwargs)
-                
+
                 raise TelegramAPIError(description, error_code)
-            
+
             return data.get("result", {})
-            
+            # END_BLOCK_EXECUTE_API_REQUEST
+
         except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
+            # START_BLOCK_HANDLE_TIMEOUT_ERROR
             self._error_count += 1
-            
+
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.api.timeout",
+                event="[TelegramClient][_request][BLOCK_HANDLE_TIMEOUT_ERROR]",
                 message=f"Telegram API timeout: {exc}",
                 method=method,
                 retry_count=retry_count,
             )
-            
+
             if retry_count < self._retry_config.max_attempts:
                 delay = self._calculate_delay(retry_count)
                 await asyncio.sleep(delay)
                 return await self._request(method, retry_count + 1, **kwargs)
-            
-            raise TelegramAPIError(f"Request timeout after {retry_count + 1} attempts") from exc
-            
+
+            raise TelegramAPIError(
+                f"Request timeout after {retry_count + 1} attempts"
+            ) from exc
+            # END_BLOCK_HANDLE_TIMEOUT_ERROR
+
         except httpx.ConnectError as exc:
+            # START_BLOCK_HANDLE_CONNECTION_ERROR
             self._error_count += 1
-            
+
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.api.connection_error",
+                event="[TelegramClient][_request][BLOCK_HANDLE_CONNECTION_ERROR]",
                 message=f"Telegram connection error: {exc}",
                 method=method,
                 retry_count=retry_count,
             )
-            
+
             if retry_count < self._retry_config.max_attempts:
                 delay = self._calculate_delay(retry_count)
                 await asyncio.sleep(delay)
                 return await self._request(method, retry_count + 1, **kwargs)
-            
-            raise TelegramAPIError(f"Connection failed after {retry_count + 1} attempts") from exc
-            
+
+            raise TelegramAPIError(
+                f"Connection failed after {retry_count + 1} attempts"
+            ) from exc
+            # END_BLOCK_HANDLE_CONNECTION_ERROR
+
         except httpx.HTTPStatusError as exc:
+            # START_BLOCK_HANDLE_HTTP_STATUS_ERROR
             self._error_count += 1
-            
+
             # Already handled status codes above
             if exc.response.status_code not in (429, 500, 501, 502, 503, 504):
                 log_telegram_event(
                     self._logger,
                     level=logging.ERROR,
-                    event="telegram.api.http_error",
+                    event="[TelegramClient][_request][BLOCK_HANDLE_HTTP_STATUS_ERROR]",
                     message=f"HTTP error: {exc}",
                     method=method,
                     status_code=exc.response.status_code,
                 )
-            
+
             raise
-    
+            # END_BLOCK_HANDLE_HTTP_STATUS_ERROR
+
     def _calculate_delay(self, retry_count: int) -> float:
         """Calculate exponential backoff delay."""
         delay = self._retry_config.initial_delay * (
-            self._retry_config.multiplier ** retry_count
+            self._retry_config.multiplier**retry_count
         )
         return min(delay, self._retry_config.max_delay)
-    
+
     def _extract_retry_after(self, response: httpx.Response) -> float | None:
         """Extract retry_after from rate limit response."""
         try:
@@ -342,18 +413,32 @@ class TelegramBotClient(TelegramClient):
                 return data["parameters"].get("retry_after")
         except Exception:
             pass
-        
+
         # Fallback to Retry-After header
         return response.headers.get("retry-after")
-    
+
     # ------------------------------------------------------------------------
     # API Methods
     # ------------------------------------------------------------------------
-    
+
+    # START_CONTRACT: get_me
+    #   PURPOSE: Fetch metadata about the configured Telegram bot account.
+    #   INPUTS: {}
+    #   OUTPUTS: { dict[str, Any] - Telegram bot metadata payload }
+    #   SIDE_EFFECTS: Performs a Telegram Bot API network request.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: get_me
     async def get_me(self) -> dict[str, Any]:
         """Get bot information."""
         return await self._request("getMe")
-    
+
+    # START_CONTRACT: get_updates
+    #   PURPOSE: Retrieve a batch of incoming Telegram updates for long polling.
+    #   INPUTS: { offset: int - next update offset, timeout: int - long-poll timeout seconds, allowed_updates: list[str] | None - update types filter }
+    #   OUTPUTS: { list[dict[str, Any]] - Telegram update payloads }
+    #   SIDE_EFFECTS: Performs a Telegram Bot API network request.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: get_updates
     async def get_updates(
         self,
         offset: int = 0,
@@ -367,10 +452,17 @@ class TelegramBotClient(TelegramClient):
         }
         if allowed_updates is not None:
             payload["allowed_updates"] = allowed_updates
-        
+
         result = await self._request("getUpdates", json=payload)
         return result if isinstance(result, list) else []
-    
+
+    # START_CONTRACT: send_message
+    #   PURPOSE: Send a Markdown-capable text message to a Telegram chat.
+    #   INPUTS: { chat_id: int - target Telegram chat identifier, text: str - message body, parse_mode: str - Telegram parse mode }
+    #   OUTPUTS: { dict[str, Any] - Telegram sendMessage result payload }
+    #   SIDE_EFFECTS: Performs a Telegram Bot API network request.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: send_message
     async def send_message(
         self,
         chat_id: int,
@@ -383,30 +475,49 @@ class TelegramBotClient(TelegramClient):
             "text": text,
             "parse_mode": parse_mode,
         }
-        
+
         log_telegram_event(
             self._logger,
             level=logging.DEBUG,
-            event="telegram.api.send_message",
+            event="[TelegramClient][send_message][send_message]",
             message="Sending Telegram message",
             chat_id=chat_id,
             text_length=len(text),
         )
-        
+
         return await self._request("sendMessage", json=payload)
 
+    # START_CONTRACT: get_file
+    #   PURPOSE: Fetch metadata for a Telegram-hosted file attachment.
+    #   INPUTS: { file_id: str - Telegram file identifier }
+    #   OUTPUTS: { dict[str, Any] - Telegram file metadata payload }
+    #   SIDE_EFFECTS: Performs a Telegram Bot API network request.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: get_file
     async def get_file(self, file_id: str) -> dict[str, Any]:
         """Fetch Telegram file metadata for a media attachment."""
         payload = {"file_id": file_id}
         return await self._request("getFile", json=payload)
 
+    # START_CONTRACT: download_file
+    #   PURPOSE: Download a Telegram-hosted file into a local destination path.
+    #   INPUTS: { file_id: str - Telegram file identifier, destination: str | Path - target filesystem path }
+    #   OUTPUTS: { Path - written destination path }
+    #   SIDE_EFFECTS: Performs network I/O and writes the downloaded file to disk.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: download_file
     async def download_file(self, file_id: str, destination: str | Path) -> Path:
         """Download a Telegram-hosted file to the given destination path."""
+        # START_BLOCK_RESOLVE_FILE_METADATA
         file_info = await self.get_file(file_id)
         file_path = file_info.get("file_path")
         if not file_path:
-            raise TelegramAPIError("Telegram did not return file_path for the requested media")
+            raise TelegramAPIError(
+                "Telegram did not return file_path for the requested media"
+            )
+        # END_BLOCK_RESOLVE_FILE_METADATA
 
+        # START_BLOCK_PREPARE_DOWNLOAD_DESTINATION
         client = await self._get_client()
         download_url = f"https://api.telegram.org/file/bot{self._token}/{file_path}"
         destination_path = Path(destination)
@@ -415,12 +526,14 @@ class TelegramBotClient(TelegramClient):
         log_telegram_event(
             self._logger,
             level=logging.DEBUG,
-            event="telegram.api.download_file",
+            event="[TelegramClient][download_file][BLOCK_PREPARE_DOWNLOAD_DESTINATION]",
             message="Downloading Telegram media file",
             file_id=file_id,
             destination=str(destination_path),
         )
+        # END_BLOCK_PREPARE_DOWNLOAD_DESTINATION
 
+        # START_BLOCK_DOWNLOAD_MEDIA
         try:
             response = await client.get(download_url)
             response.raise_for_status()
@@ -436,7 +549,15 @@ class TelegramBotClient(TelegramClient):
 
         destination_path.write_bytes(response.content)
         return destination_path
-    
+        # END_BLOCK_DOWNLOAD_MEDIA
+
+    # START_CONTRACT: send_voice
+    #   PURPOSE: Upload a Telegram voice message payload to a target chat.
+    #   INPUTS: { chat_id: int - target Telegram chat identifier, audio: bytes - OGG/OPUS audio payload, caption: str | None - optional caption text, duration: int | None - optional duration seconds }
+    #   OUTPUTS: { dict[str, Any] - Telegram sendVoice result payload }
+    #   SIDE_EFFECTS: Performs a Telegram Bot API multipart upload.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: send_voice
     async def send_voice(
         self,
         chat_id: int,
@@ -446,51 +567,54 @@ class TelegramBotClient(TelegramClient):
     ) -> dict[str, Any]:
         """
         Send voice message to chat.
-        
+
         Args:
             chat_id: Target chat ID
             audio: Audio bytes in OGG/OPUS format
             caption: Optional caption
             duration: Optional duration in seconds
-            
+
         Returns:
             API response
         """
+        # START_BLOCK_PREPARE_VOICE_UPLOAD
         # Prepare multipart form data
         files = {
             "voice": ("voice.ogg", io.BytesIO(audio), "audio/ogg"),
         }
-        
+
         data: dict[str, Any] = {
             "chat_id": chat_id,
         }
-        
+
         if caption:
             data["caption"] = caption
             data["parse_mode"] = "Markdown"
-        
+
         if duration:
             data["duration"] = duration
-        
+
         client = await self._get_client()
         url = self._build_url("sendVoice")
-        
+
         log_telegram_event(
             self._logger,
             level=logging.DEBUG,
-            event="telegram.api.send_voice",
+            event="[TelegramClient][send_voice][BLOCK_PREPARE_VOICE_UPLOAD]",
             message="Sending Telegram voice",
             chat_id=chat_id,
             audio_size=len(audio),
         )
-        
+        # END_BLOCK_PREPARE_VOICE_UPLOAD
+
+        # START_BLOCK_SEND_VOICE_MESSAGE
         try:
             response = await client.post(
                 url,
                 data=data,
                 files=files,
             )
-            
+
             if response.status_code == 429:
                 retry_after = self._extract_retry_after(response)
                 raise TelegramAPIError(
@@ -498,27 +622,35 @@ class TelegramBotClient(TelegramClient):
                     code=429,
                     retry_after=retry_after,
                 )
-            
+
             response.raise_for_status()
             result = response.json()
-            
+
             if not result.get("ok"):
                 error_code = result.get("error_code")
                 description = result.get("description", "Unknown error")
-                
+
                 log_telegram_event(
                     self._logger,
                     level=logging.ERROR,
-                    event="telegram.api.voice_error",
+                    event="[TelegramClient][send_voice][BLOCK_SEND_VOICE_MESSAGE]",
                     message=f"Telegram voice send error: {description}",
                     error_code=error_code,
                     description=description,
                 )
                 raise TelegramAPIError(description, error_code)
-            
+
             return result.get("result", {})
-            
+
         except httpx.TimeoutException as exc:
             raise TelegramAPIError(f"Voice send timeout: {exc}") from exc
         except httpx.ConnectError as exc:
             raise TelegramAPIError(f"Voice send connection error: {exc}") from exc
+        # END_BLOCK_SEND_VOICE_MESSAGE
+
+__all__ = [
+    "LOGGER",
+    "RetryConfig",
+    "TelegramAPIError",
+    "TelegramBotClient",
+]

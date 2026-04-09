@@ -1,3 +1,24 @@
+# FILE: telegram_bot/handlers/dispatcher.py
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Route incoming Telegram updates to appropriate command handlers.
+#   SCOPE: Update dispatcher with command routing and user allowlist
+#   DEPENDS: M-TELEGRAM
+#   LINKS: M-TELEGRAM
+#   ROLE: RUNTIME
+#   MAP_MODE: EXPORTS
+# END_MODULE_CONTRACT
+#
+# START_MODULE_MAP
+#   LOGGER - Module logger for Telegram dispatcher events
+#   MessageSender - Protocol for Telegram text and voice delivery
+#   CommandDispatcher - Route Telegram updates to command handlers
+# END_MODULE_MAP
+#
+# START_CHANGE_SUMMARY
+#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+# END_CHANGE_SUMMARY
+
 """
 Command dispatcher for Telegram bot with observability.
 
@@ -52,13 +73,34 @@ if TYPE_CHECKING:
 LOGGER = get_logger(__name__)
 
 
+# START_CONTRACT: MessageSender
+#   PURPOSE: Define the message delivery interface required by the Telegram command dispatcher.
+#   INPUTS: {}
+#   OUTPUTS: { MessageSender - protocol for Telegram text and voice delivery }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: MessageSender
 class MessageSender(Protocol):
     """Protocol for sending messages to Telegram."""
 
+    # START_CONTRACT: send_text
+    #   PURPOSE: Send a Telegram text message through the dispatcher's delivery interface.
+    #   INPUTS: { chat_id: int - target Telegram chat identifier, text: str - message body }
+    #   OUTPUTS: { Any - transport-specific send result }
+    #   SIDE_EFFECTS: Sends a Telegram API message in concrete implementations.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: send_text
     async def send_text(self, chat_id: int, text: str) -> Any:
         """Send text message to chat."""
         ...
 
+    # START_CONTRACT: send_voice
+    #   PURPOSE: Send a Telegram voice message through the dispatcher's delivery interface.
+    #   INPUTS: { chat_id: int - target Telegram chat identifier, audio_bytes: bytes - voice payload bytes, caption: str | None - optional caption }
+    #   OUTPUTS: { Any - transport-specific send result }
+    #   SIDE_EFFECTS: Sends a Telegram voice message in concrete implementations.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: send_voice
     async def send_voice(
         self, chat_id: int, audio_bytes: bytes, caption: str | None = None
     ) -> Any:
@@ -66,6 +108,13 @@ class MessageSender(Protocol):
         ...
 
 
+# START_CONTRACT: CommandDispatcher
+#   PURPOSE: Route Telegram updates to command handlers and coordinate bot responses.
+#   INPUTS: { synthesizer: TTSSynthesizer - synthesis service, settings: TelegramSettings - Telegram configuration, sender: MessageSender - delivery service, logger: logging.Logger | None - optional logger, job_orchestrator: Any - optional job orchestration service, delivery_store: Any - optional delivery metadata store, client: TelegramClient | None - optional Telegram media client, rate_limiter: TelegramRateLimiter | None - optional per-user throttler }
+#   OUTPUTS: { CommandDispatcher - configured update dispatcher }
+#   SIDE_EFFECTS: Sends Telegram replies, records metrics, and may submit background jobs.
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: CommandDispatcher
 class CommandDispatcher:
     """
     Command dispatcher that routes Telegram commands to handlers.
@@ -205,6 +254,13 @@ class CommandDispatcher:
         speakers = ", ".join(get_valid_speakers())
         return self.HELP_MESSAGE.format(speakers=speakers)
 
+    # START_CONTRACT: handle_update
+    #   PURPOSE: Validate and route a Telegram update to the correct command handler.
+    #   INPUTS: { text: str - incoming message text, user_id: int - Telegram user identifier, chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, chat_type: str - Telegram chat type, reply_to_message: dict[str, Any] | None - optional replied message payload }
+    #   OUTPUTS: { None - no return value }
+    #   SIDE_EFFECTS: Emits logs and metrics, sends Telegram responses, and may start synthesis or job workflows.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: handle_update
     async def handle_update(
         self,
         text: str,
@@ -225,24 +281,26 @@ class CommandDispatcher:
             chat_type: Telegram chat type
             reply_to_message: Optional replied Telegram message payload
         """
-        # Log incoming update
+        # START_BLOCK_LOG_INCOMING_UPDATE
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.update.received",
+            event="[Dispatcher][handle_update][BLOCK_LOG_INCOMING_UPDATE]",
             message="Received Telegram update",
             user_id=user_id,
             chat_id=chat_id,
             chat_type=chat_type,
             message_length=len(text) if text else 0,
         )
+        # END_BLOCK_LOG_INCOMING_UPDATE
 
+        # START_BLOCK_VALIDATE_USER
         # Check if private chat
         if not is_private_chat(chat_type):
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.update.ignored",
+                event="[Dispatcher][handle_update][BLOCK_VALIDATE_USER]",
                 message="Ignoring non-private chat message",
                 user_id=user_id,
                 chat_id=chat_id,
@@ -256,7 +314,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.update.denied",
+                event="[Dispatcher][handle_update][BLOCK_VALIDATE_USER]",
                 message="User not in allowlist",
                 user_id=user_id,
                 chat_id=chat_id,
@@ -267,8 +325,9 @@ class CommandDispatcher:
                 "⛔ *Access Denied*\n\nYou are not authorized to use this bot.",
             )
             return
+        # END_BLOCK_VALIDATE_USER
 
-        # Parse command
+        # START_BLOCK_PARSE_COMMAND
         parsed = parse_command(
             text,
             user_id,
@@ -279,7 +338,9 @@ class CommandDispatcher:
         if parsed is None:
             # Not a command, ignore
             return
+        # END_BLOCK_PARSE_COMMAND
 
+        # START_BLOCK_APPLY_RATE_LIMIT
         # Track command received
         command_name = parsed.command.value
         self._metrics.command_received(command_name)
@@ -293,7 +354,7 @@ class CommandDispatcher:
                 log_telegram_event(
                     self._logger,
                     level=logging.WARNING,
-                    event="telegram.update.rate_limited",
+                    event="[Dispatcher][handle_update][BLOCK_APPLY_RATE_LIMIT]",
                     message="User exceeded Telegram command rate limit",
                     user_id=user_id,
                     chat_id=chat_id,
@@ -310,12 +371,16 @@ class CommandDispatcher:
                     ),
                 )
                 return
+        # END_BLOCK_APPLY_RATE_LIMIT
 
+        # START_BLOCK_ROUTE_COMMAND
         # Route to appropriate handler
         await self._route_command(parsed)
+        # END_BLOCK_ROUTE_COMMAND
 
     async def _route_command(self, parsed: ParsedCommand) -> None:
         """Route parsed command to handler."""
+        # START_BLOCK_BUILD_HANDLER_MAP
         handlers: dict[CommandType, Callable[[ParsedCommand], Awaitable[None]]] = {
             CommandType.START: self._handle_start,
             CommandType.HELP: self._handle_help,
@@ -324,20 +389,23 @@ class CommandDispatcher:
             CommandType.CLONE: self._handle_clone,
             CommandType.UNKNOWN: self._handle_unknown,
         }
+        # END_BLOCK_BUILD_HANDLER_MAP
 
+        # START_BLOCK_ROUTE_COMMAND_DISPATCH
         handler = handlers.get(parsed.command, self._handle_unknown)
 
         # Track command accepted
         self._metrics.command_accepted(parsed.command.value)
 
         await handler(parsed)
+        # END_BLOCK_ROUTE_COMMAND_DISPATCH
 
     async def _handle_start(self, parsed: ParsedCommand) -> None:
         """Handle /start command."""
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.start",
+            event="[Dispatcher][_handle_start][_handle_start]",
             message="Handling /start command",
             user_id=parsed.user_id,
             chat_id=parsed.chat_id,
@@ -350,7 +418,7 @@ class CommandDispatcher:
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.help",
+            event="[Dispatcher][_handle_help][_handle_help]",
             message="Handling /help command",
             user_id=parsed.user_id,
             chat_id=parsed.chat_id,
@@ -360,18 +428,21 @@ class CommandDispatcher:
 
     async def _handle_tts(self, parsed: ParsedCommand) -> None:
         """Handle /tts command with async UX."""
+        # START_BLOCK_LOG_TTS_COMMAND
         command_name = parsed.command.value
 
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.tts.received",
+            event="[Dispatcher][_handle_tts][BLOCK_LOG_TTS_COMMAND]",
             message="TTS command received",
             user_id=parsed.user_id,
             chat_id=parsed.chat_id,
             text_length=len(parsed.args),
         )
+        # END_BLOCK_LOG_TTS_COMMAND
 
+        # START_BLOCK_VALIDATE_TTS_COMMAND
         # Validate command syntax first
         validation = validate_tts_command(
             parsed, self._settings.telegram_max_text_length
@@ -380,7 +451,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.command.tts.rejected",
+                event="[Dispatcher][_handle_tts][BLOCK_VALIDATE_TTS_COMMAND]",
                 message="TTS command rejected due to validation failure",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -395,7 +466,9 @@ class CommandDispatcher:
                 self.ERROR_TEMPLATE.format(error=validation.error_message),
             )
             return
+        # END_BLOCK_VALIDATE_TTS_COMMAND
 
+        # START_BLOCK_PARSE_TTS_COMMAND
         # Parse TTS arguments for speaker and speed
         tts_args = parse_tts_args(parsed.args)
         if tts_args is None:
@@ -403,7 +476,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.command.tts.rejected",
+                event="[Dispatcher][_handle_tts][BLOCK_PARSE_TTS_COMMAND]",
                 message="TTS command rejected due to parsing failure",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -419,7 +492,9 @@ class CommandDispatcher:
                 ),
             )
             return
+        # END_BLOCK_PARSE_TTS_COMMAND
 
+        # START_BLOCK_ACKNOWLEDGE_TTS_COMMAND
         # Track command accepted
         self._metrics.command_accepted(command_name)
 
@@ -436,7 +511,9 @@ class CommandDispatcher:
                 language=tts_args.language,
             ),
         )
+        # END_BLOCK_ACKNOWLEDGE_TTS_COMMAND
 
+        # START_BLOCK_ROUTE_TTS_EXECUTION
         # Stage 2: Use job model if available
         if self._use_job_model:
             await self._handle_tts_via_job(
@@ -447,6 +524,7 @@ class CommandDispatcher:
                 effective_speed,
                 tts_args.language,
             )
+        # END_BLOCK_ROUTE_TTS_EXECUTION
         else:
             # Fallback to direct synthesis
             await self._process_tts_async(
@@ -482,7 +560,7 @@ class CommandDispatcher:
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.tts.queued",
+            event="[Dispatcher][_handle_tts_via_job][_handle_tts_via_job]",
             message="TTS request queued for processing via job model",
             chat_id=chat_id,
             message_id=message_id,
@@ -509,7 +587,7 @@ class CommandDispatcher:
                 log_telegram_event(
                     self._logger,
                     level=logging.INFO,
-                    event="telegram.job.duplicate",
+                    event="[Dispatcher][_handle_tts_via_job][_handle_tts_via_job]",
                     message="Duplicate job submission detected, reusing existing job",
                     chat_id=chat_id,
                     message_id=message_id,
@@ -529,7 +607,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.job.submit_failed",
+                event="[Dispatcher][_handle_tts_via_job][_handle_tts_via_job]",
                 message="Job submission failed",
                 chat_id=chat_id,
                 message_id=message_id,
@@ -555,7 +633,7 @@ class CommandDispatcher:
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.tts.processing",
+            event="[Dispatcher][_process_tts_async][_process_tts_async]",
             message="Starting TTS synthesis",
             chat_id=chat_id,
             text_length=len(text),
@@ -575,7 +653,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.tts.synthesis_completed",
+                event="[Dispatcher][_process_tts_async][_process_tts_async]",
                 message="TTS synthesis completed",
                 chat_id=chat_id,
                 duration_ms=result.duration_ms,
@@ -619,7 +697,7 @@ class CommandDispatcher:
                 log_telegram_event(
                     self._logger,
                     level=logging.INFO,
-                    event="telegram.voice.send_completed",
+                    event="[Dispatcher][_process_tts_async][_process_tts_async]",
                     message="Voice message sent successfully",
                     chat_id=chat_id,
                     attempts=delivery_result.attempts,
@@ -629,7 +707,7 @@ class CommandDispatcher:
                 log_telegram_event(
                     self._logger,
                     level=logging.ERROR,
-                    event="telegram.voice.send_failed",
+                    event="[Dispatcher][_process_tts_async][_process_tts_async]",
                     message="Voice message delivery failed",
                     chat_id=chat_id,
                     error=delivery_result.error_message,
@@ -640,7 +718,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.tts.synthesis_failed",
+                event="[Dispatcher][_process_tts_async][_process_tts_async]",
                 message="TTS synthesis failed",
                 chat_id=chat_id,
                 error=result.error_message,
@@ -667,18 +745,21 @@ class CommandDispatcher:
             MAX_VOICE_DESCRIPTION_LENGTH,
         )
 
+        # START_BLOCK_LOG_DESIGN_COMMAND
         command_name = parsed.command.value
 
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.design.received",
+            event="[Dispatcher][_handle_design][BLOCK_LOG_DESIGN_COMMAND]",
             message="Voice Design command received",
             user_id=parsed.user_id,
             chat_id=parsed.chat_id,
             text_length=len(parsed.args),
         )
+        # END_BLOCK_LOG_DESIGN_COMMAND
 
+        # START_BLOCK_VALIDATE_DESIGN_COMMAND
         # Validate command syntax
         validation = validate_design_command(
             parsed,
@@ -689,7 +770,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.command.design.rejected",
+                event="[Dispatcher][_handle_design][BLOCK_VALIDATE_DESIGN_COMMAND]",
                 message="Design command rejected due to validation failure",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -704,14 +785,16 @@ class CommandDispatcher:
                 self.ERROR_TEMPLATE.format(error=validation.error_message),
             )
             return
+        # END_BLOCK_VALIDATE_DESIGN_COMMAND
 
+        # START_BLOCK_PARSE_DESIGN_COMMAND
         # Parse design arguments
         design_args = parse_design_args(parsed.args)
         if design_args is None:
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.command.design.rejected",
+                event="[Dispatcher][_handle_design][BLOCK_PARSE_DESIGN_COMMAND]",
                 message="Design command rejected due to parsing failure",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -727,7 +810,9 @@ class CommandDispatcher:
                 ),
             )
             return
+        # END_BLOCK_PARSE_DESIGN_COMMAND
 
+        # START_BLOCK_ACKNOWLEDGE_DESIGN_COMMAND
         # Track command accepted
         self._metrics.command_accepted(command_name)
 
@@ -744,7 +829,9 @@ class CommandDispatcher:
                 language=design_args.language,
             ),
         )
+        # END_BLOCK_ACKNOWLEDGE_DESIGN_COMMAND
 
+        # START_BLOCK_ROUTE_DESIGN_EXECUTION
         # Stage 3: Use job model for design
         if self._use_job_model:
             await self._handle_design_via_job(
@@ -754,6 +841,7 @@ class CommandDispatcher:
                 design_args.text,
                 design_args.language,
             )
+        # END_BLOCK_ROUTE_DESIGN_EXECUTION
         else:
             # Fallback to direct synthesis
             await self._process_design_async(
@@ -787,7 +875,7 @@ class CommandDispatcher:
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.design.queued",
+            event="[Dispatcher][_handle_design_via_job][_handle_design_via_job]",
             message="Voice Design request queued for processing via job model",
             chat_id=chat_id,
             message_id=message_id,
@@ -811,7 +899,7 @@ class CommandDispatcher:
                 log_telegram_event(
                     self._logger,
                     level=logging.INFO,
-                    event="telegram.job.duplicate",
+                    event="[Dispatcher][_handle_design_via_job][_handle_design_via_job]",
                     message="Duplicate design job submission detected, reusing existing job",
                     chat_id=chat_id,
                     message_id=message_id,
@@ -829,7 +917,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.job.submit_failed",
+                event="[Dispatcher][_handle_design_via_job][_handle_design_via_job]",
                 message="Design job submission failed",
                 chat_id=chat_id,
                 message_id=message_id,
@@ -853,7 +941,7 @@ class CommandDispatcher:
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.design.processing",
+            event="[Dispatcher][_process_design_async][_process_design_async]",
             message="Starting Voice Design synthesis",
             chat_id=chat_id,
             voice_description_length=len(voice_description),
@@ -871,7 +959,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.design.synthesis_completed",
+                event="[Dispatcher][_process_design_async][_process_design_async]",
                 message="Voice Design synthesis completed",
                 chat_id=chat_id,
                 duration_ms=result.duration_ms,
@@ -909,7 +997,7 @@ class CommandDispatcher:
                 log_telegram_event(
                     self._logger,
                     level=logging.INFO,
-                    event="telegram.voice.send_completed",
+                    event="[Dispatcher][_process_design_async][_process_design_async]",
                     message="Voice message sent successfully",
                     chat_id=chat_id,
                     attempts=delivery_result.attempts,
@@ -919,7 +1007,7 @@ class CommandDispatcher:
                 log_telegram_event(
                     self._logger,
                     level=logging.ERROR,
-                    event="telegram.voice.send_failed",
+                    event="[Dispatcher][_process_design_async][_process_design_async]",
                     message="Voice message delivery failed",
                     chat_id=chat_id,
                     error=delivery_result.error_message,
@@ -930,7 +1018,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.design.synthesis_failed",
+                event="[Dispatcher][_process_design_async][_process_design_async]",
                 message="Voice Design synthesis failed",
                 chat_id=chat_id,
                 error=result.error_message,
@@ -954,18 +1042,21 @@ class CommandDispatcher:
         Creates a job for voice cloning synthesis and delivery metadata.
         Job completion and delivery is handled by TelegramJobPoller.
         """
+        # START_BLOCK_LOG_CLONE_COMMAND
         command_name = parsed.command.value
 
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.clone.received",
+            event="[Dispatcher][_handle_clone][BLOCK_LOG_CLONE_COMMAND]",
             message="Voice Clone command received",
             user_id=parsed.user_id,
             chat_id=parsed.chat_id,
             text_length=len(parsed.args),
         )
+        # END_BLOCK_LOG_CLONE_COMMAND
 
+        # START_BLOCK_VALIDATE_CLONE_COMMAND
         # Validate command syntax
         validation = validate_clone_command(
             parsed,
@@ -975,7 +1066,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.command.clone.rejected",
+                event="[Dispatcher][_handle_clone][BLOCK_VALIDATE_CLONE_COMMAND]",
                 message="Clone command rejected due to validation failure",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -990,14 +1081,16 @@ class CommandDispatcher:
                 self.ERROR_TEMPLATE.format(error=validation.error_message),
             )
             return
+        # END_BLOCK_VALIDATE_CLONE_COMMAND
 
+        # START_BLOCK_PARSE_CLONE_COMMAND
         # Parse clone arguments
         clone_args = parse_clone_args(parsed.args)
         if clone_args is None:
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.command.clone.rejected",
+                event="[Dispatcher][_handle_clone][BLOCK_PARSE_CLONE_COMMAND]",
                 message="Clone command rejected due to parsing failure",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -1013,13 +1106,15 @@ class CommandDispatcher:
                 ),
             )
             return
+        # END_BLOCK_PARSE_CLONE_COMMAND
 
+        # START_BLOCK_VALIDATE_CLONE_RUNTIME
         if not self._use_job_model:
             # Clone is only supported via job model
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.command.clone.no_job_model",
+                event="[Dispatcher][_handle_clone][BLOCK_VALIDATE_CLONE_RUNTIME]",
                 message="Clone command requires job model but none is configured",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -1056,7 +1151,9 @@ class CommandDispatcher:
                 ),
             )
             return
+        # END_BLOCK_VALIDATE_CLONE_RUNTIME
 
+        # START_BLOCK_SUBMIT_TTS_JOB
         command_message_id = parsed.message_id
         reply_message_id = reply_message.get("message_id") or parsed.message_id
         media_kinds = [
@@ -1067,7 +1164,7 @@ class CommandDispatcher:
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.clone.media_stage_started",
+            event="[Dispatcher][_handle_clone][BLOCK_SUBMIT_TTS_JOB]",
             message="Starting clone reference media staging",
             user_id=parsed.user_id,
             chat_id=parsed.chat_id,
@@ -1087,7 +1184,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.command.clone.media_stage_completed",
+                event="[Dispatcher][_handle_clone][BLOCK_SUBMIT_TTS_JOB]",
                 message="Clone reference media staged successfully",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -1104,7 +1201,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.WARNING,
-                event="telegram.command.clone.media_stage_failed",
+                event="[Dispatcher][_handle_clone][BLOCK_SUBMIT_TTS_JOB]",
                 message="Clone reference media validation failed",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -1126,7 +1223,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.command.clone.media_stage_failed",
+                event="[Dispatcher][_handle_clone][BLOCK_SUBMIT_TTS_JOB]",
                 message="Clone reference media download failed",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -1148,7 +1245,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.command.clone.media_stage_failed",
+                event="[Dispatcher][_handle_clone][BLOCK_SUBMIT_TTS_JOB]",
                 message="Clone reference media staging failed unexpectedly",
                 user_id=parsed.user_id,
                 chat_id=parsed.chat_id,
@@ -1165,7 +1262,9 @@ class CommandDispatcher:
                 ),
             )
             return
+        # END_BLOCK_SUBMIT_TTS_JOB
 
+        # START_BLOCK_DELIVER_RESULT
         # Track command accepted
         self._metrics.command_accepted(command_name)
 
@@ -1183,6 +1282,7 @@ class CommandDispatcher:
             clone_args.language,
             ref_audio_path,
         )
+        # END_BLOCK_DELIVER_RESULT
 
     async def _handle_clone_via_job(
         self,
@@ -1209,7 +1309,7 @@ class CommandDispatcher:
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.clone.queued",
+            event="[Dispatcher][_handle_clone_via_job][_handle_clone_via_job]",
             message="Voice Clone request queued for processing via job model",
             chat_id=chat_id,
             message_id=message_id,
@@ -1240,7 +1340,7 @@ class CommandDispatcher:
                 log_telegram_event(
                     self._logger,
                     level=logging.INFO,
-                    event="telegram.job.clone.duplicate",
+                    event="[Dispatcher][_handle_clone_via_job][_handle_clone_via_job]",
                     message="Duplicate clone job submission detected, re-queuing delivery for existing job",
                     chat_id=chat_id,
                     message_id=message_id,
@@ -1259,7 +1359,7 @@ class CommandDispatcher:
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.job.clone.submit_failed",
+                event="[Dispatcher][_handle_clone_via_job][_handle_clone_via_job]",
                 message="Clone job submission failed",
                 chat_id=chat_id,
                 message_id=message_id,
@@ -1277,7 +1377,7 @@ class CommandDispatcher:
         log_telegram_event(
             self._logger,
             level=logging.INFO,
-            event="telegram.command.unknown",
+            event="[Dispatcher][_handle_unknown][_handle_unknown]",
             message="Handling unknown command",
             user_id=parsed.user_id,
             chat_id=parsed.chat_id,
@@ -1291,7 +1391,20 @@ class CommandDispatcher:
             "🤔 *Unknown command*\n\nUse /help to see available commands.",
         )
 
+    # START_CONTRACT: _metrics
+    #   PURPOSE: Expose the shared Telegram metrics collector used by the dispatcher.
+    #   INPUTS: {}
+    #   OUTPUTS: { TelegramMetrics - shared Telegram metrics singleton }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: _metrics
     @property
     def _metrics(self):
         """Access metrics singleton."""
         return METRICS
+
+__all__ = [
+    "LOGGER",
+    "MessageSender",
+    "CommandDispatcher",
+]

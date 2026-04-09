@@ -1,3 +1,18 @@
+# FILE: telegram_bot/__init__.py
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Telegram bot package marker.
+#   SCOPE: package init
+#   DEPENDS: none
+#   LINKS: M-TELEGRAM
+#   ROLE: BARREL
+#   MAP_MODE: NONE
+# END_MODULE_CONTRACT
+#
+# START_CHANGE_SUMMARY
+#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+# END_CHANGE_SUMMARY
+
 """
 Telegram Bot Transport Adapter for Qwen3-TTS.
 

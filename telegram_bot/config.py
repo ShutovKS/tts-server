@@ -1,3 +1,31 @@
+# FILE: telegram_bot/config.py
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Define Telegram-specific configuration parsed from environment variables.
+#   SCOPE: TelegramSettings dataclass, environment parsing
+#   DEPENDS: M-CONFIG
+#   LINKS: M-TELEGRAM
+#   ROLE: CONFIG
+#   MAP_MODE: EXPORTS
+# END_MODULE_CONTRACT
+#
+# START_MODULE_MAP
+#   DEFAULT_TELEGRAM_LOG_LEVEL - Default Telegram log verbosity
+#   DEFAULT_TELEGRAM_DEFAULT_SPEAKER - Default Telegram speaker name
+#   DEFAULT_TELEGRAM_MAX_TEXT_LENGTH - Default Telegram command text limit
+#   DEFAULT_TELEGRAM_DEV_MODE - Default Telegram development mode flag
+#   DEFAULT_TELEGRAM_RATE_LIMIT_ENABLED - Default Telegram rate limiting toggle
+#   DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE - Default Telegram per-user rate limit
+#   DEFAULT_TELEGRAM_POLL_INTERVAL_SECONDS - Default Telegram job polling interval
+#   DEFAULT_TELEGRAM_MAX_RETRIES - Default Telegram API retry count
+#   TelegramSecurityPolicy - Telegram-specific security and admission policy
+#   TelegramSettings - Telegram-specific configuration
+# END_MODULE_MAP
+#
+# START_CHANGE_SUMMARY
+#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+# END_CHANGE_SUMMARY
+
 """
 Telegram bot configuration settings.
 
@@ -47,6 +75,13 @@ DEFAULT_TELEGRAM_POLL_INTERVAL_SECONDS = 1.0
 DEFAULT_TELEGRAM_MAX_RETRIES = 3
 
 
+# START_CONTRACT: TelegramSecurityPolicy
+#   PURPOSE: Represent Telegram-specific admission and security policy decisions.
+#   INPUTS: { rate_limit_enabled: bool - enables per-user throttling, rate_limit_per_user_per_minute: int - request limit, dev_mode: bool - relaxed development mode flag, admin_user_ids: tuple[str, ...] - privileged Telegram users, require_token_validation: bool - token validation toggle, token_min_length: int - minimum token size, allowlist_strict_mode: bool - empty allowlist policy }
+#   OUTPUTS: { TelegramSecurityPolicy - immutable security policy configuration }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: TelegramSecurityPolicy
 @dataclass(frozen=True)
 class TelegramSecurityPolicy:
     """Security policy configuration for Telegram bot.
@@ -74,10 +109,24 @@ class TelegramSecurityPolicy:
     # Allowlist enforcement
     allowlist_strict_mode: bool = True  # If true, empty allowlist = only admins allowed
 
+    # START_CONTRACT: is_admin
+    #   PURPOSE: Check whether a Telegram user is configured as an administrator.
+    #   INPUTS: { user_id: int | str - Telegram user identifier }
+    #   OUTPUTS: { bool - True when the user has admin access }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: is_admin
     def is_admin(self, user_id: int | str) -> bool:
         """Check if user is an admin."""
         return str(user_id) in self.admin_user_ids
 
+    # START_CONTRACT: should_enforce_rate_limit
+    #   PURPOSE: Decide whether rate limiting applies to a specific Telegram user.
+    #   INPUTS: { user_id: int | str - Telegram user identifier }
+    #   OUTPUTS: { bool - True when the user should be throttled }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: should_enforce_rate_limit
     def should_enforce_rate_limit(self, user_id: int | str) -> bool:
         """Check if rate limiting should be enforced for user."""
         if not self.rate_limit_enabled:
@@ -87,11 +136,25 @@ class TelegramSecurityPolicy:
             return False
         return True
 
+    # START_CONTRACT: allow_empty_allowlist
+    #   PURPOSE: Report whether an empty Telegram allowlist is permitted under current policy.
+    #   INPUTS: {}
+    #   OUTPUTS: { bool - True when empty allowlists are accepted }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: allow_empty_allowlist
     def allow_empty_allowlist(self) -> bool:
         """Check if empty allowlist should allow all users."""
         return not self.allowlist_strict_mode or self.dev_mode
 
 
+# START_CONTRACT: TelegramSettings
+#   PURPOSE: Extend shared core settings with Telegram transport configuration values.
+#   INPUTS: { telegram_bot_token: str - bot API token, telegram_allowed_user_ids: tuple[str, ...] - user allowlist, telegram_log_level: str - logging level, telegram_default_speaker: str - fallback voice, telegram_max_text_length: int - message length limit, telegram_dev_mode: bool - development mode flag, telegram_rate_limit_enabled: bool - throttling toggle, telegram_rate_limit_per_user_per_minute: int - user quota, telegram_admin_user_ids: tuple[str, ...] - admin allowlist, telegram_delivery_store_path: str - delivery metadata path, telegram_poll_interval_seconds: float - job polling cadence, telegram_max_retries: int - retry cap }
+#   OUTPUTS: { TelegramSettings - immutable Telegram runtime settings }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: TelegramSettings
 @dataclass(frozen=True)
 class TelegramSettings(CoreSettings):
     """Telegram bot settings extending core settings."""
@@ -116,6 +179,13 @@ class TelegramSettings(CoreSettings):
     telegram_poll_interval_seconds: float = DEFAULT_TELEGRAM_POLL_INTERVAL_SECONDS
     telegram_max_retries: int = DEFAULT_TELEGRAM_MAX_RETRIES
 
+    # START_CONTRACT: security_policy
+    #   PURPOSE: Build a Telegram security policy view from the current settings.
+    #   INPUTS: {}
+    #   OUTPUTS: { TelegramSecurityPolicy - derived policy object for admission checks }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: security_policy
     @property
     def security_policy(self) -> TelegramSecurityPolicy:
         """Get security policy from current settings."""
@@ -127,6 +197,13 @@ class TelegramSettings(CoreSettings):
             allowlist_strict_mode=True,
         )
 
+    # START_CONTRACT: from_env
+    #   PURPOSE: Parse Telegram settings from environment variables and shared core defaults.
+    #   INPUTS: { environ: Mapping[str, str] | None - optional environment mapping override }
+    #   OUTPUTS: { TelegramSettings - parsed Telegram configuration }
+    #   SIDE_EFFECTS: Reads process environment variables when no mapping is provided.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: from_env
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "TelegramSettings":
         """Parse Telegram settings from environment variables.
@@ -192,6 +269,13 @@ class TelegramSettings(CoreSettings):
             ),
         )
 
+    # START_CONTRACT: is_user_allowed
+    #   PURPOSE: Determine whether a Telegram user may access the bot.
+    #   INPUTS: { user_id: int | str - Telegram user identifier }
+    #   OUTPUTS: { bool - True when the user passes allowlist checks }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: is_user_allowed
     def is_user_allowed(self, user_id: int | str) -> bool:
         """Check if user is in the allowlist. Empty allowlist means all users allowed."""
         # Admins are always allowed
@@ -202,14 +286,35 @@ class TelegramSettings(CoreSettings):
             return True
         return str(user_id) in self.telegram_allowed_user_ids
 
+    # START_CONTRACT: is_admin_user
+    #   PURPOSE: Check whether a Telegram user has administrator privileges.
+    #   INPUTS: { user_id: int | str - Telegram user identifier }
+    #   OUTPUTS: { bool - True when the user is an admin }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: is_admin_user
     def is_admin_user(self, user_id: int | str) -> bool:
         """Check if user is an admin."""
         return self.security_policy.is_admin(user_id)
 
+    # START_CONTRACT: should_enforce_rate_limit
+    #   PURPOSE: Delegate Telegram user throttling policy to the derived security policy.
+    #   INPUTS: { user_id: int | str - Telegram user identifier }
+    #   OUTPUTS: { bool - True when rate limiting should be applied }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: should_enforce_rate_limit
     def should_enforce_rate_limit(self, user_id: int | str) -> bool:
         """Check if rate limiting should be enforced for user."""
         return self.security_policy.should_enforce_rate_limit(user_id)
 
+    # START_CONTRACT: validate
+    #   PURPOSE: Validate Telegram configuration values and report any blocking issues.
+    #   INPUTS: {}
+    #   OUTPUTS: { list[str] - validation error messages, empty when valid }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: validate
     def validate(self) -> list[str]:
         """Validate settings and return list of errors. Empty list means valid."""
         errors = []
@@ -246,3 +351,16 @@ class TelegramSettings(CoreSettings):
         # In production, users should set proper allowlist or admin users
 
         return errors
+
+__all__ = [
+    "DEFAULT_TELEGRAM_LOG_LEVEL",
+    "DEFAULT_TELEGRAM_DEFAULT_SPEAKER",
+    "DEFAULT_TELEGRAM_MAX_TEXT_LENGTH",
+    "DEFAULT_TELEGRAM_DEV_MODE",
+    "DEFAULT_TELEGRAM_RATE_LIMIT_ENABLED",
+    "DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE",
+    "DEFAULT_TELEGRAM_POLL_INTERVAL_SECONDS",
+    "DEFAULT_TELEGRAM_MAX_RETRIES",
+    "TelegramSecurityPolicy",
+    "TelegramSettings",
+]

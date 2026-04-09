@@ -1,3 +1,27 @@
+# FILE: telegram_bot/handlers/tts_handler.py
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Implement /tts, /design, and /clone command handlers.
+#   SCOPE: TTS command parsing, validation, job submission, result delivery
+#   DEPENDS: M-APPLICATION, M-CONTRACTS, M-ERRORS
+#   LINKS: M-TELEGRAM
+#   ROLE: RUNTIME
+#   MAP_MODE: EXPORTS
+# END_MODULE_CONTRACT
+#
+# START_MODULE_MAP
+#   LOGGER - Module logger for Telegram synthesis handler events
+#   DEFAULT_SPEED - Default speed multiplier for Telegram TTS
+#   TTSSynthesisResult - Outcome payload for Telegram custom-voice synthesis
+#   VoiceDesignSynthesisResult - Outcome payload for Telegram voice design synthesis
+#   VoiceCloneSynthesisResult - Outcome payload for Telegram voice clone synthesis
+#   TTSSynthesizer - Telegram adapter for shared TTS application service
+# END_MODULE_MAP
+#
+# START_CHANGE_SUMMARY
+#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+# END_CHANGE_SUMMARY
+
 """
 TTS synthesis handler using core application service with observability.
 
@@ -38,6 +62,13 @@ LOGGER = get_logger(__name__)
 DEFAULT_SPEED = 1.0
 
 
+# START_CONTRACT: TTSSynthesisResult
+#   PURPOSE: Describe the outcome of a Telegram custom-voice synthesis request.
+#   INPUTS: { success: bool - synthesis result flag, audio_bytes: Optional[bytes] - synthesized audio payload, error_message: Optional[str] - failure detail, duration_ms: float - elapsed time, speaker: str - resolved speaker name, language: str - requested language code }
+#   OUTPUTS: { TTSSynthesisResult - immutable TTS synthesis outcome }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: TTSSynthesisResult
 @dataclass(frozen=True)
 class TTSSynthesisResult:
     """Result of TTS synthesis operation."""
@@ -50,6 +81,13 @@ class TTSSynthesisResult:
     language: str = "auto"
 
 
+# START_CONTRACT: VoiceDesignSynthesisResult
+#   PURPOSE: Describe the outcome of a Telegram voice-design synthesis request.
+#   INPUTS: { success: bool - synthesis result flag, audio_bytes: Optional[bytes] - synthesized audio payload, error_message: Optional[str] - failure detail, duration_ms: float - elapsed time, voice_description: str - supplied voice description, language: str - requested language code }
+#   OUTPUTS: { VoiceDesignSynthesisResult - immutable design synthesis outcome }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: VoiceDesignSynthesisResult
 @dataclass(frozen=True)
 class VoiceDesignSynthesisResult:
     """Result of Voice Design synthesis operation."""
@@ -62,6 +100,13 @@ class VoiceDesignSynthesisResult:
     language: str = "auto"
 
 
+# START_CONTRACT: VoiceCloneSynthesisResult
+#   PURPOSE: Describe the outcome of a Telegram voice-clone synthesis request.
+#   INPUTS: { success: bool - synthesis result flag, audio_bytes: Optional[bytes] - synthesized audio payload, error_message: Optional[str] - failure detail, duration_ms: float - elapsed time, ref_text: str | None - optional reference transcript, language: str - requested language code }
+#   OUTPUTS: { VoiceCloneSynthesisResult - immutable clone synthesis outcome }
+#   SIDE_EFFECTS: none
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: VoiceCloneSynthesisResult
 @dataclass(frozen=True)
 class VoiceCloneSynthesisResult:
     """Result of Voice Clone synthesis operation."""
@@ -74,6 +119,13 @@ class VoiceCloneSynthesisResult:
     language: str = "auto"
 
 
+# START_CONTRACT: TTSSynthesizer
+#   PURPOSE: Bridge Telegram commands to the shared TTS application service with async orchestration.
+#   INPUTS: { application_service: TTSApplicationService - core synthesis service, settings: TelegramSettings - Telegram runtime settings, logger: logging.Logger | None - optional logger, metrics: TelegramMetrics | None - optional metrics collector }
+#   OUTPUTS: { TTSSynthesizer - Telegram synthesis adapter }
+#   SIDE_EFFECTS: Executes synthesis work in a thread pool and emits logs and metrics.
+#   LINKS: M-TELEGRAM
+# END_CONTRACT: TTSSynthesizer
 class TTSSynthesizer:
     """
     TTS synthesizer that uses core application service.
@@ -103,6 +155,13 @@ class TTSSynthesizer:
         self._logger = logger or LOGGER
         self.__metrics = metrics or METRICS
 
+    # START_CONTRACT: synthesize
+    #   PURPOSE: Synthesize custom-voice speech for Telegram from text input.
+    #   INPUTS: { text: str - synthesis text, speaker: str | None - optional speaker override, speed: float | None - optional speed override, language: str - requested language code, correlation: Optional[TelegramCorrelationContext] - optional observability context }
+    #   OUTPUTS: { TTSSynthesisResult - custom-voice synthesis outcome }
+    #   SIDE_EFFECTS: Runs core synthesis work in an executor and emits metrics and logs.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: synthesize
     async def synthesize(
         self,
         text: str,
@@ -126,20 +185,25 @@ class TTSSynthesizer:
         Returns:
             TTSSynthesisResult with audio bytes or error
         """
+        # START_BLOCK_PREPARE_TTS_REQUEST
         timer = Timer()
         effective_speaker = speaker or self._settings.telegram_default_speaker
         effective_speed = speed if speed is not None else DEFAULT_SPEED
+        # END_BLOCK_PREPARE_TTS_REQUEST
 
+        # START_BLOCK_BIND_TTS_CORRELATION
         # Create correlation context if not provided
         if correlation:
             correlation.set_operation("tts.synthesis")
             correlation.bind()
+        # END_BLOCK_BIND_TTS_CORRELATION
 
         try:
+            # START_BLOCK_EXECUTE_TTS_SYNTHESIS
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.tts.started",
+                event="[TTSHandler][synthesize][BLOCK_EXECUTE_TTS_SYNTHESIS]",
                 message="Starting TTS synthesis",
                 text_length=len(text),
                 speaker=effective_speaker,
@@ -164,7 +228,7 @@ class TTSSynthesizer:
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.tts.completed",
+                event="[TTSHandler][synthesize][BLOCK_EXECUTE_TTS_SYNTHESIS]",
                 message="TTS synthesis completed",
                 text_length=len(text),
                 speaker=effective_speaker,
@@ -184,14 +248,16 @@ class TTSSynthesizer:
                 speaker=effective_speaker,
                 language=language,
             )
+            # END_BLOCK_EXECUTE_TTS_SYNTHESIS
 
         except CoreError as exc:
+            # START_BLOCK_HANDLE_TTS_CORE_ERROR
             duration_ms = timer.elapsed_ms
 
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.tts.core_error",
+                event="[TTSHandler][synthesize][BLOCK_HANDLE_TTS_CORE_ERROR]",
                 message=f"TTS synthesis failed: {exc}",
                 text_length=len(text),
                 speaker=effective_speaker,
@@ -210,14 +276,16 @@ class TTSSynthesizer:
                 speaker=effective_speaker,
                 language=language,
             )
+            # END_BLOCK_HANDLE_TTS_CORE_ERROR
 
         except Exception as exc:
+            # START_BLOCK_HANDLE_TTS_UNEXPECTED_ERROR
             duration_ms = timer.elapsed_ms
 
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.tts.failed",
+                event="[TTSHandler][synthesize][BLOCK_HANDLE_TTS_UNEXPECTED_ERROR]",
                 message=f"TTS synthesis failed unexpectedly: {exc}",
                 text_length=len(text),
                 speaker=effective_speaker,
@@ -236,10 +304,13 @@ class TTSSynthesizer:
                 speaker=effective_speaker,
                 language=language,
             )
+            # END_BLOCK_HANDLE_TTS_UNEXPECTED_ERROR
 
         finally:
+            # START_BLOCK_UNBIND_TTS_CORRELATION
             if correlation:
                 correlation.unbind()
+            # END_BLOCK_UNBIND_TTS_CORRELATION
 
     def _synthesize_sync(
         self,
@@ -266,6 +337,13 @@ class TTSSynthesizer:
         )
         return self._app.synthesize_custom(command)
 
+    # START_CONTRACT: synthesize_design
+    #   PURPOSE: Synthesize Telegram speech from a natural-language voice description.
+    #   INPUTS: { voice_description: str - voice design prompt, text: str - synthesis text, language: str - requested language code, correlation: Optional[TelegramCorrelationContext] - optional observability context }
+    #   OUTPUTS: { VoiceDesignSynthesisResult - voice-design synthesis outcome }
+    #   SIDE_EFFECTS: Runs core synthesis work in an executor and emits metrics and logs.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: synthesize_design
     async def synthesize_design(
         self,
         voice_description: str,
@@ -287,18 +365,23 @@ class TTSSynthesizer:
         Returns:
             VoiceDesignSynthesisResult with audio bytes or error
         """
+        # START_BLOCK_PREPARE_DESIGN_REQUEST
         timer = Timer()
+        # END_BLOCK_PREPARE_DESIGN_REQUEST
 
+        # START_BLOCK_BIND_DESIGN_CORRELATION
         # Create correlation context if not provided
         if correlation:
             correlation.set_operation("voice_design.synthesis")
             correlation.bind()
+        # END_BLOCK_BIND_DESIGN_CORRELATION
 
         try:
+            # START_BLOCK_EXECUTE_DESIGN_SYNTHESIS
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.voice_design.started",
+                event="[TTSHandler][synthesize_design][BLOCK_EXECUTE_DESIGN_SYNTHESIS]",
                 message="Starting Voice Design synthesis",
                 text_length=len(text),
                 voice_description_length=len(voice_description),
@@ -321,7 +404,7 @@ class TTSSynthesizer:
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.voice_design.completed",
+                event="[TTSHandler][synthesize_design][BLOCK_EXECUTE_DESIGN_SYNTHESIS]",
                 message="Voice Design synthesis completed",
                 text_length=len(text),
                 voice_description_length=len(voice_description),
@@ -340,14 +423,16 @@ class TTSSynthesizer:
                 voice_description=voice_description,
                 language=language,
             )
+            # END_BLOCK_EXECUTE_DESIGN_SYNTHESIS
 
         except CoreError as exc:
+            # START_BLOCK_HANDLE_DESIGN_CORE_ERROR
             duration_ms = timer.elapsed_ms
 
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.voice_design.core_error",
+                event="[TTSHandler][synthesize_design][BLOCK_HANDLE_DESIGN_CORE_ERROR]",
                 message=f"Voice Design synthesis failed: {exc}",
                 text_length=len(text),
                 voice_description_length=len(voice_description),
@@ -365,14 +450,16 @@ class TTSSynthesizer:
                 voice_description=voice_description,
                 language=language,
             )
+            # END_BLOCK_HANDLE_DESIGN_CORE_ERROR
 
         except Exception as exc:
+            # START_BLOCK_HANDLE_DESIGN_UNEXPECTED_ERROR
             duration_ms = timer.elapsed_ms
 
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.voice_design.failed",
+                event="[TTSHandler][synthesize_design][BLOCK_HANDLE_DESIGN_UNEXPECTED_ERROR]",
                 message=f"Voice Design synthesis failed unexpectedly: {exc}",
                 text_length=len(text),
                 voice_description_length=len(voice_description),
@@ -390,10 +477,13 @@ class TTSSynthesizer:
                 voice_description=voice_description,
                 language=language,
             )
+            # END_BLOCK_HANDLE_DESIGN_UNEXPECTED_ERROR
 
         finally:
+            # START_BLOCK_UNBIND_DESIGN_CORRELATION
             if correlation:
                 correlation.unbind()
+            # END_BLOCK_UNBIND_DESIGN_CORRELATION
 
     def _synthesize_design_sync(
         self,
@@ -414,6 +504,13 @@ class TTSSynthesizer:
         )
         return self._app.synthesize_design(command)
 
+    # START_CONTRACT: synthesize_clone
+    #   PURPOSE: Synthesize Telegram speech using cloned voice reference audio.
+    #   INPUTS: { text: str - synthesis text, ref_audio_path: str - path to staged reference audio, ref_text: str | None - optional reference transcript, language: str - requested language code, correlation: Optional[TelegramCorrelationContext] - optional observability context }
+    #   OUTPUTS: { VoiceCloneSynthesisResult - voice-clone synthesis outcome }
+    #   SIDE_EFFECTS: Runs core synthesis work in an executor and emits metrics and logs.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: synthesize_clone
     async def synthesize_clone(
         self,
         text: str,
@@ -437,18 +534,23 @@ class TTSSynthesizer:
         Returns:
             VoiceCloneSynthesisResult with audio bytes or error
         """
+        # START_BLOCK_PREPARE_CLONE_REQUEST
         timer = Timer()
+        # END_BLOCK_PREPARE_CLONE_REQUEST
 
+        # START_BLOCK_BIND_CLONE_CORRELATION
         # Create correlation context if not provided
         if correlation:
             correlation.set_operation("voice_clone.synthesis")
             correlation.bind()
+        # END_BLOCK_BIND_CLONE_CORRELATION
 
         try:
+            # START_BLOCK_EXECUTE_CLONE_SYNTHESIS
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.voice_clone.started",
+                event="[TTSHandler][synthesize_clone][BLOCK_EXECUTE_CLONE_SYNTHESIS]",
                 message="Starting Voice Clone synthesis",
                 text_length=len(text),
                 ref_audio_path=ref_audio_path,
@@ -473,7 +575,7 @@ class TTSSynthesizer:
             log_telegram_event(
                 self._logger,
                 level=logging.INFO,
-                event="telegram.voice_clone.completed",
+                event="[TTSHandler][synthesize_clone][BLOCK_EXECUTE_CLONE_SYNTHESIS]",
                 message="Voice Clone synthesis completed",
                 text_length=len(text),
                 audio_size_bytes=len(result.audio.bytes_data),
@@ -491,14 +593,16 @@ class TTSSynthesizer:
                 ref_text=ref_text,
                 language=language,
             )
+            # END_BLOCK_EXECUTE_CLONE_SYNTHESIS
 
         except CoreError as exc:
+            # START_BLOCK_HANDLE_CLONE_CORE_ERROR
             duration_ms = timer.elapsed_ms
 
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.voice_clone.core_error",
+                event="[TTSHandler][synthesize_clone][BLOCK_HANDLE_CLONE_CORE_ERROR]",
                 message=f"Voice Clone synthesis failed: {exc}",
                 text_length=len(text),
                 duration_ms=duration_ms,
@@ -515,14 +619,16 @@ class TTSSynthesizer:
                 ref_text=ref_text,
                 language=language,
             )
+            # END_BLOCK_HANDLE_CLONE_CORE_ERROR
 
         except Exception as exc:
+            # START_BLOCK_HANDLE_CLONE_UNEXPECTED_ERROR
             duration_ms = timer.elapsed_ms
 
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
-                event="telegram.voice_clone.failed",
+                event="[TTSHandler][synthesize_clone][BLOCK_HANDLE_CLONE_UNEXPECTED_ERROR]",
                 message=f"Voice Clone synthesis failed unexpectedly: {exc}",
                 text_length=len(text),
                 duration_ms=duration_ms,
@@ -539,10 +645,13 @@ class TTSSynthesizer:
                 ref_text=ref_text,
                 language=language,
             )
+            # END_BLOCK_HANDLE_CLONE_UNEXPECTED_ERROR
 
         finally:
+            # START_BLOCK_UNBIND_CLONE_CORRELATION
             if correlation:
                 correlation.unbind()
+            # END_BLOCK_UNBIND_CLONE_CORRELATION
 
     def _synthesize_clone_sync(
         self,
@@ -567,6 +676,13 @@ class TTSSynthesizer:
         )
         return self._app.synthesize_clone(command)
 
+    # START_CONTRACT: _metrics
+    #   PURPOSE: Expose the metrics collector used by the Telegram synthesis adapter.
+    #   INPUTS: {}
+    #   OUTPUTS: { TelegramMetrics - Telegram metrics collector }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: _metrics
     @property
     def _metrics(self):
         """Access metrics singleton."""
@@ -576,3 +692,12 @@ class TTSSynthesizer:
 if TYPE_CHECKING:
     from telegram_bot.config import TelegramSettings
     from telegram_bot.observability import TelegramMetrics
+
+__all__ = [
+    "LOGGER",
+    "DEFAULT_SPEED",
+    "TTSSynthesisResult",
+    "VoiceDesignSynthesisResult",
+    "VoiceCloneSynthesisResult",
+    "TTSSynthesizer",
+]
