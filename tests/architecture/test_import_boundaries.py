@@ -12,10 +12,11 @@
 # START_MODULE_MAP
 #   _collect_import_targets - Helper that parses Python files and collects import targets
 #   _matches_prefix - Helper that checks module-name prefix matches
-#   test_cli_has_no_server_imports - Verifies CLI code does not import server modules
+#   test_cli_has_no_other_adapter_imports - Verifies CLI code does not import other transport adapters
 #   test_core_has_no_adapter_imports - Verifies core runtime does not import transport adapters
 #   test_runtime_code_has_no_legacy_server_compatibility_imports - Verifies runtime code avoids removed legacy server modules
-#   test_server_adapter_depends_only_on_server_and_core_modules - Verifies server code does not import CLI modules
+#   test_server_adapter_depends_only_on_server_and_core_modules - Verifies server code does not import other transport adapters
+#   test_telegram_adapter_depends_only_on_telegram_and_core_modules - Verifies Telegram code does not import server or CLI modules
 #   test_server_app_is_thin_composition_root - Verifies server app remains a thin composition root
 #   test_job_execution_module_has_no_adapter_imports - Verifies job execution contracts avoid adapter imports
 #   test_job_execution_module_has_no_local_infra_implementation_imports - Verifies job execution abstractions avoid local infra dependencies
@@ -24,7 +25,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.1.0 - Extended adapter boundary checks to cover telegram_bot imports and runtime scans]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ LEGACY_SERVER_MODULES = {
     "server.services.tts_service",
     "server.infrastructure.audio_io",
 }
-ADAPTER_IMPORT_PREFIXES = ("server", "cli")
+ADAPTER_IMPORT_PREFIXES = ("server", "cli", "telegram_bot")
 FORBIDDEN_JOB_EXECUTION_IMPORT_TOKENS = (
     "collections",
     "contextlib",
@@ -76,14 +77,16 @@ def _matches_prefix(module_name: str, prefixes: tuple[str, ...]) -> bool:
     )
 
 
-def test_cli_has_no_server_imports():
+def test_cli_has_no_other_adapter_imports():
     imports_by_file = _collect_import_targets("cli")
     forbidden = {
         str(path): sorted(
-            name for name in imports if _matches_prefix(name, ("server",))
+            name
+            for name in imports
+            if _matches_prefix(name, ("server", "telegram_bot"))
         )
         for path, imports in imports_by_file.items()
-        if any(_matches_prefix(name, ("server",)) for name in imports)
+        if any(_matches_prefix(name, ("server", "telegram_bot")) for name in imports)
     }
     assert forbidden == {}
 
@@ -101,7 +104,7 @@ def test_core_has_no_adapter_imports():
 
 
 def test_runtime_code_has_no_legacy_server_compatibility_imports():
-    runtime_dirs = ("cli", "core", "server", "tests")
+    runtime_dirs = ("cli", "core", "server", "telegram_bot", "tests")
     forbidden: dict[str, list[str]] = {}
     for base_dir in runtime_dirs:
         for path, imports in _collect_import_targets(base_dir).items():
@@ -116,9 +119,23 @@ def test_runtime_code_has_no_legacy_server_compatibility_imports():
 def test_server_adapter_depends_only_on_server_and_core_modules():
     imports_by_file = _collect_import_targets("server")
     forbidden = {
-        str(path): sorted(name for name in imports if _matches_prefix(name, ("cli",)))
+        str(path): sorted(
+            name for name in imports if _matches_prefix(name, ("cli", "telegram_bot"))
+        )
         for path, imports in imports_by_file.items()
-        if any(_matches_prefix(name, ("cli",)) for name in imports)
+        if any(_matches_prefix(name, ("cli", "telegram_bot")) for name in imports)
+    }
+    assert forbidden == {}
+
+
+def test_telegram_adapter_depends_only_on_telegram_and_core_modules():
+    imports_by_file = _collect_import_targets("telegram_bot")
+    forbidden = {
+        str(path): sorted(
+            name for name in imports if _matches_prefix(name, ("server", "cli"))
+        )
+        for path, imports in imports_by_file.items()
+        if any(_matches_prefix(name, ("server", "cli")) for name in imports)
     }
     assert forbidden == {}
 

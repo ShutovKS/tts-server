@@ -1,7 +1,7 @@
 # FILE: core/models/catalog.py
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Expose static model catalog helpers and public model metadata mappings.
+#   PURPOSE: Expose static model catalog helpers and current public model metadata mappings.
 #   SCOPE: Speaker map, emotion examples, manifest accessors, exported model spec registry
 #   DEPENDS: M-MODELS
 #   LINKS: M-MODELS

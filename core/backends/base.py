@@ -12,6 +12,7 @@
 # START_MODULE_MAP
 #   TTSBackend - Abstract backend interface
 #   LoadedModelHandle - Handle to a loaded model with metadata
+#   ExecutionRequest - Runtime-oriented execution request carrying family-prepared inputs
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
@@ -42,6 +43,16 @@ class LoadedModelHandle:
     runtime_model: Any
     resolved_path: Path | None
     backend_key: str
+
+
+@dataclass(frozen=True)
+class ExecutionRequest:
+    handle: LoadedModelHandle
+    text: str
+    output_dir: Path
+    language: str
+    legacy_mode: str
+    generation_kwargs: dict[str, Any]
 
 
 # START_CONTRACT: TTSBackend
@@ -186,6 +197,50 @@ class TTSBackend(ABC):
             "errors": [],
         }
 
+    def execute(self, request: ExecutionRequest) -> None:
+        payload = dict(request.generation_kwargs)
+        if request.legacy_mode == "custom":
+            self.synthesize_custom(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                speaker=str(payload.pop("voice")),
+                instruct=str(payload.pop("instruct")),
+                speed=float(payload.pop("speed")),
+            )
+            return
+
+        if request.legacy_mode == "design":
+            self.synthesize_design(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                voice_description=str(payload.pop("instruct")),
+            )
+            return
+
+        if request.legacy_mode == "clone":
+            ref_audio = payload.pop("ref_audio")
+            self.synthesize_clone(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                ref_audio_path=Path(str(ref_audio)),
+                ref_text=(
+                    None
+                    if payload.get("ref_text") is None
+                    else str(payload.pop("ref_text"))
+                ),
+            )
+            return
+
+        raise NotImplementedError(
+            f"Unsupported legacy mode '{request.legacy_mode}' for backend '{self.key}'"
+        )
+
     @abstractmethod
     # START_CONTRACT: synthesize_custom
     #   PURPOSE: Generate custom-voice audio for the provided text and speaker inputs.
@@ -246,7 +301,9 @@ class TTSBackend(ABC):
     ) -> None:
         raise NotImplementedError
 
+
 __all__ = [
+    "ExecutionRequest",
     "LoadedModelHandle",
     "TTSBackend",
 ]

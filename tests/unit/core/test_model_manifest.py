@@ -29,13 +29,25 @@ from pathlib import Path
 import pytest
 
 from core.models.catalog import MODEL_SPECS, get_model_manifest
-from core.models.manifest import ModelManifestValidationError, load_model_manifest
+from core.models.manifest import (
+    ModelDescriptor,
+    ModelManifestValidationError,
+    load_model_manifest,
+)
 
 
 pytestmark = pytest.mark.unit
 
 
 REQUIRED_TORCH_ARTIFACTS = [
+    "config.json",
+    "model.safetensors|model.safetensors.index.json",
+    "preprocessor_config.json",
+    "tokenizer_config.json|vocab.json",
+]
+
+
+REQUIRED_QWEN_FAST_ARTIFACTS = [
     "config.json",
     "model.safetensors|model.safetensors.index.json",
     "preprocessor_config.json",
@@ -54,12 +66,13 @@ def test_default_model_manifest_preserves_existing_public_identifiers():
     manifest = get_model_manifest()
 
     assert manifest.version == 1
-    assert list(manifest.models) == ["1", "2", "3", "4", "5", "6"]
+    assert list(manifest.models)[:6] == ["1", "2", "3", "4", "5", "6"]
+    assert "piper-1" in manifest.models
     assert MODEL_SPECS["1"].api_name == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     assert MODEL_SPECS["2"].mode == "design"
     assert MODEL_SPECS["3"].mode_metadata.id == "clone"
     assert MODEL_SPECS["4"].rollout.default_preference == 50
-    assert MODEL_SPECS["1"].backend_affinity == ("mlx", "torch")
+    assert MODEL_SPECS["1"].backend_affinity == ("mlx", "qwen_fast", "torch")
 
 
 def test_load_model_manifest_rejects_unknown_version(tmp_path: Path):
@@ -145,6 +158,11 @@ def test_manifest_artifact_validation_rules_match_existing_backend_requirements(
     torch_check = (
         MODEL_SPECS["1"].artifact_validation_for_backend("torch").validate(model_path)
     )
+    fast_check = (
+        MODEL_SPECS["1"]
+        .artifact_validation_for_backend("qwen_fast")
+        .validate(model_path)
+    )
 
     assert mlx_check == {
         "loadable": True,
@@ -154,6 +172,11 @@ def test_manifest_artifact_validation_rules_match_existing_backend_requirements(
     assert torch_check == {
         "loadable": True,
         "required_artifacts": REQUIRED_TORCH_ARTIFACTS,
+        "missing_artifacts": [],
+    }
+    assert fast_check == {
+        "loadable": True,
+        "required_artifacts": REQUIRED_QWEN_FAST_ARTIFACTS,
         "missing_artifacts": [],
     }
 
@@ -175,3 +198,31 @@ def test_manifest_artifact_validation_reports_missing_torch_preprocessor(
         "required_artifacts": REQUIRED_TORCH_ARTIFACTS,
         "missing_artifacts": ["preprocessor_config.json"],
     }
+
+
+def test_model_descriptor_exposes_family_aware_compatibility_fields():
+    descriptor = ModelDescriptor.from_model_spec(MODEL_SPECS["1"])
+
+    assert descriptor.model_id == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    assert descriptor.family == "Qwen3-TTS"
+    assert descriptor.family_key == "qwen3_tts"
+    assert descriptor.legacy_mode == "custom"
+    assert descriptor.supported_capabilities == ("preset_speaker_tts",)
+    assert descriptor.backend_support == ("mlx", "qwen_fast", "torch")
+    assert descriptor.artifact_format == "local_model_dir"
+
+
+def test_non_custom_qwen_models_do_not_advertise_fast_backend():
+    assert MODEL_SPECS["2"].backend_affinity == ("mlx", "torch")
+    assert MODEL_SPECS["3"].backend_affinity == ("mlx", "torch")
+    assert MODEL_SPECS["5"].backend_affinity == ("mlx", "torch")
+    assert MODEL_SPECS["6"].backend_affinity == ("mlx", "torch")
+
+
+def test_manifest_descriptors_preserve_enabled_model_count():
+    manifest = get_model_manifest()
+
+    descriptors = manifest.descriptors()
+
+    assert len(descriptors) == len(manifest.models)
+    assert descriptors[0].family_key == "qwen3_tts"

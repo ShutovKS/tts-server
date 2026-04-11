@@ -17,6 +17,7 @@
 #   ModeMetadata - Typed mode metadata shared across manifest and model specs
 #   ModelSpec - Typed specification for a single model
 #   ModelRollout - Rollout metadata controlling model enablement and preference
+#   ModelDescriptor - Family-aware compatibility descriptor derived from manifest metadata
 #   ModelManifest - Typed manifest container for all models
 #   SUPPORTED_BACKENDS - Backend identifiers accepted by manifest validation
 #   SUPPORTED_MANIFEST_VERSIONS - Manifest schema versions supported by the loader
@@ -39,7 +40,7 @@ from typing import Any, Iterable, Mapping
 
 SUPPORTED_MANIFEST_VERSIONS = {1}
 SUPPORTED_MODES = {"custom", "design", "clone"}
-SUPPORTED_BACKENDS = {"mlx", "torch"}
+SUPPORTED_BACKENDS = {"mlx", "torch", "onnx", "qwen_fast"}
 
 
 class ModelManifestValidationError(ValueError):
@@ -169,6 +170,75 @@ class ModelSpec:
         return self.folder
 
     @property
+    def model_id(self) -> str:
+        return self.metadata_id
+
+    @property
+    def metadata_id(self) -> str:
+        metadata_id = self.metadata.get("model_id")
+        if isinstance(metadata_id, str) and metadata_id.strip():
+            return metadata_id.strip()
+        return self.folder
+
+    @property
+    def family(self) -> str:
+        family = self.metadata.get("family")
+        if isinstance(family, str) and family.strip():
+            return family.strip()
+        return "Qwen3-TTS"
+
+    @property
+    def family_key(self) -> str:
+        normalized = "".join(
+            character if character.isalnum() else "_"
+            for character in self.family.lower()
+        )
+        collapsed = "_".join(part for part in normalized.split("_") if part)
+        return collapsed or "qwen3_tts"
+
+    @property
+    def supported_capabilities(self) -> tuple[str, ...]:
+        explicit = self.metadata.get("supported_capabilities")
+        if isinstance(explicit, list) and explicit:
+            return tuple(
+                _coerce_non_empty_string(
+                    item, f"model.{self.key}.metadata.supported_capabilities[]"
+                )
+                for item in explicit
+            )
+        compatibility = {
+            "custom": "preset_speaker_tts",
+            "design": "voice_description_tts",
+            "clone": "reference_voice_clone",
+        }
+        return (compatibility[self.mode],)
+
+    @property
+    def host_constraints(self) -> Mapping[str, Any]:
+        constraints = self.metadata.get("host_constraints")
+        if isinstance(constraints, Mapping):
+            return dict(constraints)
+        return {}
+
+    @property
+    def resource_profile(self) -> Mapping[str, Any]:
+        profile = self.metadata.get("resource_profile")
+        if isinstance(profile, Mapping):
+            return dict(profile)
+        return {}
+
+    @property
+    def artifact_format(self) -> str:
+        artifact_format = self.metadata.get("artifact_format")
+        if isinstance(artifact_format, str) and artifact_format.strip():
+            return artifact_format.strip()
+        return "local_model_dir"
+
+    @property
+    def backend_support(self) -> tuple[str, ...]:
+        return self.backend_affinity
+
+    @property
     def enabled(self) -> bool:
         return self.rollout.enabled
 
@@ -267,6 +337,11 @@ class ModelManifest:
     def get(self, key: str) -> ModelSpec:
         return self.models[key]
 
+    def descriptors(self) -> tuple["ModelDescriptor", ...]:
+        return tuple(
+            ModelDescriptor.from_model_spec(spec) for spec in self.models.values()
+        )
+
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "ModelManifest":
         version = payload.get("version")
@@ -326,6 +401,49 @@ class ModelManifest:
 DEFAULT_MODEL_MANIFEST_PATH = Path(__file__).with_name("manifest.v1.json")
 
 
+@dataclass(frozen=True)
+class ModelDescriptor:
+    key: str
+    model_id: str
+    public_name: str
+    family: str
+    family_key: str
+    legacy_mode: str
+    supported_capabilities: tuple[str, ...]
+    backend_support: tuple[str, ...]
+    artifact_format: str
+    folder: str
+    output_subfolder: str
+    enabled: bool
+    rollout_stage: str
+    default_preference: int
+    host_constraints: Mapping[str, Any]
+    resource_profile: Mapping[str, Any]
+    metadata: Mapping[str, Any]
+
+    @classmethod
+    def from_model_spec(cls, spec: ModelSpec) -> "ModelDescriptor":
+        return cls(
+            key=spec.key,
+            model_id=spec.model_id,
+            public_name=spec.public_name,
+            family=spec.family,
+            family_key=spec.family_key,
+            legacy_mode=spec.mode,
+            supported_capabilities=spec.supported_capabilities,
+            backend_support=spec.backend_support,
+            artifact_format=spec.artifact_format,
+            folder=spec.folder,
+            output_subfolder=spec.output_subfolder,
+            enabled=spec.enabled,
+            rollout_stage=spec.rollout.stage,
+            default_preference=spec.rollout.default_preference,
+            host_constraints=dict(spec.host_constraints),
+            resource_profile=dict(spec.resource_profile),
+            metadata=dict(spec.metadata),
+        )
+
+
 @lru_cache(maxsize=4)
 def load_model_manifest(
     path: str | Path = DEFAULT_MODEL_MANIFEST_PATH,
@@ -370,6 +488,7 @@ __all__ = [
     "ArtifactValidationRule",
     "BackendArtifactValidation",
     "DEFAULT_MODEL_MANIFEST_PATH",
+    "ModelDescriptor",
     "ModeMetadata",
     "ModelManifest",
     "ModelManifestValidationError",

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "metadata": {
-    "catalog": "qwen3_tts_models",
+    "catalog": "multi_family_tts_models",
     "default_selection_policy": "mode_first_available"
   },
   "modes": [
@@ -38,7 +38,7 @@
         "label": "Custom Voice",
         "semantics": "Instruction-guided synthesis with predefined speakers"
       },
-      "backend_affinity": ["mlx", "torch"],
+      "backend_affinity": ["mlx", "qwen_fast", "torch"],
       "rollout": {
         "enabled": true,
         "stage": "general",
@@ -53,6 +53,14 @@
           ]
         },
         "torch": {
+          "required_rules": [
+            {"name": "config", "any_of": ["config.json"]},
+            {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
+            {"name": "preprocessor", "any_of": ["preprocessor_config.json"]},
+            {"name": "tokenizer", "any_of": ["tokenizer_config.json", "vocab.json"]}
+          ]
+        },
+        "qwen_fast": {
           "required_rules": [
             {"name": "config", "any_of": ["config.json"]},
             {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
@@ -158,7 +166,7 @@
         "label": "Custom Voice",
         "semantics": "Instruction-guided synthesis with predefined speakers"
       },
-      "backend_affinity": ["mlx", "torch"],
+      "backend_affinity": ["mlx", "qwen_fast", "torch"],
       "rollout": {
         "enabled": true,
         "stage": "general",
@@ -173,6 +181,14 @@
           ]
         },
         "torch": {
+          "required_rules": [
+            {"name": "config", "any_of": ["config.json"]},
+            {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
+            {"name": "preprocessor", "any_of": ["preprocessor_config.json"]},
+            {"name": "tokenizer", "any_of": ["tokenizer_config.json", "vocab.json"]}
+          ]
+        },
+        "qwen_fast": {
           "required_rules": [
             {"name": "config", "any_of": ["config.json"]},
             {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
@@ -258,6 +274,45 @@
             {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
             {"name": "preprocessor", "any_of": ["preprocessor_config.json"]},
             {"name": "tokenizer", "any_of": ["tokenizer_config.json", "vocab.json"]}
+          ]
+        }
+      }
+    },
+    {
+      "key": "piper-1",
+      "public_name": "Piper Lessac",
+      "folder": "Piper-en_US-lessac-medium",
+      "mode": "custom",
+      "output_subfolder": "Piper",
+      "metadata": {
+        "family": "Piper",
+        "model_id": "Piper-en_US-lessac-medium",
+        "artifact_format": "piper_voice_dir",
+        "supported_capabilities": ["preset_speaker_tts"],
+        "host_constraints": {
+          "platforms": ["darwin", "linux", "windows"]
+        },
+        "resource_profile": {
+          "execution": "cpu",
+          "runtime": "onnxruntime"
+        }
+      },
+      "mode_metadata": {
+        "id": "custom",
+        "label": "Custom Voice",
+        "semantics": "Instruction-guided synthesis with predefined speakers"
+      },
+      "backend_affinity": ["onnx"],
+      "rollout": {
+        "enabled": true,
+        "stage": "beta",
+        "default_preference": 10
+      },
+      "artifact_validation": {
+        "onnx": {
+          "required_rules": [
+            {"name": "model", "any_of": ["model.onnx"]},
+            {"name": "config", "any_of": ["model.onnx.json"]}
           ]
         }
       }

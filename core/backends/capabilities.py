@@ -26,7 +26,7 @@ from typing import Any
 
 # START_CONTRACT: BackendCapabilitySet
 #   PURPOSE: Describe the functional capabilities and platform support advertised by a backend.
-#   INPUTS: { supports_custom: bool - Whether custom voice synthesis is supported, supports_design: bool - Whether voice design synthesis is supported, supports_clone: bool - Whether voice cloning is supported, supports_streaming: bool - Whether streaming output is supported, supports_local_models: bool - Whether local model directories are supported, supports_voice_prompt_cache: bool - Whether reusable prompt caches are supported, supports_reference_transcription: bool - Whether reference audio transcription is supported, preferred_formats: tuple[str, ...] - Preferred audio output formats, platforms: tuple[str, ...] - Supported platform identifiers }
+#   INPUTS: { supports_custom: bool - Whether custom voice synthesis is supported, supports_design: bool - Whether voice design synthesis is supported, supports_clone: bool - Whether voice cloning is supported, supports_streaming: bool - Whether streaming output is supported, supports_local_models: bool - Whether local model directories are supported, supports_voice_prompt_cache: bool - Whether reusable prompt caches are supported, supports_reference_transcription: bool - Whether reference audio transcription is supported, supports_preset_speaker_tts: bool - Whether preset-speaker capability is supported, supports_voice_description_tts: bool - Whether voice-description capability is supported, supports_reference_voice_clone: bool - Whether reference-audio cloning capability is supported, preferred_formats: tuple[str, ...] - Preferred audio output formats, platforms: tuple[str, ...] - Supported platform identifiers }
 #   OUTPUTS: { instance - Immutable backend capability descriptor }
 #   SIDE_EFFECTS: none
 #   LINKS: M-BACKENDS
@@ -40,6 +40,9 @@ class BackendCapabilitySet:
     supports_local_models: bool = True
     supports_voice_prompt_cache: bool = False
     supports_reference_transcription: bool = False
+    supports_preset_speaker_tts: bool = True
+    supports_voice_description_tts: bool = True
+    supports_reference_voice_clone: bool = True
     preferred_formats: tuple[str, ...] = ("wav",)
     platforms: tuple[str, ...] = ()
 
@@ -60,6 +63,9 @@ class BackendCapabilitySet:
             "supports_local_models": self.supports_local_models,
             "supports_voice_prompt_cache": self.supports_voice_prompt_cache,
             "supports_reference_transcription": self.supports_reference_transcription,
+            "supports_preset_speaker_tts": self.supports_preset_speaker_tts,
+            "supports_voice_description_tts": self.supports_voice_description_tts,
+            "supports_reference_voice_clone": self.supports_reference_voice_clone,
             "preferred_formats": list(self.preferred_formats),
             "platforms": list(self.platforms),
         }
@@ -83,6 +89,7 @@ class BackendDiagnostics:
             "reason": self.reason,
             "details": self.details,
         }
+
 
 __all__ = [
     "BackendCapabilitySet",

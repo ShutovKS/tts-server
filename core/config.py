@@ -68,6 +68,7 @@ class CoreSettingsEnv(TypedDict):
     model_manifest_path: Path
     backend: str | None
     backend_autoselect: bool
+    qwen_fast_enabled: bool
     model_preload_policy: str
     model_preload_ids: tuple[str, ...]
     job_execution_backend: str
@@ -119,6 +120,7 @@ class CoreSettings:
     )
     backend: str | None = None
     backend_autoselect: bool = True
+    qwen_fast_enabled: bool = True
     model_preload_policy: str = "none"
     model_preload_ids: tuple[str, ...] = ()
     job_execution_backend: str = LOCAL_JOB_EXECUTION_BACKEND
@@ -269,6 +271,7 @@ def parse_core_settings_from_env(
         # START_BLOCK_PARSE_RUNTIME_SETTINGS
         "backend": backend,
         "backend_autoselect": env_bool("QWEN_TTS_BACKEND_AUTOSELECT", True, environ),
+        "qwen_fast_enabled": env_bool("QWEN_TTS_QWEN_FAST_ENABLED", True, environ),
         "model_preload_policy": env_text(
             "QWEN_TTS_MODEL_PRELOAD_POLICY", "none", environ
         )
@@ -351,6 +354,7 @@ def parse_core_settings_from_env(
         "auto_play_cli": env_bool("QWEN_TTS_AUTO_PLAY_CLI", True, environ),
         # END_BLOCK_PARSE_RUNTIME_SETTINGS
     }
+
 
 __all__ = [
     "PROJECT_ROOT",

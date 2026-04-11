@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from core.backends.base import LoadedModelHandle, TTSBackend
+from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
 from core.backends.registry import BackendRegistry
 from core.errors import (
@@ -56,20 +56,32 @@ class StubBackend(TTSBackend):
         key: str,
         available: bool,
         platform_supported: bool,
+        ready: bool | None = None,
+        supports_custom: bool = True,
+        supports_design: bool | None = None,
+        supports_clone: bool = True,
+        diagnostics_reason: str | None = None,
         missing_folders: set[str] | None = None,
     ):
         self.key = key
         self.label = key.upper()
         self._available = available
         self._platform_supported = platform_supported
+        self._ready = ready
+        self._supports_custom = supports_custom
+        self._supports_design = (
+            self.key != "clone-only" if supports_design is None else supports_design
+        )
+        self._supports_clone = supports_clone
+        self._diagnostics_reason = diagnostics_reason
         self._missing_folders = missing_folders or set()
         self.preloaded_specs: list[str] = []
 
     def capabilities(self) -> BackendCapabilitySet:
         return BackendCapabilitySet(
-            supports_custom=True,
-            supports_design=self.key != "clone-only",
-            supports_clone=True,
+            supports_custom=self._supports_custom,
+            supports_design=self._supports_design,
+            supports_clone=self._supports_clone,
             platforms=("darwin", "linux", "windows"),
         )
 
@@ -122,12 +134,17 @@ class StubBackend(TTSBackend):
         }
 
     def readiness_diagnostics(self) -> BackendDiagnostics:
+        ready = (
+            self._available and self._platform_supported
+            if self._ready is None
+            else self._ready
+        )
         return BackendDiagnostics(
             backend_key=self.key,
             backend_label=self.label,
             available=self._available,
-            ready=self._available and self._platform_supported,
-            reason=None,
+            ready=ready,
+            reason=self._diagnostics_reason,
             details={},
         )
 
@@ -255,6 +272,8 @@ def test_backend_registry_lists_selected_backend_metadata():
 
     assert any(item["key"] == "torch" and item["selected"] is True for item in payload)
     assert any(item["key"] == "mlx" and item["selected"] is False for item in payload)
+    assert all("host_reason" in item for item in payload)
+    assert all("selection_score" in item for item in payload)
 
 
 def test_backend_registry_resolves_model_spec_for_mode():
@@ -364,3 +383,226 @@ def test_model_registry_applies_listed_preload_policy():
     assert report["preload"]["loaded_model_ids"] == [MODEL_SPECS["1"].api_name]
     assert report["cache_diagnostics"]["cached_model_count"] == 1
     assert report["items"][0]["preload"]["status"] == "loaded"
+
+
+def test_model_registry_exposes_family_aware_descriptors():
+    backend = StubBackend(key="torch", available=True, platform_supported=True)
+    backend_registry = BackendRegistry(
+        [backend], requested_backend="torch", autoselect=True
+    )
+
+    registry = ModelRegistry(backend_registry=backend_registry)
+
+    descriptors = registry.model_descriptors
+
+    assert descriptors[0].family_key == "qwen3_tts"
+    assert descriptors[0].model_id == descriptors[0].folder
+    assert descriptors[0].supported_capabilities
+
+
+def test_model_registry_exposes_split_registry_runtime_state():
+    backend = StubBackend(key="torch", available=True, platform_supported=True)
+    backend_registry = BackendRegistry(
+        [backend], requested_backend="torch", autoselect=True
+    )
+
+    registry = ModelRegistry(
+        backend_registry=backend_registry,
+        preload_policy="listed",
+        preload_model_ids=(MODEL_SPECS["1"].api_name,),
+    )
+
+    descriptor = registry.model_descriptors[0]
+    runtime_state = registry.runtime_models.descriptor_runtime_state(descriptor)
+
+    assert runtime_state["declared"] is True
+    assert runtime_state["installed"] is True
+    assert runtime_state["loadable"] is True
+    assert runtime_state["runtime_ready"] is True
+    assert runtime_state["loaded"] is True
+    assert runtime_state["preload_status"] == "loaded"
+
+
+def test_backend_execute_bridges_runtime_request_to_legacy_mode_methods():
+    backend = StubBackend(key="torch", available=True, platform_supported=True)
+    spec = MODEL_SPECS["1"]
+    handle = LoadedModelHandle(
+        spec=spec,
+        runtime_model=object(),
+        resolved_path=Path(".models") / spec.folder,
+        backend_key="torch",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_synthesize_custom(handle, **kwargs):
+        captured.update(kwargs)
+
+    backend.synthesize_custom = fake_synthesize_custom  # type: ignore[method-assign]
+
+    backend.execute(
+        ExecutionRequest(
+            handle=handle,
+            text="Hello",
+            output_dir=Path("/tmp"),
+            language="auto",
+            legacy_mode="custom",
+            generation_kwargs={
+                "voice": "Ryan",
+                "instruct": "Friendly",
+                "speed": 1.0,
+            },
+        )
+    )
+
+    assert captured == {
+        "text": "Hello",
+        "output_dir": Path("/tmp"),
+        "language": "auto",
+        "speaker": "Ryan",
+        "instruct": "Friendly",
+        "speed": 1.0,
+    }
+
+
+def test_model_registry_routes_piper_model_to_compatible_backend():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(key="mlx", available=True, platform_supported=True),
+            StubBackend(key="onnx", available=True, platform_supported=True),
+        ],
+        autoselect=True,
+    )
+    registry = ModelRegistry(backend_registry=backend_registry)
+
+    spec, handle = registry.get_model(model_name=MODEL_SPECS["piper-1"].model_id)
+
+    assert backend_registry.selected_backend.key == "mlx"
+    assert spec == MODEL_SPECS["piper-1"]
+    assert handle.backend_key == "onnx"
+
+
+def test_model_registry_lists_per_model_backend_for_second_family():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(key="mlx", available=True, platform_supported=True),
+            StubBackend(key="onnx", available=True, platform_supported=True),
+        ],
+        autoselect=True,
+    )
+    registry = ModelRegistry(backend_registry=backend_registry)
+
+    models = registry.list_models()
+    piper_item = next(
+        item for item in models if item["id"] == "Piper-en_US-lessac-medium"
+    )
+
+    assert piper_item["backend"] == "onnx"
+    assert piper_item["family_key"] == "piper"
+    assert piper_item["selected_backend"] == "mlx"
+    assert piper_item["execution_backend"] == "onnx"
+    assert piper_item["route"]["routing_mode"] == "per_model_backend_fallback"
+    assert (
+        piper_item["route"]["route_reason"]
+        == "selected_backend_incompatible_with_model"
+    )
+
+
+def test_backend_registry_explains_per_model_backend_route_for_piper():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(key="mlx", available=True, platform_supported=True),
+            StubBackend(key="onnx", available=True, platform_supported=True),
+        ],
+        autoselect=True,
+    )
+
+    route = backend_registry.explain_backend_route_for_spec(MODEL_SPECS["piper-1"])
+
+    assert route["selected_backend"] == "mlx"
+    assert route["execution_backend"] == "onnx"
+    assert route["routing_mode"] == "per_model_backend_fallback"
+    assert route["route_reason"] == "selected_backend_incompatible_with_model"
+
+
+def test_model_registry_readiness_report_exposes_mixed_backend_routing_summary():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(key="mlx", available=True, platform_supported=True),
+            StubBackend(key="onnx", available=True, platform_supported=True),
+        ],
+        autoselect=True,
+    )
+    registry = ModelRegistry(backend_registry=backend_registry)
+
+    report = registry.readiness_report()
+
+    assert report["routing"]["mixed_backend_routing"] is True
+    assert report["routing"]["per_model_backend_overrides"] >= 1
+    assert report["host"]["platform_system"] in {"darwin", "linux", "windows"}
+
+
+def test_backend_registry_exposes_host_snapshot_for_selection_context():
+    registry = BackendRegistry(
+        [StubBackend(key="torch", available=True, platform_supported=True)],
+        requested_backend="torch",
+        autoselect=True,
+    )
+
+    snapshot = registry.host_snapshot
+
+    assert snapshot.platform_system in {"darwin", "linux", "windows"}
+    assert isinstance(snapshot.ffmpeg_available, bool)
+
+
+def test_backend_registry_prefers_qwen_fast_for_custom_model_when_ready():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(
+                key="qwen_fast",
+                available=True,
+                platform_supported=True,
+                supports_design=False,
+                supports_clone=False,
+            ),
+            StubBackend(key="torch", available=True, platform_supported=True),
+        ],
+        requested_backend="qwen_fast",
+        autoselect=True,
+    )
+
+    route = backend_registry.explain_backend_route_for_spec(MODEL_SPECS["1"])
+
+    assert route["selected_backend"] == "qwen_fast"
+    assert route["execution_backend"] == "qwen_fast"
+    assert route["route_reason"] == "selected_backend_supports_model"
+
+
+def test_backend_registry_falls_back_to_torch_when_qwen_fast_not_ready():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(
+                key="qwen_fast",
+                available=True,
+                platform_supported=True,
+                ready=False,
+                supports_design=False,
+                supports_clone=False,
+                diagnostics_reason="cuda_required",
+            ),
+            StubBackend(key="torch", available=True, platform_supported=True),
+        ],
+        requested_backend="qwen_fast",
+        autoselect=True,
+    )
+
+    route = backend_registry.explain_backend_route_for_spec(MODEL_SPECS["1"])
+
+    assert route["selected_backend"] == "qwen_fast"
+    assert route["execution_backend"] == "torch"
+    assert route["routing_mode"] == "per_model_backend_fallback"
+    assert route["route_reason"] == "selected_backend_unavailable_for_model_route"
+    qwen_fast_candidate = next(
+        item for item in route["candidates"] if item["key"] == "qwen_fast"
+    )
+    assert qwen_fast_candidate["ready"] is False
+    assert qwen_fast_candidate["route_reason"] == "cuda_required"

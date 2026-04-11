@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+#   LAST_CHANGE: [v1.0.1 - Added mixed-family route reporting, host snapshot exposure, and richer per-model readiness metadata]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -25,10 +25,13 @@ from typing import Any, Optional
 
 from core.backends import BackendRegistry
 from core.backends.base import LoadedModelHandle
+from core.errors import BackendCapabilityError
 from core.errors import ModelLoadError, ModelNotAvailableError
 from core.metrics import OperationalMetricsRegistry
 from core.models.catalog import ModelSpec
+from core.models.manifest import ModelDescriptor
 from core.observability import get_logger, log_event, operation_scope
+from core.registry import ArtifactRegistry, ModelCatalogRegistry, RuntimeModelRegistry
 
 
 LOGGER = get_logger(__name__)
@@ -60,6 +63,9 @@ class ModelRegistry:
             else "none"
         )
         self._preload_model_ids = tuple(preload_model_ids)
+        self.catalog = ModelCatalogRegistry(self.backend_registry.model_specs)
+        self.artifacts = ArtifactRegistry(self.catalog, self.backend_registry)
+        self.runtime_models = RuntimeModelRegistry(self.artifacts, self)
         self._preload_report = self._build_preload_report(status="not_started")
         self._apply_preload_policy()
 
@@ -67,9 +73,19 @@ class ModelRegistry:
     def backend(self):
         return self.backend_registry.selected_backend
 
+    def backend_for_spec(self, spec: ModelSpec):
+        return self.backend_registry.resolve_backend_for_spec(spec)
+
+    def backend_route_for_spec(self, spec: ModelSpec) -> dict[str, Any]:
+        return self.backend_registry.explain_backend_route_for_spec(spec)
+
     @property
     def model_specs(self) -> tuple[ModelSpec, ...]:
-        return self.backend_registry.model_specs
+        return self.catalog.model_specs
+
+    @property
+    def model_descriptors(self) -> tuple[ModelDescriptor, ...]:
+        return self.catalog.descriptors
 
     # START_CONTRACT: list_models
     #   PURPOSE: List configured models together with backend capability and availability status.
@@ -79,24 +95,7 @@ class ModelRegistry:
     #   LINKS: M-MODEL-REGISTRY
     # END_CONTRACT: list_models
     def list_models(self) -> list[dict[str, Any]]:
-        models = []
-        backend = self.backend
-        capabilities = backend.capabilities().to_dict()
-        for spec in self.model_specs:
-            status = self.inspect_model(spec)
-            models.append(
-                {
-                    "key": spec.key,
-                    "id": spec.api_name,
-                    "name": spec.public_name,
-                    "mode": spec.mode,
-                    "folder": spec.folder,
-                    "available": status["available"],
-                    "backend": backend.key,
-                    "capabilities": capabilities,
-                }
-            )
-        return models
+        return [self.inspect_model(spec) for spec in self.model_specs]
 
     # START_CONTRACT: get_model_spec
     #   PURPOSE: Resolve a model specification by model identifier or synthesis mode.
@@ -129,9 +128,10 @@ class ModelRegistry:
                 message="Loading model handle through backend registry",
                 model=spec.api_name,
                 mode=spec.mode,
-                backend=self.backend.key,
+                backend=self.backend_for_spec(spec).key,
             )
-            handle = self.backend.load_model(spec)
+            backend = self.backend_for_spec(spec)
+            handle = backend.load_model(spec)
             log_event(
                 LOGGER,
                 level=20,
@@ -139,16 +139,76 @@ class ModelRegistry:
                 message="Model handle loaded through backend registry",
                 model=spec.api_name,
                 mode=spec.mode,
-                backend=self.backend.key,
+                backend=backend.key,
                 model_path=str(handle.resolved_path) if handle.resolved_path else None,
             )
             return spec, handle
 
     def resolve_model_path(self, folder_name: str):
+        for spec in self.model_specs:
+            if folder_name == spec.folder:
+                return self.backend_for_spec(spec).resolve_model_path(folder_name)
         return self.backend.resolve_model_path(folder_name)
 
     def inspect_model(self, spec: ModelSpec) -> dict[str, Any]:
-        item = self.backend.inspect_model(spec)
+        route = self.backend_route_for_spec(spec)
+        execution_backend_key = route["execution_backend"]
+        try:
+            backend = self.backend_for_spec(spec)
+        except BackendCapabilityError:
+            item = {
+                "key": spec.key,
+                "id": spec.model_id,
+                "name": spec.public_name,
+                "mode": spec.mode,
+                "family": spec.family,
+                "family_key": spec.family_key,
+                "capabilities_supported": list(spec.supported_capabilities),
+                "backend_support": list(spec.backend_support),
+                "folder": spec.folder,
+                "backend": execution_backend_key,
+                "selected_backend": route["selected_backend"],
+                "selected_backend_label": route["selected_backend_label"],
+                "execution_backend": execution_backend_key,
+                "execution_backend_label": route["execution_backend_label"],
+                "route": route,
+                "configured": True,
+                "available": False,
+                "loadable": False,
+                "runtime_ready": False,
+                "cached": False,
+                "resolved_path": None,
+                "runtime_path": None,
+                "cache": {
+                    "loaded": False,
+                    "cache_key": spec.folder,
+                    "backend": None,
+                    "normalized_runtime": False,
+                    "runtime_path": None,
+                    "eviction_policy": "not_configured",
+                },
+                "missing_artifacts": [],
+                "required_artifacts": [],
+                "capabilities": {},
+                "availability_reason": route["route_reason"],
+            }
+        else:
+            item = backend.inspect_model(spec)
+            item.update(
+                {
+                    "id": spec.model_id,
+                    "family": spec.family,
+                    "family_key": spec.family_key,
+                    "capabilities_supported": list(spec.supported_capabilities),
+                    "backend_support": list(spec.backend_support),
+                    "selected_backend": route["selected_backend"],
+                    "selected_backend_label": route["selected_backend_label"],
+                    "execution_backend": route["execution_backend"],
+                    "execution_backend_label": route["execution_backend_label"],
+                    "route": route,
+                    "availability_reason": route["route_reason"],
+                }
+            )
         preload_state = self._preload_state_for_model(spec)
         item["preload"] = preload_state
         return item
@@ -167,6 +227,35 @@ class ModelRegistry:
         loadable_count = sum(1 for item in items if item["loadable"])
         runtime_ready_count = sum(1 for item in items if item["runtime_ready"])
         loaded_count = sum(1 for item in items if item.get("cached"))
+        per_model_backend_overrides = sum(
+            1
+            for item in items
+            if item.get("execution_backend")
+            and item.get("execution_backend") != self.backend.key
+        )
+        degraded_routes = sum(
+            1
+            for item in items
+            if item.get("route", {}).get("route_reason")
+            == "no_ready_backend_for_model_using_best_effort_fallback"
+        )
+        family_summary: dict[str, dict[str, Any]] = {}
+        for item in items:
+            family_key = str(item.get("family_key") or "unknown")
+            summary = family_summary.setdefault(
+                family_key,
+                {
+                    "family": item.get("family"),
+                    "configured_models": 0,
+                    "available_models": 0,
+                    "runtime_ready_models": 0,
+                },
+            )
+            summary["configured_models"] += 1
+            if item.get("available"):
+                summary["available_models"] += 1
+            if item.get("runtime_ready"):
+                summary["runtime_ready_models"] += 1
         backend_diagnostics = self.backend.readiness_diagnostics().to_dict()
         cache_diagnostics = self.backend.cache_diagnostics()
         # END_BLOCK_COLLECT_MODEL_STATUS
@@ -187,6 +276,13 @@ class ModelRegistry:
             "backend_capabilities": self.backend.capabilities().to_dict(),
             "backend_diagnostics": backend_diagnostics,
             "cache_diagnostics": cache_diagnostics,
+            "host": self.backend_registry.host_snapshot.to_dict(),
+            "routing": {
+                "mixed_backend_routing": per_model_backend_overrides > 0,
+                "per_model_backend_overrides": per_model_backend_overrides,
+                "degraded_routes": degraded_routes,
+            },
+            "family_summary": family_summary,
             "metrics": self._build_metrics_summary(),
             "preload": self._build_preload_report(
                 status=self._preload_report["status"],
@@ -202,6 +298,7 @@ class ModelRegistry:
             "manifest": {
                 "version": self.backend_registry._model_manifest.version,
                 "metadata": dict(self.backend_registry._model_manifest.metadata),
+                "descriptor_count": len(self.model_descriptors),
             },
         }
         report["registry_ready"] = (
@@ -239,19 +336,37 @@ class ModelRegistry:
         # END_BLOCK_RESOLVE_PRELOAD_SPECS
 
         # START_BLOCK_EXECUTE_PRELOAD
-        preload_result = self.backend.preload_models(tuple(specs))
+        preload_groups: dict[str, list[ModelSpec]] = {}
+        for spec in specs:
+            try:
+                preload_groups.setdefault(self.backend_for_spec(spec).key, []).append(
+                    spec
+                )
+            except BackendCapabilityError:
+                continue
+        loaded_model_ids: list[str] = []
+        failed_model_ids: list[str] = []
+        errors: list[dict[str, Any]] = []
+        for backend_key, backend_specs in preload_groups.items():
+            backend = self.backend_registry._backends[backend_key]
+            preload_result = backend.preload_models(tuple(backend_specs))
+            loaded_model_ids.extend(preload_result["loaded_model_ids"])
+            failed_model_ids.extend(preload_result["failed_model_ids"])
+            errors.extend(preload_result["errors"])
         status = "completed"
-        if preload_result["failed"] and preload_result["loaded"]:
+        if failed_model_ids and loaded_model_ids:
             status = "completed_with_errors"
-        elif preload_result["failed"] and not preload_result["loaded"]:
+        elif failed_model_ids and not loaded_model_ids:
             status = "failed"
+        elif not loaded_model_ids and not failed_model_ids:
+            status = "skipped"
         self._preload_report = self._build_preload_report(
             status=status,
             requested_model_ids=requested_ids,
             resolved_model_ids=[spec.api_name for spec in specs],
-            loaded_model_ids=preload_result["loaded_model_ids"],
-            failed_model_ids=preload_result["failed_model_ids"],
-            errors=preload_result["errors"],
+            loaded_model_ids=loaded_model_ids,
+            failed_model_ids=failed_model_ids,
+            errors=errors,
             policy_reason="configured",
         )
         # END_BLOCK_EXECUTE_PRELOAD
@@ -275,25 +390,26 @@ class ModelRegistry:
 
     def _requested_preload_model_ids(self) -> list[str]:
         if self._preload_policy == "all":
-            return [spec.api_name for spec in self.model_specs]
+            return [spec.model_id for spec in self.model_specs]
         return list(self._preload_model_ids)
 
     def _is_preloadable(self, spec: ModelSpec) -> bool:
-        status = self.backend.inspect_model(spec)
+        status = self.inspect_model(spec)
         return bool(status["runtime_ready"])
 
     def _preload_state_for_model(self, spec: ModelSpec) -> dict[str, Any]:
         requested = (
             self._preload_policy == "all"
             or spec.api_name in self._preload_model_ids
+            or spec.model_id in self._preload_model_ids
             or spec.folder in self._preload_model_ids
             or spec.key in self._preload_model_ids
         )
         if self._preload_policy == "none":
             status = "disabled"
-        elif spec.api_name in self._preload_report["loaded_model_ids"]:
+        elif spec.model_id in self._preload_report["loaded_model_ids"]:
             status = "loaded"
-        elif spec.api_name in self._preload_report["failed_model_ids"]:
+        elif spec.model_id in self._preload_report["failed_model_ids"]:
             status = "failed"
         elif requested:
             status = "requested"
@@ -341,6 +457,7 @@ class ModelRegistry:
             "failed_model_ids": failed_model_ids,
             "errors": errors,
         }
+
 
 __all__ = [
     "LOGGER",

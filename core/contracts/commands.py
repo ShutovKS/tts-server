@@ -17,7 +17,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.0.1 - Removed duplicate language field declaration while preserving command language normalization]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -39,7 +39,6 @@ class GenerationCommand:
     text: str
     model: Optional[str] = None
     save_output: bool = False
-    language: str = "auto"
     language: str = "auto"
 
     def __post_init__(self) -> None:
@@ -86,6 +85,7 @@ class VoiceDesignCommand(GenerationCommand):
 class VoiceCloneCommand(GenerationCommand):
     ref_audio_path: Optional[Path] = None
     ref_text: Optional[str] = None
+
 
 __all__ = [
     "GenerationCommand",
