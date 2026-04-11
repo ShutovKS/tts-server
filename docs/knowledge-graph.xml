@@ -84,14 +84,51 @@
       </annotations>
     </M-CONTRACTS>
 
+    <M-MODELS NAME="ModelMetadata" TYPE="TYPES" STATUS="implemented">
+      <purpose>Define current manifest-backed model metadata, rollout state, and backend artifact validation rules.</purpose>
+      <path>core/models/</path>
+      <depends>none</depends>
+      <verification-ref>V-M-MODELS</verification-ref>
+      <annotations>
+        <class-ModelManifest PURPOSE="Typed model manifest container" />
+        <class-ModelSpec PURPOSE="Typed model specification for current catalog entries" />
+        <fn-load_model_manifest PURPOSE="Parse and validate manifest data from disk" />
+        <fn-get_model_manifest PURPOSE="Expose the active model manifest to registry consumers" />
+      </annotations>
+    </M-MODELS>
+
+    <M-EXECUTION-PLAN NAME="ExecutionPlanContracts" TYPE="TYPES" STATUS="implemented">
+      <purpose>Define normalized capability, request, and execution-plan types for planned synthesis orchestration.</purpose>
+      <path>core/contracts/synthesis.py</path>
+      <depends>M-CONTRACTS, M-MODELS</depends>
+      <verification-ref>V-M-EXECUTION-PLAN</verification-ref>
+      <annotations>
+        <type-SynthesisCapability PURPOSE="Normalized synthesis capability identifier" />
+        <class-SynthesisRequest PURPOSE="Normalized request shape used by planner and coordinator" />
+        <class-ExecutionPlan PURPOSE="Resolved family, model, backend, and execution parameters" />
+      </annotations>
+    </M-EXECUTION-PLAN>
+
+    <M-HOST-PROBE NAME="HostProbe" TYPE="UTILITY" STATUS="implemented">
+      <purpose>Detect active OS, architecture, accelerators, and runtime features for capability-based planning.</purpose>
+      <path>core/planning/host_probe.py</path>
+      <depends>M-CONFIG</depends>
+      <verification-ref>V-M-HOST-PROBE</verification-ref>
+      <annotations>
+        <class-HostProbe PURPOSE="Runtime host feature detector" />
+        <class-HostSnapshot PURPOSE="Typed host capability report" />
+      </annotations>
+    </M-HOST-PROBE>
+
     <M-BACKENDS NAME="BackendRegistry" TYPE="CORE_LOGIC" STATUS="implemented">
-      <purpose>Register, select, and manage TTS inference backends (MLX and Torch).</purpose>
+      <purpose>Register, select, and manage TTS inference backends (MLX, accelerated Qwen fast, Torch, and ONNX).</purpose>
       <path>core/backends/</path>
       <depends>M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS</depends>
       <verification-ref>V-M-BACKENDS</verification-ref>
       <annotations>
         <class-BackendRegistry PURPOSE="Backend selection and model spec resolution" />
         <class-MLXBackend PURPOSE="Apple Silicon MLX inference backend" />
+        <class-QwenFastBackend PURPOSE="Accelerated Qwen custom-only backend with explicit CUDA/runtime gating" />
         <class-TorchBackend PURPOSE="PyTorch CPU/CUDA inference backend" />
         <class-TTSBackend PURPOSE="Abstract backend interface" />
         <class-LoadedModelHandle PURPOSE="Handle to a loaded model with metadata" />
@@ -100,7 +137,31 @@
       <CrossLink from="M-BACKENDS" to="M-CONFIG" relation="reads-config" />
       <CrossLink from="M-BACKENDS" to="M-ERRORS" relation="raises-errors" />
       <CrossLink from="M-BACKENDS" to="M-METRICS" relation="records-metrics" />
+      <CrossLink from="M-BACKENDS" to="M-MODELS" relation="reads-manifest-models" />
     </M-BACKENDS>
+
+    <M-MODEL-FAMILY NAME="ModelFamilyAdapter" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Define family-level capability matching and execution preparation independent of transport adapters.</purpose>
+      <path>core/model_families/base.py</path>
+      <depends>M-EXECUTION-PLAN, M-CONTRACTS, M-MODELS</depends>
+      <verification-ref>V-M-MODEL-FAMILY</verification-ref>
+      <annotations>
+        <class-ModelFamilyAdapter PURPOSE="Base family adapter contract" />
+      </annotations>
+      <CrossLink from="M-MODEL-FAMILY" to="M-EXECUTION-PLAN" relation="consumes-normalized-plans" />
+      <CrossLink from="M-MODEL-FAMILY" to="M-MODELS" relation="interprets-model-family-metadata" />
+    </M-MODEL-FAMILY>
+
+    <M-QWEN3-FAMILY NAME="Qwen3FamilyAdapter" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Wrap current custom, design, and clone semantics as the first explicit model-family adapter.</purpose>
+      <path>core/model_families/qwen3/</path>
+      <depends>M-MODEL-FAMILY, M-CONTRACTS, M-MODELS</depends>
+      <verification-ref>V-M-QWEN3-FAMILY</verification-ref>
+      <annotations>
+        <class-Qwen3FamilyAdapter PURPOSE="Current Qwen3-TTS family adapter" />
+      </annotations>
+      <CrossLink from="M-QWEN3-FAMILY" to="M-MODEL-FAMILY" relation="implements-base-contract" />
+    </M-QWEN3-FAMILY>
 
     <M-INFRASTRUCTURE NAME="Infrastructure" TYPE="DATA_LAYER" STATUS="implemented">
       <purpose>Provide local implementations for job execution, audio I/O, admission control, and concurrency.</purpose>
@@ -131,7 +192,79 @@
       </annotations>
       <CrossLink from="M-MODEL-REGISTRY" to="M-BACKENDS" relation="delegates-loading" />
       <CrossLink from="M-MODEL-REGISTRY" to="M-METRICS" relation="reports-metrics" />
+      <CrossLink from="M-MODEL-REGISTRY" to="M-MODELS" relation="consumes-manifest-model-metadata" />
     </M-MODEL-REGISTRY>
+
+    <M-MODEL-CATALOG NAME="ModelCatalogRegistry" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Expose family-aware model metadata and stable public identifiers independent of local artifact presence.</purpose>
+      <path>core/registry/model_catalog.py</path>
+      <depends>M-CONFIG, M-MODELS</depends>
+      <verification-ref>V-M-MODEL-CATALOG</verification-ref>
+      <annotations>
+        <class-ModelCatalogRegistry PURPOSE="Family-aware model metadata registry" />
+      </annotations>
+      <CrossLink from="M-MODEL-CATALOG" to="M-MODELS" relation="builds-on-manifest-types" />
+    </M-MODEL-CATALOG>
+
+    <M-ARTIFACT-REGISTRY NAME="ArtifactRegistry" TYPE="DATA_LAYER" STATUS="implemented">
+      <purpose>Resolve local artifacts and validate installed model assets separately from declared catalog metadata.</purpose>
+      <path>core/registry/artifacts.py</path>
+      <depends>M-MODEL-CATALOG, M-CONFIG</depends>
+      <verification-ref>V-M-ARTIFACT-REGISTRY</verification-ref>
+      <annotations>
+        <class-ArtifactRegistry PURPOSE="Registry for local model artifact resolution and validation" />
+      </annotations>
+      <CrossLink from="M-ARTIFACT-REGISTRY" to="M-MODEL-CATALOG" relation="resolves-artifacts-for-catalog-entries" />
+    </M-ARTIFACT-REGISTRY>
+
+    <M-RUNTIME-MODEL-REGISTRY NAME="RuntimeModelRegistry" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Manage runtime-loaded model handles, preload policy, and cache state independently from metadata and artifact discovery.</purpose>
+      <path>core/registry/runtime_models.py</path>
+      <depends>M-BACKENDS, M-ARTIFACT-REGISTRY, M-METRICS</depends>
+      <verification-ref>V-M-RUNTIME-MODEL-REGISTRY</verification-ref>
+      <annotations>
+        <class-RuntimeModelRegistry PURPOSE="Registry for loaded model handles and preload state" />
+      </annotations>
+      <CrossLink from="M-RUNTIME-MODEL-REGISTRY" to="M-BACKENDS" relation="loads-backend-handles" />
+      <CrossLink from="M-RUNTIME-MODEL-REGISTRY" to="M-ARTIFACT-REGISTRY" relation="uses-validated-artifacts" />
+    </M-RUNTIME-MODEL-REGISTRY>
+
+    <M-CAPABILITY-RESOLVER NAME="CapabilityResolver" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Resolve which family, model, backend, and host combination can satisfy a requested capability.</purpose>
+      <path>core/planning/capability_resolver.py</path>
+      <depends>M-HOST-PROBE, M-MODEL-CATALOG, M-BACKENDS, M-EXECUTION-PLAN</depends>
+      <verification-ref>V-M-CAPABILITY-RESOLVER</verification-ref>
+      <annotations>
+        <class-CapabilityResolver PURPOSE="Compatibility resolver with explicit rejection reasons" />
+      </annotations>
+      <CrossLink from="M-CAPABILITY-RESOLVER" to="M-HOST-PROBE" relation="uses-host-features" />
+      <CrossLink from="M-CAPABILITY-RESOLVER" to="M-MODEL-CATALOG" relation="uses-family-aware-metadata" />
+      <CrossLink from="M-CAPABILITY-RESOLVER" to="M-BACKENDS" relation="matches-backend-capabilities" />
+    </M-CAPABILITY-RESOLVER>
+
+    <M-SYNTHESIS-PLANNER NAME="SynthesisPlanner" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Resolve normalized synthesis requests into executable plans that preserve transport isolation.</purpose>
+      <path>core/planning/planner.py</path>
+      <depends>M-EXECUTION-PLAN, M-CAPABILITY-RESOLVER, M-RUNTIME-MODEL-REGISTRY</depends>
+      <verification-ref>V-M-SYNTHESIS-PLANNER</verification-ref>
+      <annotations>
+        <class-SynthesisPlanner PURPOSE="Planner for family, model, backend, and artifact resolution" />
+      </annotations>
+      <CrossLink from="M-SYNTHESIS-PLANNER" to="M-CAPABILITY-RESOLVER" relation="delegates-compatibility-resolution" />
+      <CrossLink from="M-SYNTHESIS-PLANNER" to="M-RUNTIME-MODEL-REGISTRY" relation="requests-runtime-model-handles" />
+    </M-SYNTHESIS-PLANNER>
+
+    <M-BACKENDS-V2 NAME="ExecutionBackendContract" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Evolve the backend surface from Qwen3 mode-shaped methods into runtime-oriented execution and diagnostics contracts.</purpose>
+      <path>core/backends/base.py</path>
+      <depends>M-BACKENDS, M-EXECUTION-PLAN, M-MODELS</depends>
+      <verification-ref>V-M-BACKENDS-V2</verification-ref>
+      <annotations>
+        <class-ExecutionRequest PURPOSE="Backend execution request carrying family-prepared runtime inputs" />
+        <class-QwenFastBackend PURPOSE="Accelerated Qwen custom-only backend that remains additive to the generic execution contract" />
+      </annotations>
+      <CrossLink from="M-BACKENDS-V2" to="M-EXECUTION-PLAN" relation="executes-normalized-plans" />
+    </M-BACKENDS-V2>
 
     <M-TTS-SERVICE NAME="TTSService" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Coordinate inference for custom, design, and clone synthesis modes.</purpose>
@@ -145,6 +278,18 @@
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-REGISTRY" relation="resolves-models" />
       <CrossLink from="M-TTS-SERVICE" to="M-INFRASTRUCTURE" relation="uses-audio-io" />
     </M-TTS-SERVICE>
+
+    <M-TTS-COORDINATOR NAME="SynthesisCoordinator" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Refactor the current TTS service into a coordinator over planner resolution, family execution semantics, persistence, and observability.</purpose>
+      <path>core/services/tts_service.py</path>
+      <depends>M-SYNTHESIS-PLANNER, M-RUNTIME-MODEL-REGISTRY, M-INFRASTRUCTURE, M-OBSERVABILITY</depends>
+      <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
+      <annotations>
+        <class-TTSService PURPOSE="Coordinator-shaped synthesis service after migration" />
+      </annotations>
+      <CrossLink from="M-TTS-COORDINATOR" to="M-SYNTHESIS-PLANNER" relation="consumes-execution-plans" />
+      <CrossLink from="M-TTS-COORDINATOR" to="M-MODEL-FAMILY" relation="delegates-family-semantics" />
+    </M-TTS-COORDINATOR>
 
     <M-APPLICATION NAME="TTSApplicationService" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Provide application-level facade for TTS operations including job execution gateway and admission control.</purpose>
@@ -176,6 +321,8 @@
       <CrossLink from="M-BOOTSTRAP" to="M-MODEL-REGISTRY" relation="creates-registry" />
       <CrossLink from="M-BOOTSTRAP" to="M-TTS-SERVICE" relation="creates-service" />
       <CrossLink from="M-BOOTSTRAP" to="M-APPLICATION" relation="creates-application" />
+      <CrossLink from="M-BOOTSTRAP" to="M-SYNTHESIS-PLANNER" relation="planned-runtime-wiring" />
+      <CrossLink from="M-BOOTSTRAP" to="M-HOST-PROBE" relation="planned-host-diagnostics" />
     </M-BOOTSTRAP>
 
     <M-SERVER NAME="HTTPServer" TYPE="ENTRY_POINT" STATUS="implemented">

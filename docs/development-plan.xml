@@ -4,6 +4,13 @@
     <non-goal>No distributed or multi-node execution patterns.</non-goal>
     <risk-1>Backend selection at startup must handle missing runtimes gracefully.</risk-1>
     <risk-2>Single inference guard serializes all generation requests across adapters.</risk-2>
+    <migration-objective>Evolve the current Qwen3-first runtime into a multi-platform, multi-backend, multi-model architecture without breaking existing server, Telegram, or CLI adapter behavior during the migration.</migration-objective>
+    <migration-invariants>
+      <item-1>Current transport adapters continue to depend only on shared core and application contracts.</item-1>
+      <item-2>Qwen3-TTS remains the compatibility bridge until planner, family-adapter, and backend-contract seams are proven.</item-2>
+      <item-3>No big-bang rewrite is allowed; planning and family seams land before manifest and backend generalization.</item-3>
+      <item-4>Readiness, observability, and job execution remain first-class artifacts throughout migration.</item-4>
+    </migration-invariants>
   </ArchitectureNotes>
 
   <Modules>
@@ -370,6 +377,189 @@
       </target>
       <verification-ref>V-M-CLI</verification-ref>
     </M-CLI>
+
+    <!-- Migration baseline: current and planned architecture surfaces -->
+
+    <M-MODELS NAME="ModelMetadata" TYPE="TYPES" LAYER="0" ORDER="6" STATUS="implemented">
+      <contract>
+        <purpose>Define the current manifest-backed model metadata, rollout rules, and backend artifact validation surfaces.</purpose>
+      </contract>
+      <interface>
+        <export-ModelManifest PURPOSE="Typed model manifest container" />
+        <export-ModelSpec PURPOSE="Typed model specification for the current catalog" />
+        <export-load_model_manifest PURPOSE="Load and validate manifest metadata from disk" />
+        <export-get_model_manifest PURPOSE="Expose the active model manifest to registry consumers" />
+      </interface>
+      <depends>none</depends>
+      <target>
+        <source>core/models/manifest.py</source>
+        <source>core/models/catalog.py</source>
+        <source>core/models/manifest.v1.json</source>
+      </target>
+      <verification-ref>V-M-MODELS</verification-ref>
+      <migration-note>Current model metadata is Qwen3-mode-oriented and will be split into family-aware catalog, artifact, and runtime registry surfaces.</migration-note>
+    </M-MODELS>
+
+    <M-EXECUTION-PLAN NAME="ExecutionPlanContracts" TYPE="TYPES" LAYER="0" ORDER="7" STATUS="implemented">
+      <contract>
+        <purpose>Define normalized synthesis capability, request, and execution-plan contracts for planned runtime orchestration.</purpose>
+      </contract>
+      <interface>
+        <export-SynthesisCapability PURPOSE="Normalized capability identifier for runtime planning" />
+        <export-SynthesisRequest PURPOSE="Normalized request shape consumed by planner and coordinator" />
+        <export-ExecutionPlan PURPOSE="Resolved family, model, backend, and execution parameters" />
+      </interface>
+      <depends>M-CONTRACTS, M-MODELS</depends>
+      <target>
+        <source>core/contracts/synthesis.py</source>
+      </target>
+      <verification-ref>V-M-EXECUTION-PLAN</verification-ref>
+    </M-EXECUTION-PLAN>
+
+    <M-HOST-PROBE NAME="HostProbe" TYPE="UTILITY" LAYER="0" ORDER="8" STATUS="implemented">
+      <contract>
+        <purpose>Describe active OS, architecture, runtime dependencies, and accelerator features used by capability-based planning.</purpose>
+      </contract>
+      <interface>
+        <export-HostProbe PURPOSE="Host runtime feature detector" />
+        <export-HostSnapshot PURPOSE="Typed host capability report" />
+      </interface>
+      <depends>M-CONFIG</depends>
+      <target>
+        <source>core/planning/host_probe.py</source>
+      </target>
+      <verification-ref>V-M-HOST-PROBE</verification-ref>
+    </M-HOST-PROBE>
+
+    <M-MODEL-FAMILY NAME="ModelFamilyAdapter" TYPE="CORE_LOGIC" LAYER="1" ORDER="3" STATUS="implemented">
+      <contract>
+        <purpose>Define family-level semantics for capability matching and execution input preparation independent of transport adapters.</purpose>
+      </contract>
+      <interface>
+        <export-ModelFamilyAdapter PURPOSE="Base contract for model-family execution preparation" />
+      </interface>
+      <depends>M-EXECUTION-PLAN, M-CONTRACTS, M-MODELS</depends>
+      <target>
+        <source>core/model_families/base.py</source>
+      </target>
+      <verification-ref>V-M-MODEL-FAMILY</verification-ref>
+    </M-MODEL-FAMILY>
+
+    <M-QWEN3-FAMILY NAME="Qwen3FamilyAdapter" TYPE="CORE_LOGIC" LAYER="1" ORDER="4" STATUS="implemented">
+      <contract>
+        <purpose>Wrap current Qwen3 custom, design, and clone semantics as the first explicit model-family adapter.</purpose>
+      </contract>
+      <interface>
+        <export-Qwen3FamilyAdapter PURPOSE="Family adapter for current Qwen3-TTS execution semantics" />
+      </interface>
+      <depends>M-MODEL-FAMILY, M-CONTRACTS, M-MODELS</depends>
+      <target>
+        <source>core/model_families/qwen3/</source>
+      </target>
+      <verification-ref>V-M-QWEN3-FAMILY</verification-ref>
+    </M-QWEN3-FAMILY>
+
+    <M-MODEL-CATALOG NAME="ModelCatalogRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="4" STATUS="implemented">
+      <contract>
+        <purpose>Expose family-aware model metadata and stable public identifiers independent of local installation state.</purpose>
+      </contract>
+      <interface>
+        <export-ModelCatalogRegistry PURPOSE="Family-aware model metadata registry" />
+      </interface>
+      <depends>M-CONFIG, M-MODELS</depends>
+      <target>
+        <source>core/registry/model_catalog.py</source>
+      </target>
+      <verification-ref>V-M-MODEL-CATALOG</verification-ref>
+    </M-MODEL-CATALOG>
+
+    <M-ARTIFACT-REGISTRY NAME="ArtifactRegistry" TYPE="DATA_LAYER" LAYER="2" ORDER="5" STATUS="implemented">
+      <contract>
+        <purpose>Resolve and validate local model artifacts while distinguishing declared catalog entries from installed assets.</purpose>
+      </contract>
+      <interface>
+        <export-ArtifactRegistry PURPOSE="Artifact resolution and validation registry" />
+      </interface>
+      <depends>M-CONFIG, M-MODEL-CATALOG</depends>
+      <target>
+        <source>core/registry/artifacts.py</source>
+      </target>
+      <verification-ref>V-M-ARTIFACT-REGISTRY</verification-ref>
+    </M-ARTIFACT-REGISTRY>
+
+    <M-RUNTIME-MODEL-REGISTRY NAME="RuntimeModelRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="6" STATUS="implemented">
+      <contract>
+        <purpose>Manage loaded model handles, preload policy, and runtime cache state independently of declared model metadata.</purpose>
+      </contract>
+      <interface>
+        <export-RuntimeModelRegistry PURPOSE="Runtime model handle and preload registry" />
+      </interface>
+      <depends>M-BACKENDS, M-ARTIFACT-REGISTRY, M-MODELS, M-METRICS</depends>
+      <target>
+        <source>core/registry/runtime_models.py</source>
+      </target>
+      <verification-ref>V-M-RUNTIME-MODEL-REGISTRY</verification-ref>
+    </M-RUNTIME-MODEL-REGISTRY>
+
+    <M-CAPABILITY-RESOLVER NAME="CapabilityResolver" TYPE="CORE_LOGIC" LAYER="2" ORDER="7" STATUS="implemented">
+      <contract>
+        <purpose>Match requested synthesis capabilities to compatible family, model, backend, and host combinations with explicit rejection reasons.</purpose>
+      </contract>
+      <interface>
+        <export-CapabilityResolver PURPOSE="Compatibility resolver for family, backend, and host selection" />
+      </interface>
+      <depends>M-HOST-PROBE, M-MODEL-CATALOG, M-BACKENDS, M-EXECUTION-PLAN</depends>
+      <target>
+        <source>core/planning/capability_resolver.py</source>
+      </target>
+      <verification-ref>V-M-CAPABILITY-RESOLVER</verification-ref>
+    </M-CAPABILITY-RESOLVER>
+
+    <M-SYNTHESIS-PLANNER NAME="SynthesisPlanner" TYPE="CORE_LOGIC" LAYER="2" ORDER="8" STATUS="implemented">
+      <contract>
+        <purpose>Resolve normalized synthesis requests into executable plans that preserve transport adapter isolation.</purpose>
+      </contract>
+      <interface>
+        <export-SynthesisPlanner PURPOSE="Planner that resolves request capability, family, model, backend, and artifacts" />
+      </interface>
+      <depends>M-EXECUTION-PLAN, M-CAPABILITY-RESOLVER, M-RUNTIME-MODEL-REGISTRY</depends>
+      <target>
+        <source>core/planning/planner.py</source>
+      </target>
+      <verification-ref>V-M-SYNTHESIS-PLANNER</verification-ref>
+    </M-SYNTHESIS-PLANNER>
+
+    <M-BACKENDS-V2 NAME="ExecutionBackendContract" TYPE="CORE_LOGIC" LAYER="2" ORDER="9" STATUS="implemented">
+      <contract>
+        <purpose>Evolve the current backend surface from Qwen3 mode-shaped methods into runtime-oriented execution and diagnostics contracts.</purpose>
+      </contract>
+      <interface>
+        <export-ExecutionRequest PURPOSE="Backend execution request carrying family-prepared runtime inputs" />
+        <export-TTSBackend PURPOSE="Future runtime-oriented backend contract" />
+      </interface>
+      <depends>M-BACKENDS, M-EXECUTION-PLAN, M-MODELS</depends>
+      <target>
+        <source>core/backends/base.py</source>
+        <source>core/backends/mlx_backend.py</source>
+        <source>core/backends/qwen_fast_backend.py</source>
+        <source>core/backends/torch_backend.py</source>
+      </target>
+      <verification-ref>V-M-BACKENDS-V2</verification-ref>
+    </M-BACKENDS-V2>
+
+    <M-TTS-COORDINATOR NAME="SynthesisCoordinator" TYPE="CORE_LOGIC" LAYER="2" ORDER="10" STATUS="implemented">
+      <contract>
+        <purpose>Turn the current TTS service into a coordinator over normalized requests, planner output, runtime execution, persistence, and observability.</purpose>
+      </contract>
+      <interface>
+        <export-TTSService PURPOSE="Coordinator-shaped synthesis service built on planner and family adapters" />
+      </interface>
+      <depends>M-SYNTHESIS-PLANNER, M-RUNTIME-MODEL-REGISTRY, M-INFRASTRUCTURE, M-OBSERVABILITY</depends>
+      <target>
+        <source>core/services/tts_service.py</source>
+      </target>
+      <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
+    </M-TTS-COORDINATOR>
   </Modules>
 
   <DataFlow>
@@ -421,6 +611,33 @@
       <evidence>BackendRegistry selection report, model readiness report</evidence>
     </DF-BACKEND-SELECTION>
 
+    <DF-REQUEST-TO-PLAN NAME="Planned Request-To-Plan Execution" TRIGGER="Application facade receives normalized synthesis command during migration target architecture">
+      <step-1>Transport adapter maps incoming payload into application command DTO</step-1>
+      <step-2>Synthesis coordinator normalizes the request into capability-oriented execution input</step-2>
+      <step-3>SynthesisPlanner and CapabilityResolver select family adapter, model descriptor, backend, and artifact path</step-3>
+      <step-4>RuntimeModelRegistry loads or reuses the backend-specific model handle</step-4>
+      <step-5>Model-family adapter prepares backend execution input and output semantics</step-5>
+      <step-6>Execution backend performs inference and coordinator persists the result</step-6>
+      <evidence>Planner resolution report, backend execution diagnostics, persisted GenerationResult</evidence>
+    </DF-REQUEST-TO-PLAN>
+
+    <DF-STARTUP-READINESS NAME="Planned Host-Aware Readiness" TRIGGER="build_runtime() invocation after migration seams land">
+      <step-1>HostProbe collects OS, architecture, accelerator, and runtime dependency data</step-1>
+      <step-2>Backend registry enumerates candidates and diagnostics</step-2>
+      <step-3>Model catalog exposes declared models while ArtifactRegistry determines installed assets</step-3>
+      <step-4>CapabilityResolver records why backends and models are accepted or rejected</step-4>
+      <step-5>RuntimeModelRegistry reports preload and cache state for readiness consumers</step-5>
+      <evidence>Readiness payload distinguishes host, backend, catalog, artifact, and runtime states with explicit reasons</evidence>
+    </DF-STARTUP-READINESS>
+
+    <DF-NEW-FAMILY-ONBOARDING NAME="Planned New Family Onboarding" TRIGGER="Project adds a second model family after migration seams are stable">
+      <step-1>New family adapter is registered without changing transport adapter imports</step-1>
+      <step-2>Model catalog and artifact rules are extended for the new family</step-2>
+      <step-3>Planner resolves the new family through existing capability and backend contracts</step-3>
+      <step-4>Readiness and tests prove the family integrates without new Qwen-specific branching in generic modules</step-4>
+      <evidence>Second-family tests pass and transport adapters remain unchanged</evidence>
+    </DF-NEW-FAMILY-ONBOARDING>
+
     <DF-CLI-TTS NAME="CLI Interactive Synthesis" TRIGGER="User enters synthesis command in CLI">
       <step-1>CLI runtime reads user input and parses command</step-1>
       <step-2>CLI creates command DTO from parsed input</step-2>
@@ -461,6 +678,69 @@
       <step-3 module="M-CLI" status="done" verification="V-M-CLI">Interactive CLI adapter</step-3>
     </Phase-4>
   </ImplementationOrder>
+
+  <MigrationProgram>
+    <Migration-Phase-0 name="Baseline Freeze" status="planned">
+      <goal>Lock the migration baseline in GRACE XML artifacts before code architecture changes begin.</goal>
+      <step-1>Update development, knowledge-graph, and verification artifacts with target modules, flows, and phase gates.</step-1>
+    </Migration-Phase-0>
+
+    <Migration-Phase-1 name="Planning and Family Seams" status="planned">
+      <goal>Introduce normalized synthesis contracts, planner seam, and model-family base contract without changing runtime behavior.</goal>
+      <step-1 module="M-EXECUTION-PLAN" verification="V-M-EXECUTION-PLAN">Define normalized request, capability, and execution-plan DTOs.</step-1>
+      <step-2 module="M-SYNTHESIS-PLANNER" verification="V-M-SYNTHESIS-PLANNER">Add planner seam and initial compatibility implementation.</step-2>
+      <step-3 module="M-MODEL-FAMILY" verification="V-M-MODEL-FAMILY">Add model-family base contract.</step-3>
+    </Migration-Phase-1>
+
+    <Migration-Phase-2 name="Qwen3 Family Extraction" status="planned">
+      <goal>Wrap current Qwen3 semantics in an explicit family adapter.</goal>
+      <step-1 module="M-QWEN3-FAMILY" verification="V-M-QWEN3-FAMILY">Move current custom, design, and clone semantics into a Qwen3 family adapter.</step-1>
+    </Migration-Phase-2>
+
+    <Migration-Phase-3 name="Coordinator Refactor" status="planned">
+      <goal>Turn the current TTS service into a planner-driven synthesis coordinator.</goal>
+      <step-1 module="M-TTS-COORDINATOR" verification="V-M-TTS-COORDINATOR">Refactor TTSService into a coordinator over planning, execution, and persistence.</step-1>
+    </Migration-Phase-3>
+
+    <Migration-Phase-4 name="Catalog and Manifest Evolution" status="planned">
+      <goal>Move from Qwen3-mode-only model descriptors to family-aware model metadata while preserving v1 compatibility.</goal>
+      <step-1 module="M-MODEL-CATALOG" verification="V-M-MODEL-CATALOG">Add family-aware model catalog metadata and stable public model IDs.</step-1>
+    </Migration-Phase-4>
+
+    <Migration-Phase-5 name="Registry Split" status="planned">
+      <goal>Separate declared model metadata, local artifact state, and runtime-loaded model handles.</goal>
+      <step-1 module="M-ARTIFACT-REGISTRY" verification="V-M-ARTIFACT-REGISTRY">Add artifact registry for install and validation state.</step-1>
+      <step-2 module="M-RUNTIME-MODEL-REGISTRY" verification="V-M-RUNTIME-MODEL-REGISTRY">Add runtime model registry for preload and cache ownership.</step-2>
+    </Migration-Phase-5>
+
+    <Migration-Phase-6 name="Backend Contract Evolution" status="planned">
+      <goal>Replace Qwen3-shaped backend calls with runtime-oriented execution contracts.</goal>
+      <step-1 module="M-BACKENDS-V2" verification="V-M-BACKENDS-V2">Generalize backend load, inspect, execute, and diagnostics surfaces.</step-1>
+    </Migration-Phase-6>
+
+    <Migration-Phase-7 name="Host-Aware Planning" status="planned">
+      <goal>Replace platform-order backend choice with explainable capability-based selection.</goal>
+      <step-1 module="M-HOST-PROBE" verification="V-M-HOST-PROBE">Add host probe diagnostics.</step-1>
+      <step-2 module="M-CAPABILITY-RESOLVER" verification="V-M-CAPABILITY-RESOLVER">Add explicit compatibility resolution and rejection reasons.</step-2>
+    </Migration-Phase-7>
+
+    <Migration-Phase-8 name="Second Family Proof" status="planned">
+      <goal>Prove the architecture with one explicitly selected non-Qwen model family.</goal>
+      <step-1>Lock the second family in the execution packet before implementation.</step-1>
+      <step-2>Integrate the second family without transport adapter rewrites.</step-2>
+    </Migration-Phase-8>
+
+    <Migration-Phase-9 name="Platform Hardening" status="planned">
+      <goal>Make multi-platform support operational with diagnostics, packaging guidance, and smoke evidence.</goal>
+      <step-1>Document support matrix and runtime dependency paths per platform.</step-1>
+      <step-2>Extend readiness and smoke verification surfaces for supported hosts.</step-2>
+    </Migration-Phase-9>
+
+    <Migration-Phase-10 name="Legacy Cleanup" status="planned">
+      <goal>Remove transitional seams only after the new architecture is proven by verification evidence.</goal>
+      <step-1>Deprecate obsolete internal paths and finalize stable module ownership.</step-1>
+    </Migration-Phase-10>
+  </MigrationProgram>
 
   <ExecutionPolicy>
     <default-profile>balanced</default-profile>
