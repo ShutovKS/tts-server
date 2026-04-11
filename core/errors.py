@@ -16,6 +16,7 @@
 #   BackendError - Base for backend failures
 #   BackendNotAvailableError - No suitable backend found
 #   BackendCapabilityError - Backend lacks required capability
+#   ModelCapabilityError - Requested model family lacks the requested synthesis capability
 #   ModelLoadError - Model loading failure
 #   TTSGenerationError - Audio generation failure
 #   InferenceBusyError - Inference slot occupied
@@ -35,7 +36,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.0.1 - Added explicit model capability errors for unsupported family and operation combinations]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -132,6 +133,40 @@ class BackendNotAvailableError(BackendError):
 # END_CONTRACT: BackendCapabilityError
 class BackendCapabilityError(BackendError):
     pass
+
+
+# START_CONTRACT: ModelCapabilityError
+#   PURPOSE: Report that a resolved model or family does not support the requested normalized synthesis capability.
+#   INPUTS: { model_id: str - Requested model identifier, capability: str - Requested normalized synthesis capability, supported_capabilities: tuple[str, ...] - Supported capability identifiers for the model, family: str | None - Optional resolved family label, reason: str | None - Optional override for the failure message, details: dict[str, Any] | None - Optional structured diagnostics }
+#   OUTPUTS: { instance - Domain error with model capability context }
+#   SIDE_EFFECTS: none
+#   LINKS: M-ERRORS
+# END_CONTRACT: ModelCapabilityError
+class ModelCapabilityError(CoreError):
+    def __init__(
+        self,
+        *,
+        model_id: str,
+        capability: str,
+        supported_capabilities: tuple[str, ...],
+        family: str | None = None,
+        reason: str | None = None,
+        details: dict[str, Any] | None = None,
+    ):
+        resolved_reason = (
+            reason or f"Model '{model_id}' does not support capability '{capability}'"
+        )
+        super().__init__(resolved_reason)
+        payload: dict[str, Any] = {
+            "model": model_id,
+            "capability": capability,
+            "supported_capabilities": list(supported_capabilities),
+        }
+        if family:
+            payload["family"] = family
+        if details:
+            payload.update(details)
+        self.context = ErrorContext(reason=resolved_reason, details=payload)
 
 
 # START_CONTRACT: ModelLoadError
@@ -470,6 +505,7 @@ class QuotaExceededError(CoreError):
         self.retry_after_seconds = retry_after_seconds
         self.context = ErrorContext(reason=resolved_reason, details=payload)
 
+
 __all__ = [
     "CoreError",
     "ErrorContext",
@@ -477,6 +513,7 @@ __all__ = [
     "BackendError",
     "BackendNotAvailableError",
     "BackendCapabilityError",
+    "ModelCapabilityError",
     "ModelLoadError",
     "TTSGenerationError",
     "InferenceBusyError",

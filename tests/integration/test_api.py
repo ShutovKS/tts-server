@@ -97,6 +97,10 @@ class ContentionTTSService(DummyTTSService):
 
 
 class StubRegistry:
+    @property
+    def backend(self):
+        return type("BackendStub", (), {"key": "torch"})()
+
     def get_model(self, model_name=None, mode=None):
         from core.models.catalog import MODEL_SPECS
 
@@ -104,6 +108,9 @@ class StubRegistry:
             spec for spec in MODEL_SPECS.values() if spec.mode == (mode or "clone")
         )
         return spec, object()
+
+    def backend_for_spec(self, spec):
+        return self.backend
 
 
 @pytest.fixture()
@@ -155,8 +162,44 @@ def test_models_endpoint(client: TestClient):
     response = client.get("/api/v1/models")
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["data"]) == 2
+    assert len(payload["data"]) == 3
     assert payload["data"][0]["available"] is True
+
+
+def test_design_tts_rejects_model_without_design_capability(client: TestClient):
+    response = client.post(
+        "/api/v1/tts/design",
+        json={
+            "text": "Hello design",
+            "voice_description": "calm narrator",
+            "model": "Piper-en_US-lessac-medium",
+        },
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["code"] == "model_capability_not_supported"
+    assert payload["details"]["model"] == "Piper-en_US-lessac-medium"
+    assert payload["details"]["capability"] == "voice_description_tts"
+
+
+def test_clone_async_submit_rejects_model_without_clone_capability(
+    client: TestClient,
+):
+    files = {"ref_audio": ("reference.wav", make_wav_bytes(), "audio/wav")}
+    data = {
+        "text": "Clone this",
+        "ref_text": "Clone this",
+        "model": "Piper-en_US-lessac-medium",
+    }
+
+    response = client.post("/api/v1/tts/clone/jobs", data=data, files=files)
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["code"] == "model_capability_not_supported"
+    assert payload["details"]["model"] == "Piper-en_US-lessac-medium"
+    assert payload["details"]["capability"] == "reference_voice_clone"
 
 
 def test_sync_rate_limit_returns_unified_error_with_retry_after(client: TestClient):

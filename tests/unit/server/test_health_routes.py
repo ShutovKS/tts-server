@@ -105,6 +105,13 @@ def test_build_readiness_report_returns_deep_diagnostics(
     assert report.checks["models"]["items"][0]["runtime_ready"] is True
     assert report.checks["models"]["items"][0]["preload"]["status"] == "loaded"
     assert report.checks["models"]["items"][0]["cache"]["loaded"] is True
+    assert report.checks["models"]["routing"]["mixed_backend_routing"] is True
+    assert report.checks["models"]["host"]["platform_system"] == "darwin"
+    assert any(
+        item["key"] == "qwen_fast"
+        and item["diagnostics"]["reason"] == "platform_unsupported"
+        for item in report.checks["models"]["available_backends"]
+    )
     assert report.checks["ffmpeg"]["available"] is True
     assert report.checks["config"]["models_dir_exists"] is True
     assert report.checks["config"]["model_preload_policy"] == "listed"
@@ -114,6 +121,11 @@ def test_build_readiness_report_returns_deep_diagnostics(
     assert report.checks["runtime"]["streaming_enabled"] is True
     assert report.checks["runtime"]["configured_backend"] is None
     assert report.checks["runtime"]["backend_autoselect"] is True
+    assert any(
+        candidate["key"] == "qwen_fast"
+        for item in report.checks["models"]["items"]
+        for candidate in item.get("route", {}).get("candidates", [])
+    )
     assert report.checks["runtime"]["metrics"]["execution"]["submitted"] == 1
     assert (
         report.checks["models"]["metrics"]["operational"]["execution"]["completed"] == 1
@@ -137,6 +149,7 @@ def test_build_readiness_report_returns_degraded_status_when_runtime_not_ready(
 
     assert report.status == "degraded"
     assert report.checks["models"]["registry_ready"] is False
+    assert report.checks["models"]["routing"]["degraded_routes"] == 1
     assert report.checks["models"]["preload"]["status"] == "failed"
     assert report.checks["ffmpeg"]["available"] is False
     assert report.checks["models"]["items"][0]["missing_artifacts"] == ["config.json"]

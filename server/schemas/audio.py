@@ -25,7 +25,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.0.1 - Expanded model discovery payloads with family, routing, and readiness metadata]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -267,7 +267,7 @@ class TTSSuccessMetadata(BaseModel):
 
 # START_CONTRACT: ModelInfo
 #   PURPOSE: Define the schema for a model discovery record returned by the API.
-#   INPUTS: { key: str - registry key, id: str - public model id, name: str - display name, mode: str - supported synthesis mode, folder: str - model folder name, available: bool - local availability flag, backend: str - backend id, capabilities: dict[str, object] - capability metadata }
+#   INPUTS: { key: str - registry key, id: str - public model id, name: str - display name, mode: str - supported synthesis mode, family: str | None - resolved model family label, family_key: str | None - normalized family identifier, capabilities_supported: list[str] - normalized supported synthesis capabilities, backend_support: list[str] - backends declared for the model in the manifest, folder: str - model folder name, available: bool - local availability flag, loadable: bool | None - artifact validation flag, runtime_ready: bool | None - runtime readiness flag, backend: str | None - execution backend id, selected_backend: str | None - globally selected backend id, execution_backend: str | None - effective per-model backend route, capabilities: dict[str, object] - backend capability metadata, route: dict[str, object] - backend route explanation, missing_artifacts: list[str] - missing artifact names, required_artifacts: list[str] - required artifact names }
 #   OUTPUTS: { ModelInfo - validated model discovery payload item }
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER
@@ -277,10 +277,23 @@ class ModelInfo(BaseModel):
     id: str
     name: str
     mode: str
+    family: Optional[str] = None
+    family_key: Optional[str] = None
+    capabilities_supported: list[str] = Field(default_factory=list)
+    backend_support: list[str] = Field(default_factory=list)
     folder: str
     available: bool
-    backend: str
+    loadable: Optional[bool] = None
+    runtime_ready: Optional[bool] = None
+    backend: Optional[str] = None
+    selected_backend: Optional[str] = None
+    selected_backend_label: Optional[str] = None
+    execution_backend: Optional[str] = None
+    execution_backend_label: Optional[str] = None
     capabilities: dict[str, object]
+    route: dict[str, object] = Field(default_factory=dict)
+    missing_artifacts: list[str] = Field(default_factory=list)
+    required_artifacts: list[str] = Field(default_factory=list)
 
 
 # START_CONTRACT: ModelsResponse
@@ -304,6 +317,7 @@ class ModelsResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     checks: dict[str, object]
+
 
 __all__ = [
     "normalize_text_value",

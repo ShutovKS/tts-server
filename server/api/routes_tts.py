@@ -16,6 +16,7 @@
 #   enforce_text_length - Validate text against configured length limits
 #   current_principal_id - Read current principal id from request state
 #   resolve_idempotency_scope - Resolve idempotency scope for async submissions
+#   ensure_requested_model_capability - Validate an explicitly requested model against the requested normalized synthesis capability
 #   build_job_urls - Build status, result, and cancel URLs for async jobs
 #   build_job_snapshot_payload - Convert internal job snapshots to public payloads
 #   get_job_snapshot_or_raise - Load a job snapshot and enforce owner access
@@ -31,7 +32,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+#   LAST_CHANGE: [v1.0.1 - Added controlled model-capability validation before sync and async family-specific execution paths]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ from core.contracts.commands import (
     VoiceCloneCommand,
     VoiceDesignCommand,
 )
+from core.contracts.synthesis import legacy_mode_to_capability
 from core.contracts.jobs import (
     JobOperation,
     JobSnapshot,
@@ -65,6 +67,7 @@ from core.errors import (
     JobNotFoundError,
     JobNotReadyError,
     JobNotSucceededError,
+    ModelCapabilityError,
     RequestTimeoutError,
 )
 from core.observability import Timer, log_event, operation_scope
@@ -199,6 +202,33 @@ def resolve_idempotency_scope(request: Request) -> str:
     return current_principal_id(request)
 
 
+# START_CONTRACT: ensure_requested_model_capability
+#   PURPOSE: Validate that an explicitly requested model supports the requested synthesis capability.
+#   INPUTS: { request: Request - request carrying the active model registry, model_name: Optional[str] - explicit model identifier to validate, legacy_mode: str - compatibility mode that maps to a normalized capability }
+#   OUTPUTS: { None - completes when the model supports the capability }
+#   SIDE_EFFECTS: May resolve model metadata through the registry and raise model capability errors
+#   LINKS: M-SERVER, M-MODEL-REGISTRY, M-ERRORS
+# END_CONTRACT: ensure_requested_model_capability
+def ensure_requested_model_capability(
+    request: Request, model_name: Optional[str], *, legacy_mode: str
+) -> None:
+    if not model_name:
+        return
+    registry = request.app.state.registry
+    if not hasattr(registry, "get_model_spec"):
+        return
+    spec = registry.get_model_spec(model_name=model_name)
+    capability = legacy_mode_to_capability(legacy_mode)
+    if capability in spec.supported_capabilities:
+        return
+    raise ModelCapabilityError(
+        model_id=spec.model_id,
+        capability=capability,
+        supported_capabilities=spec.supported_capabilities,
+        family=spec.family,
+    )
+
+
 # START_CONTRACT: build_job_urls
 #   PURPOSE: Build status, result, and cancel URLs for an async TTS job.
 #   INPUTS: { request: Request - request used for route URL generation, job_id: str - async job identifier }
@@ -309,6 +339,7 @@ def create_custom_job_submission_from_openai(
     *,
     idempotency_key: Optional[str] = None,
 ):
+    ensure_requested_model_capability(request, payload.model, legacy_mode="custom")
     input_text = enforce_text_length(
         value=payload.input,
         field_name="input",
@@ -367,6 +398,7 @@ def create_custom_job_submission_from_custom(
     *,
     idempotency_key: Optional[str] = None,
 ):
+    ensure_requested_model_capability(request, payload.model, legacy_mode="custom")
     text = enforce_text_length(
         value=payload.text,
         field_name="text",
@@ -430,6 +462,7 @@ def create_design_job_submission(
     *,
     idempotency_key: Optional[str] = None,
 ):
+    ensure_requested_model_capability(request, payload.model, legacy_mode="design")
     text = enforce_text_length(
         value=payload.text,
         field_name="text",
@@ -599,6 +632,7 @@ async def stage_clone_job_submission(
         save_output, request.app.state.settings.default_save_output
     )
     normalized_language = normalize_language_value(language)
+    ensure_requested_model_capability(request, model, legacy_mode="clone")
     staged_path = build_clone_staged_path(request, ref_audio, prefix="job_upload")
     staged_path.write_bytes(upload_bytes)
     submission = create_job_submission(
@@ -799,6 +833,9 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                 return build_text_length_error(
                     request=request, field_name="input", message=str(exc)
                 )
+            ensure_requested_model_capability(
+                request, payload.model, legacy_mode="custom"
+            )
             # END_BLOCK_VALIDATE_OPENAI_REQUEST
             # START_BLOCK_EXECUTE_OPENAI_SYNTHESIS
             result = await run_inference_with_timeout(
@@ -871,6 +908,9 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                 return build_text_length_error(
                     request=request, field_name="text", message=str(exc)
                 )
+            ensure_requested_model_capability(
+                request, payload.model, legacy_mode="custom"
+            )
             # END_BLOCK_VALIDATE_CUSTOM_REQUEST
             # START_BLOCK_EXECUTE_CUSTOM_SYNTHESIS
             result = await run_inference_with_timeout(
@@ -938,6 +978,9 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                 return build_text_length_error(
                     request=request, field_name="text", message=str(exc)
                 )
+            ensure_requested_model_capability(
+                request, payload.model, legacy_mode="design"
+            )
             # END_BLOCK_VALIDATE_DESIGN_REQUEST
             # START_BLOCK_EXECUTE_DESIGN_SYNTHESIS
             result = await run_inference_with_timeout(
@@ -1007,6 +1050,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                 return build_text_length_error(
                     request=request, field_name="text", message=str(exc)
                 )
+            ensure_requested_model_capability(request, model, legacy_mode="clone")
             # END_BLOCK_VALIDATE_CLONE_REQUEST
             # START_BLOCK_LOG_CLONE_REQUEST
             log_event(
@@ -1369,6 +1413,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
         )
         # END_BLOCK_BUILD_CANCEL_RESPONSE
 
+
 __all__ = [
     "T",
     "build_text_length_error",
@@ -1376,6 +1421,7 @@ __all__ = [
     "enforce_text_length",
     "current_principal_id",
     "resolve_idempotency_scope",
+    "ensure_requested_model_capability",
     "build_job_urls",
     "build_job_snapshot_payload",
     "get_job_snapshot_or_raise",

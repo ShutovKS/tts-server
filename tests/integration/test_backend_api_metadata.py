@@ -82,13 +82,43 @@ def test_readiness_report_exposes_backend_configuration(client: TestClient):
     assert payload["checks"]["runtime"]["configured_backend"] == "torch"
     assert payload["checks"]["runtime"]["backend_autoselect"] is True
     assert payload["checks"]["models"]["selected_backend"] == "mlx"
+    assert payload["checks"]["models"]["routing"]["mixed_backend_routing"] is True
+    assert payload["checks"]["models"]["host"]["platform_system"] == "darwin"
     assert payload["checks"]["models"]["available_backends"][0]["key"] == "mlx"
+    assert any(
+        item["key"] == "qwen_fast"
+        and item["diagnostics"]["reason"] == "platform_unsupported"
+        for item in payload["checks"]["models"]["available_backends"]
+    )
 
 
 def test_models_endpoint_exposes_backend_and_capabilities(client: TestClient):
     response = client.get("/api/v1/models")
 
     assert response.status_code == 200
-    model = response.json()["data"][0]
-    assert model["backend"] == "mlx"
-    assert model["capabilities"]["supports_clone"] is True
+    payload = response.json()["data"]
+    qwen_model = next(
+        item for item in payload if item["id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    )
+    piper_model = next(
+        item for item in payload if item["id"] == "Piper-en_US-lessac-medium"
+    )
+
+    assert qwen_model["backend"] == "mlx"
+    assert qwen_model["backend_support"] == ["mlx", "qwen_fast", "torch"]
+    assert qwen_model["selected_backend"] == "mlx"
+    assert qwen_model["execution_backend"] == "mlx"
+    assert qwen_model["capabilities"]["supports_clone"] is True
+    assert qwen_model["route"]["candidates"][0]["key"] == "qwen_fast"
+    assert (
+        qwen_model["route"]["candidates"][0]["route_reason"] == "platform_unsupported"
+    )
+    assert piper_model["backend"] == "onnx"
+    assert piper_model["selected_backend"] == "mlx"
+    assert piper_model["execution_backend"] == "onnx"
+    assert piper_model["family_key"] == "piper"
+    assert piper_model["capabilities_supported"] == ["preset_speaker_tts"]
+    assert (
+        piper_model["route"]["route_reason"]
+        == "selected_backend_incompatible_with_model"
+    )

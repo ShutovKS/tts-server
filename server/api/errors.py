@@ -48,6 +48,7 @@ from core.errors import (
     JobNotReadyError,
     JobNotSucceededError,
     JobQueueFullError,
+    ModelCapabilityError,
     ModelLoadError,
     ModelNotAvailableError,
     QuotaExceededError,
@@ -182,6 +183,15 @@ def build_exception_mappings(
                 status_code=422,
                 code="backend_capability_missing",
                 message="Selected backend does not support the requested operation",
+                details=build_error_details(exc, default_reason=str(exc)),
+            ),
+        ),
+        ModelCapabilityError: ExceptionMapping(
+            error_type=ModelCapabilityError,
+            builder=lambda exc: ErrorDescriptor(
+                status_code=422,
+                code="model_capability_not_supported",
+                message="Requested model does not support the requested operation",
                 details=build_error_details(exc, default_reason=str(exc)),
             ),
         ),
@@ -484,6 +494,7 @@ def _sanitize_path_string(value: str) -> str:
             continue
         sanitized = sanitized.replace(normalized, _sanitize_path_value(normalized))
     return sanitized
+
 
 __all__ = [
     "register_exception_handlers",
