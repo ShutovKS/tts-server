@@ -305,9 +305,14 @@ class BackendRegistry:
                 ranked_compatible = self._capability_resolver.rank_backends(
                     backends=tuple(compatible), host=self._host_snapshot
                 )
-                execution_backend = self._backends[ranked_compatible[0].backend_key]
+                accepted_compatible = next(
+                    (candidate for candidate in ranked_compatible if candidate.accepted),
+                    None,
+                )
+                chosen_candidate = accepted_compatible or ranked_compatible[0]
+                execution_backend = self._backends[chosen_candidate.backend_key]
                 routing_mode = "per_model_backend_fallback"
-                if not ranked_compatible[0].accepted:
+                if not chosen_candidate.accepted:
                     route_reason = (
                         "no_ready_backend_for_model_using_best_effort_fallback"
                     )

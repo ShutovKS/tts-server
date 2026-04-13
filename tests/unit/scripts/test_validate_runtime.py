@@ -1,5 +1,5 @@
 # FILE: tests/unit/scripts/test_validate_runtime.py
-# VERSION: 1.1.0
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Verify runtime validation automation helpers for host-matrix checks, smoke-server orchestration, and Telegram live validation flows.
 #   SCOPE: Validation env defaults, qwen_fast simulation assertions, smoke preflight error handling, and opt-in Telegram inbound update validation
@@ -11,8 +11,11 @@
 #
 # START_MODULE_MAP
 #   test_build_validation_env_sets_repo_defaults - Verifies validation env helper populates repository-local paths
+#   test_parse_args_smoke_server_defaults_to_env_smoke_model_id - Verifies smoke-server parser defaults smoke model id from environment
+#   test_parse_args_smoke_server_allows_cli_smoke_model_id_override - Verifies smoke-server parser accepts explicit smoke model id overrides
 #   test_run_host_matrix_validation_accepts_simulated_qwen_fast_modes - Verifies optional-lane host matrix validation succeeds with simulated qwen_fast states
 #   test_run_smoke_server_validation_requires_runtime_ready_custom_model - Verifies smoke validation fails fast when the custom smoke model is not runtime-ready
+#   test_run_smoke_server_validation_rejects_unsupported_smoke_model_id - Verifies smoke validation fails fast for unknown smoke model ids
 #   test_next_update_offset_uses_highest_update_id - Verifies Telegram validation offset derivation skips already seen updates
 #   test_find_matching_update_filters_by_chat_and_text - Verifies Telegram update matching honors chat and text filters
 #   test_run_telegram_live_validation_returns_connectivity_summary_without_update_polling - Verifies baseline Telegram live validation only calls getMe when no optional checks are requested
@@ -22,7 +25,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Added unit coverage for opt-in Telegram live update validation]
+#   LAST_CHANGE: [v1.2.0 - Added regression coverage for model-aware smoke-server argument and validation behavior]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -35,9 +38,11 @@ import pytest
 
 from scripts.validate_runtime import (
     CUSTOM_SMOKE_MODEL_ID,
+    PIPER_SMOKE_MODEL_ID,
     _find_matching_update,
     _next_update_offset,
     build_validation_env,
+    parse_args,
     run_host_matrix_validation,
     run_smoke_server_validation,
     run_telegram_live_validation,
@@ -57,6 +62,32 @@ def test_build_validation_env_sets_repo_defaults():
     assert env["QWEN_TTS_MLX_MODELS_DIR"].endswith(".models/mlx")
 
 
+def test_parse_args_smoke_server_defaults_to_env_smoke_model_id(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("QWEN_TTS_SMOKE_MODEL_ID", PIPER_SMOKE_MODEL_ID)
+
+    args = parse_args(["smoke-server"])
+
+    assert args.smoke_model_id == PIPER_SMOKE_MODEL_ID
+
+
+def test_parse_args_smoke_server_allows_cli_smoke_model_id_override(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("QWEN_TTS_SMOKE_MODEL_ID", PIPER_SMOKE_MODEL_ID)
+
+    args = parse_args(
+        [
+            "smoke-server",
+            "--smoke-model-id",
+            CUSTOM_SMOKE_MODEL_ID,
+        ]
+    )
+
+    assert args.smoke_model_id == CUSTOM_SMOKE_MODEL_ID
+
+
 def test_run_host_matrix_validation_accepts_simulated_qwen_fast_modes():
     summary = run_host_matrix_validation(build_validation_env())
 
@@ -66,6 +97,24 @@ def test_run_host_matrix_validation_accepts_simulated_qwen_fast_modes():
     assert (
         summary["simulated_qwen_fast"]["dependency_missing"]["reason"]
         == "runtime_dependency_missing"
+    )
+
+
+def test_run_host_matrix_validation_respects_disabled_qwen_fast_config():
+    summary = run_host_matrix_validation(
+        build_validation_env(
+            {
+                "QWEN_TTS_QWEN_FAST_ENABLED": "false",
+            }
+        )
+    )
+
+    assert summary["status"] == "ok"
+    assert summary["simulated_qwen_fast"]["eligible"]["ready"] is False
+    assert summary["simulated_qwen_fast"]["eligible"]["reason"] == "disabled_by_config"
+    assert (
+        summary["simulated_qwen_fast"]["eligible"]["custom_route_reason"]
+        == "disabled_by_config"
     )
 
 
@@ -80,6 +129,7 @@ def test_run_smoke_server_validation_requires_runtime_ready_custom_model(
         backend=None,
         startup_timeout_seconds=1.0,
         expected_backend=None,
+        smoke_model_id=CUSTOM_SMOKE_MODEL_ID,
         strict_runtime=False,
     )
     env = build_validation_env(
@@ -96,6 +146,36 @@ def test_run_smoke_server_validation_requires_runtime_ready_custom_model(
         run_smoke_server_validation(args, env)
 
     assert CUSTOM_SMOKE_MODEL_ID in str(exc_info.value)
+
+
+def test_run_smoke_server_validation_rejects_unsupported_smoke_model_id(
+    tmp_path: Path,
+):
+    args = argparse.Namespace(
+        command="smoke-server",
+        python_executable="python3",
+        host="127.0.0.1",
+        port=0,
+        backend=None,
+        startup_timeout_seconds=1.0,
+        expected_backend=None,
+        smoke_model_id="Unsupported-Model",
+        strict_runtime=False,
+    )
+    env = build_validation_env(
+        {
+            "QWEN_TTS_MODELS_DIR": str(tmp_path / "models"),
+            "QWEN_TTS_MLX_MODELS_DIR": str(tmp_path / "models" / "mlx"),
+            "QWEN_TTS_OUTPUTS_DIR": str(tmp_path / "outputs"),
+            "QWEN_TTS_VOICES_DIR": str(tmp_path / "voices"),
+            "QWEN_TTS_UPLOAD_STAGING_DIR": str(tmp_path / "uploads"),
+        }
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        run_smoke_server_validation(args, env)
+
+    assert "Unsupported smoke model id" in str(exc_info.value)
 
 
 def test_next_update_offset_uses_highest_update_id():

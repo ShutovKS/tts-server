@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import importlib
 import platform
 from pathlib import Path
 from threading import Lock
@@ -38,13 +39,30 @@ except ImportError as exc:  # pragma: no cover
 else:
     TORCH_IMPORT_ERROR = None
 
-try:
-    from qwen_tts import Qwen3TTSModel
-except ImportError as exc:  # pragma: no cover
-    Qwen3TTSModel = None
-    QWEN_TTS_IMPORT_ERROR = exc
-else:
+Qwen3TTSModel = None
+QWEN_TTS_IMPORT_ERROR = None
+
+
+def _load_qwen_tts_model_cls():
+    global Qwen3TTSModel, QWEN_TTS_IMPORT_ERROR
+    if Qwen3TTSModel is not None:
+        return Qwen3TTSModel
+    if QWEN_TTS_IMPORT_ERROR is not None:
+        return None
+    try:
+        module = importlib.import_module("qwen_tts")
+    except ImportError as exc:  # pragma: no cover
+        QWEN_TTS_IMPORT_ERROR = exc
+        return None
+    model_cls = getattr(module, "Qwen3TTSModel", None)
+    if model_cls is None:
+        QWEN_TTS_IMPORT_ERROR = ImportError(
+            "qwen_tts does not expose Qwen3TTSModel"
+        )
+        return None
+    Qwen3TTSModel = model_cls
     QWEN_TTS_IMPORT_ERROR = None
+    return Qwen3TTSModel
 
 
 # START_CONTRACT: TorchBackend
@@ -94,7 +112,7 @@ class TorchBackend(TTSBackend):
     #   LINKS: M-BACKENDS
     # END_CONTRACT: is_available
     def is_available(self) -> bool:
-        return torch is not None and Qwen3TTSModel is not None
+        return torch is not None and _load_qwen_tts_model_cls() is not None
 
     # START_CONTRACT: supports_platform
     #   PURPOSE: Report whether the current platform is supported by the Torch backend.
@@ -145,7 +163,8 @@ class TorchBackend(TTSBackend):
                 f"Torch model path is unavailable: {spec.folder}",
                 details={"model": spec.api_name, "backend": self.key},
             )
-        if Qwen3TTSModel is None or torch is None:
+        model_cls = _load_qwen_tts_model_cls()
+        if model_cls is None or torch is None:
             raise ModelLoadError(
                 str(QWEN_TTS_IMPORT_ERROR or TORCH_IMPORT_ERROR),
                 details={
@@ -163,7 +182,7 @@ class TorchBackend(TTSBackend):
                     "models.cache.miss", tags={"backend": self.key}
                 )
                 try:
-                    runtime_model = Qwen3TTSModel.from_pretrained(
+                    runtime_model = model_cls.from_pretrained(
                         str(model_path),
                         device_map=self._resolve_device_map(),
                         dtype=self._resolve_dtype(),
@@ -277,7 +296,7 @@ class TorchBackend(TTSBackend):
             details={
                 "platform_supported": self.supports_platform(),
                 "torch_available": torch is not None,
-                "qwen_tts_available": Qwen3TTSModel is not None,
+                "qwen_tts_available": _load_qwen_tts_model_cls() is not None,
                 "torch_error": None
                 if TORCH_IMPORT_ERROR is None
                 else str(TORCH_IMPORT_ERROR),

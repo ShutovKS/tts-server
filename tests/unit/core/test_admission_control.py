@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import tempfile
 
 import pytest
 
@@ -43,10 +44,10 @@ pytestmark = pytest.mark.unit
 
 
 DEFAULT_SETTINGS = dict(
-    models_dir=Path("/tmp/models"),
-    mlx_models_dir=Path("/tmp/models/mlx"),
-    outputs_dir=Path("/tmp/outputs"),
-    voices_dir=Path("/tmp/voices"),
+    models_dir=Path(tempfile.gettempdir()) / "qwen-tts-tests" / "models",
+    mlx_models_dir=Path(tempfile.gettempdir()) / "qwen-tts-tests" / "models" / "mlx",
+    outputs_dir=Path(tempfile.gettempdir()) / "qwen-tts-tests" / "outputs",
+    voices_dir=Path(tempfile.gettempdir()) / "qwen-tts-tests" / "voices",
 )
 
 
