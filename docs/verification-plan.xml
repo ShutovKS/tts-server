@@ -427,8 +427,34 @@
         <scenario-5 kind="success">Operator self-check outputs selected backend, per-model execution backend, host snapshot, and missing asset evidence without import-path failures.</scenario-5>
         <scenario-6 kind="success">Operator self-check exposes qwen_fast enablement, test-mode overrides, route candidates, and fallback reasons when the accelerated lane is configured.</scenario-6>
         <scenario-7 kind="success">Host-matrix validation automates baseline and simulated qwen_fast lane evidence so support claims stay synchronized with runtime diagnostics.</scenario-7>
+        <scenario-8 kind="success">Windows Docker Desktop validation can reuse the same runtime wiring with Linux containers after the container trust store includes the required corporate proxy root certificate.</scenario-8>
       </scenarios>
     </V-M-BOOTSTRAP>
+
+    <V-M-DOCKER-ASSETS MODULE="M-DOCKER-ASSETS" PRIORITY="high">
+      <test-files>
+        <file>server/Dockerfile</file>
+        <file>telegram_bot/Dockerfile</file>
+        <file>docker-compose.server.yaml</file>
+        <file>docker-compose.telegram-bot.yaml</file>
+        <file>docker/certs/infowatch-transparent-proxy-root.crt</file>
+      </test-files>
+      <module-checks>
+        <check-1>docker compose -f docker-compose.server.yaml build</check-1>
+        <check-2>docker compose -f docker-compose.telegram-bot.yaml build</check-2>
+        <check-3>docker compose -f docker-compose.server.yaml up -d server</check-3>
+        <check-4>docker exec tts-server-server-1 python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/live').read().decode())"</check-4>
+        <check-5>docker exec tts-server-server-1 python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready').read().decode())"</check-5>
+        <check-6>docker compose -f docker-compose.telegram-bot.yaml up -d telegram-bot</check-6>
+        <check-7>docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot</check-7>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Server and Telegram Docker images build successfully on the current Windows host with Docker Desktop Linux containers.</scenario-1>
+        <scenario-2 kind="success">Container trust-store wiring includes the required corporate proxy root certificate so Python HTTPS package installation succeeds behind the daemon proxy.</scenario-2>
+        <scenario-3 kind="success">Server compose runtime exposes healthy `/health/live` and `/health/ready` responses while mounted models, outputs, uploads, voices, and ffmpeg remain visible inside the container.</scenario-3>
+        <scenario-4 kind="success">Telegram compose runtime completes startup self-checks, verifies Telegram API connectivity with a real token, and enters the healthy polling loop while persisting delivery state in the named volume.</scenario-4>
+      </scenarios>
+    </V-M-DOCKER-ASSETS>
 
     <V-M-SERVER MODULE="M-SERVER" PRIORITY="high">
       <test-files>
@@ -439,7 +465,13 @@
       <module-checks>
         <check-1>python -m pytest tests/integration/test_api.py tests/unit/server/test_health_routes.py -m "integration or unit"</check-1>
         <check-2>QWEN_TTS_RUN_SMOKE=1 python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-2>
-        <check-3>python scripts/validate_runtime.py smoke-server</check-3>
+        <check-3>QWEN_TTS_RUN_SMOKE=1 QWEN_TTS_SMOKE_MODEL_ID=Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-3>
+        <check-4>QWEN_TTS_RUN_SMOKE=1 QWEN_TTS_SMOKE_MODEL_ID=Piper-en_US-lessac-medium QWEN_TTS_SMOKE_EXPECTED_BACKEND=onnx python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-4>
+        <check-5>python scripts/validate_runtime.py smoke-server</check-5>
+        <check-6>python scripts/validate_runtime.py smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx</check-6>
+        <check-7>docker compose -f docker-compose.server.yaml up -d server</check-7>
+        <check-8>docker exec tts-server-server-1 python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/live').read().decode())"</check-8>
+        <check-9>docker exec tts-server-server-1 python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready').read().decode())"</check-9>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Health live and readiness endpoints expose expected status plus deep readiness diagnostics.</scenario-1>
@@ -451,6 +483,9 @@
         <scenario-7 kind="success">Readiness and model discovery payloads expose selected backend, per-model execution backend, routing reasons, and family capability metadata for mixed-family deployments.</scenario-7>
         <scenario-8 kind="success">Fast-lane metadata exposes `qwen_fast` as an explicit custom-only route candidate with deterministic fallback reasons instead of implying clone/design acceleration.</scenario-8>
         <scenario-9 kind="success">Automated smoke validation can start the local server, wait for healthy startup, execute smoke pytest, and stop the runtime cleanly without manual orchestration.</scenario-9>
+        <scenario-10 kind="success">Smoke validation remains Qwen custom sync/async capable by default while supporting an explicit Piper smoke model path through the same public HTTP API with ONNX backend assertions.</scenario-10>
+        <scenario-11 kind="success">On the current Windows host, Docker Desktop Linux-container deployment starts the server successfully and returns `status=ok` from both `/health/live` and `/health/ready`.</scenario-11>
+        <scenario-12 kind="success">Server Docker readiness on the current Windows host confirms mounted `.models`, `.outputs`, `.uploads`, `.voices`, and in-container ffmpeg availability.</scenario-12>
       </scenarios>
       <required-log-markers>
         <marker-1>[ServerApp][request_context_middleware][BLOCK_LOG_REQUEST_START]</marker-1>
@@ -477,6 +512,8 @@
         <check-2>python -m pytest tests/integration/test_telegram_adapter -m integration</check-2>
         <check-3>python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"</check-3>
         <check-4>python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN" --chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."</check-4>
+        <check-5>docker compose -f docker-compose.telegram-bot.yaml up -d telegram-bot</check-5>
+        <check-6>docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot</check-6>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">TelegramSettings.from_env and build_telegram_runtime validate configuration and assemble TelegramRuntime correctly.</scenario-1>
@@ -486,6 +523,8 @@
         <scenario-5 kind="success">Telegram observability helpers emit structured GRACE event markers and polling metrics remain visible to tests.</scenario-5>
         <scenario-6 kind="success">Telegram live validation can verify Bot API reachability automatically when a real bot token is provided, while remaining opt-in for secretless environments.</scenario-6>
         <scenario-7 kind="success">Telegram live validation can optionally send a validation ping and confirm that a newer matching inbound message update becomes visible through getUpdates for a dedicated test chat.</scenario-7>
+        <scenario-8 kind="success">On the current Windows host, Docker Desktop Linux-container deployment starts the Telegram bot successfully, passes startup self-checks, verifies Telegram API connectivity with a real token, and reaches the healthy polling loop.</scenario-8>
+        <scenario-9 kind="success">Telegram Docker runtime on the current Windows host keeps shared model/output/upload/voice mounts and the named `/app/.state` volume available to the polling process.</scenario-9>
       </scenarios>
       <required-log-markers>
         <marker-1>[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]</marker-1>
@@ -617,9 +656,12 @@
       <commands>
         <command-1>python -m pytest</command-1>
         <command-2>QWEN_TTS_RUN_SMOKE=1 python -m pytest tests/smoke/test_local_runtime.py -m smoke</command-2>
+        <command-3>docker compose -f docker-compose.server.yaml up -d server</command-3>
+        <command-4>docker compose -f docker-compose.telegram-bot.yaml up -d telegram-bot</command-4>
       </commands>
       <required-evidence>
         <evidence-1>Support matrix in docs matches readiness and test evidence.</evidence-1>
+        <evidence-2>Windows Docker Desktop evidence covers successful image builds plus live server and Telegram container startup behavior on the validated host.</evidence-2>
       </required-evidence>
     </Gate-Migration-Phase-9>
 

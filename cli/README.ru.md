@@ -25,6 +25,11 @@ source .venv311/bin/activate
 python -m cli
 ```
 
+```powershell
+.\.venv311\Scripts\Activate.ps1
+python -m cli
+```
+
 CLI работает в текущей shell-сессии и использует те же общие директории, что и остальные адаптеры.
 
 ## Сборка runtime
@@ -90,7 +95,7 @@ CLI использует ту же схему хранения, что и ост
 
 - CLI рассчитан на локальное интерактивное использование.
 - Для него не предусмотрены отдельные Docker entrypoint'ы и compose-файлы.
-- Воспроизведение аудио зависит от системных инструментов, которые вызывает [`maybe_play_audio()`](runtime.py:53).
+- Воспроизведение аудио зависит от системных инструментов, которые вызывает [`maybe_play_audio()`](runtime.py:53); в Windows CLI теперь предпочитает нативное открытие файла через системную ассоциацию вместо хрупкого вызова `cmd /c start`.
 - Из-за интерактивного интерфейса CLI лучше подходит для ручной проверки, а не для автоматизации.
 - Если shared runtime выбирает `qwen_fast`, этот ускоренный lane применяется только к Qwen custom synthesis и при недоступности безопасно уходит в fallback на `torch`.
 - Текущее меню всё ещё остаётся Qwen-oriented для сценариев custom/design/clone; Piper уже виден через shared runtime metadata и HTTP health/model surfaces, но отдельного Piper-first menu в CLI пока нет.

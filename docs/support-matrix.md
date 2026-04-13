@@ -18,9 +18,9 @@
 | Linux | Torch | Qwen3-TTS | Partially proven | Official upstream install path exists via `pip install -U qwen-tts`; full host validation still remains outstanding |
 | Linux | Qwen Fast | Qwen3-TTS custom-only | Partially proven | Additive accelerated lane exists in code/tests with explicit CUDA/runtime gating and fallback to Torch; end-to-end host evidence still depends on CUDA-capable validation |
 | Linux | ONNX | Piper | Partially proven | Supported by code and CI-oriented setup guidance |
-| Windows | Torch | Qwen3-TTS | Best effort | Official upstream install path exists via `pip install -U qwen-tts`, but Windows runtime validation in this repo remains best effort |
-| Windows | Qwen Fast | Qwen3-TTS custom-only | Best effort | CUDA-oriented fast lane is wired with explicit diagnostics and Torch fallback, but Windows runtime validation remains best effort |
-| Windows | ONNX | Piper | Best effort | Covered by best-effort CI self-check path; external runtime compatibility should be verified per deployment |
+| Windows | Torch | Qwen3-TTS | Proven | Native Windows validation now covers strict self-check, Torch-only host-matrix checks with qwen_fast disabled by config, and smoke-server execution against the Torch backend on this host |
+| Windows | Qwen Fast | Qwen3-TTS custom-only | Proven | Native Windows validation now covers strict self-check, host-matrix diagnostics, and smoke-server execution on a CUDA-capable host; explicit Torch fallback remains in place when fast prerequisites are missing |
+| Windows | ONNX | Piper | Proven | Native Windows validation now covers strict self-check with a real Piper runtime plus downloaded voice artifacts, direct synthesis evidence, and smoke-server HTTP validation via `--smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx` on this host |
 | Any platform | MLX | Piper | Unsupported | Piper routes through ONNX, not MLX |
 | Any platform | ONNX | Qwen3-TTS | Unsupported | Qwen3 runtime is not wired to ONNX in this repository |
 
@@ -31,7 +31,8 @@
 - `qwen_fast` is a **custom-only** Qwen lane in the current MVP and must not be read as clone/design acceleration.
 - When fast prerequisites are missing, operators should expect explicit route candidates and fallback reasons rather than silent disablement.
 - The accelerated runtime itself is operator-managed: use `pip install faster-qwen3-tts` on supported Linux/Windows CUDA hosts and keep the standard Torch lane available as fallback.
-- Platform claims should be read together with CI status and runtime self-check output.
+- Platform claims should be read together with CI status and runtime self-check output; Windows is no longer treated as a best-effort-only automation lane, and the CUDA-backed `qwen_fast` custom path now has native-host smoke evidence.
+- On the current Windows host, Docker Desktop Linux-container validation now also includes successful image builds for the server and Telegram bot, live server `/health/live` and `/health/ready` success, and Telegram bot startup through real API connectivity into the healthy polling loop.
 - `grace` CLI is optional and currently documented upstream through the GRACE packaging repository as `bun add -g @osovv/grace-cli`.
 
 ## Canonical evidence commands
@@ -43,6 +44,7 @@ python scripts/validate_runtime.py host-matrix
 QWEN_TTS_QWEN_FAST_TEST_MODE=eligible python scripts/runtime_self_check.py
 QWEN_TTS_QWEN_FAST_TEST_MODE=cuda_missing python scripts/runtime_self_check.py
 python scripts/validate_runtime.py smoke-server
+python scripts/validate_runtime.py smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx
 python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"
 python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN" --chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
 ```
@@ -51,5 +53,6 @@ python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM
 
 - `python scripts/validate_runtime.py host-matrix` runs the baseline runtime self-check plus simulated `qwen_fast` readiness scenarios (`eligible`, `cuda_missing`, `dependency_missing`) so optional-lane support claims stay tied to real routing evidence.
 - `python scripts/validate_runtime.py smoke-server` starts a temporary local HTTP server, waits for `/health/live` and `/health/ready`, runs the smoke pytest module, and stops the server automatically.
+- Smoke model selection is model-aware: default behavior validates Qwen custom coverage, while `--smoke-model-id Piper-en_US-lessac-medium` (or `QWEN_TTS_SMOKE_MODEL_ID=Piper-en_US-lessac-medium`) switches smoke requests to the Piper path through `POST /v1/audio/speech` and expects ONNX routing.
 - `python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"` validates real Telegram Bot API reachability without entering the long-polling loop. Add `--chat-id <id>` if you also want an automated `sendMessage` check.
 - Add `--expect-update-chat-id <id>` and optionally `--expect-update-text <substring>` for an opt-in dedicated validation chat where the script also confirms that a matching newer inbound update becomes visible through `getUpdates`.

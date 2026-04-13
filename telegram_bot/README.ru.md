@@ -43,6 +43,17 @@ export QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
 python -m telegram_bot
 ```
 
+```powershell
+.\.venv311\Scripts\Activate.ps1
+$env:QWEN_TTS_TELEGRAM_BOT_TOKEN="ваш_токен_бота"
+$env:QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+$env:QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED="true"
+$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE="20"
+$env:QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=".state/telegram_delivery_store.json"
+python -m telegram_bot
+```
+
 ## Запуск через Docker Compose
 
 ```bash
@@ -61,7 +72,7 @@ docker compose -f docker-compose.telegram-bot.yaml up --build
 
 ## Ограничение по Telegram-токену
 
-Сборка контейнера и старт процесса бота подтверждены, но полноценная внешняя интеграция требует реального Telegram-токена. Без валидного токена бот не сможет пройти проверку доступности Telegram API и обрабатывать live updates.
+На текущем Windows-хосте с Docker Desktop Linux containers Telegram compose-развёртывание было проверено глубже, чем просто сборка образа: бот прошёл startup self-checks, успешно подтвердил доступность Telegram API и вошёл в healthy polling loop. Для полноценной внешней интеграции по-прежнему нужен реальный Telegram-токен и подходящий chat/user context для end-to-end обработки команд.
 
 ## Команды
 

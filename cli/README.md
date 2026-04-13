@@ -25,6 +25,11 @@ source .venv311/bin/activate
 python -m cli
 ```
 
+```powershell
+.\.venv311\Scripts\Activate.ps1
+python -m cli
+```
+
 The CLI runs locally in the current shell session and uses the same shared directories as the other adapters.
 
 ## Runtime wiring
@@ -91,7 +96,7 @@ Useful variables include:
 
 - The CLI is intended for local interactive usage.
 - It does not use Docker-specific entrypoints or compose files.
-- Audio playback depends on OS tools invoked by [`maybe_play_audio()`](runtime.py:53).
+- Audio playback depends on OS tools invoked by [`maybe_play_audio()`](runtime.py:53); on Windows the CLI now prefers the native file association launcher instead of shelling through `cmd /c start`.
 - Because the interface is interactive, it is best suited for manual testing rather than automation.
 - If the shared runtime selects `qwen_fast`, that accelerated lane applies only to Qwen custom synthesis and still falls back safely to `torch` when unavailable.
 - The current menu remains Qwen-oriented for custom/design/clone workflows; Piper support is visible through shared runtime metadata and HTTP health/model surfaces, but the interactive CLI does not yet provide a dedicated Piper-first menu.

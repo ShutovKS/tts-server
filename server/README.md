@@ -19,6 +19,11 @@ source .venv311/bin/activate
 python -m uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
+```powershell
+.\.venv311\Scripts\Activate.ps1
+python -m uvicorn server:app --host 0.0.0.0 --port 8000
+```
+
 ## Running with Docker Compose
 
 ```bash

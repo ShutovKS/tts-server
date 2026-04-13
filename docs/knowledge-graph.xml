@@ -1,6 +1,6 @@
 <KnowledgeGraph>
-  <Project NAME="Qwen3-TTS-Apple-Silicon" VERSION="1.0.0">
-    <keywords>TTS, text-to-speech, Qwen3, Apple Silicon, MLX, PyTorch, FastAPI, Telegram bot, CLI, voice synthesis, voice cloning, voice design, audio generation, model inference</keywords>
+  <Project NAME="Qwen3-TTS-Cross-Platform" VERSION="1.0.0">
+    <keywords>TTS, text-to-speech, Qwen3, Apple Silicon, Windows, Linux, MLX, PyTorch, FastAPI, Telegram bot, CLI, voice synthesis, voice cloning, voice design, audio generation, model inference</keywords>
     <annotation>Local text-to-speech stack built around Qwen3 TTS models with three transport adapters (HTTP server, Telegram bot, interactive CLI) and a shared runtime core providing model registry, backend selection, job orchestration, and observability.</annotation>
 
     <M-CONFIG NAME="CoreSettings" TYPE="UTILITY" STATUS="implemented">
@@ -324,6 +324,24 @@
       <CrossLink from="M-BOOTSTRAP" to="M-SYNTHESIS-PLANNER" relation="planned-runtime-wiring" />
       <CrossLink from="M-BOOTSTRAP" to="M-HOST-PROBE" relation="planned-host-diagnostics" />
     </M-BOOTSTRAP>
+
+    <M-DOCKER-ASSETS NAME="DockerDeploymentAssets" TYPE="DEPLOYMENT" STATUS="implemented">
+      <purpose>Define the Windows-validated Docker Desktop deployment surface for the server and Telegram adapters, including compose scenarios, container trust-store wiring, and shared runtime mounts.</purpose>
+      <path>server/Dockerfile, telegram_bot/Dockerfile, docker-compose.server.yaml, docker-compose.telegram-bot.yaml, docker/certs/</path>
+      <depends>M-CONFIG, M-SERVER, M-TELEGRAM, M-BOOTSTRAP</depends>
+      <verification-ref>V-M-DOCKER-ASSETS</verification-ref>
+      <annotations>
+        <file-server-Dockerfile PURPOSE="HTTP server container image definition with runtime directories, ffmpeg, and container CA trust updates" />
+        <file-telegram-bot-Dockerfile PURPOSE="Telegram bot container image definition with ffmpeg, state directory, and container CA trust updates" />
+        <file-docker-compose-server PURPOSE="Compose deployment for the FastAPI server with shared bind mounts and published port 8000" />
+        <file-docker-compose-telegram PURPOSE="Compose deployment for the Telegram bot with shared bind mounts and named state volume" />
+        <file-proxy-root-cert PURPOSE="Corporate proxy root certificate injected into Linux-container trust stores for Docker-hosted package installation" />
+      </annotations>
+      <CrossLink from="M-DOCKER-ASSETS" to="M-CONFIG" relation="projects-runtime-env-into-containers" />
+      <CrossLink from="M-DOCKER-ASSETS" to="M-SERVER" relation="deploys-http-adapter" />
+      <CrossLink from="M-DOCKER-ASSETS" to="M-TELEGRAM" relation="deploys-telegram-adapter" />
+      <CrossLink from="M-DOCKER-ASSETS" to="M-BOOTSTRAP" relation="reuses-shared-runtime-wiring" />
+    </M-DOCKER-ASSETS>
 
     <M-SERVER NAME="HTTPServer" TYPE="ENTRY_POINT" STATUS="implemented">
       <purpose>Expose TTS capabilities through FastAPI HTTP endpoints with auth, rate limiting, and error handling.</purpose>

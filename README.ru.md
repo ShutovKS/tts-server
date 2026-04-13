@@ -67,6 +67,18 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+### Быстрый старт в Windows PowerShell
+
+```powershell
+py -3.11 -m venv .venv311
+.\.venv311\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+choco install ffmpeg -y
+```
+
+Если PowerShell блокирует запуск activation script, сначала выполните `Set-ExecutionPolicy -Scope Process Bypass` в текущей сессии.
+
 ### Важная оговорка по Qwen Torch lane
 
 Немаковый Qwen lane зависит от официального Python-пакета `qwen-tts`, который используется в [`TorchBackend`](core/backends/torch_backend.py). Upstream-репозиторий Qwen3-TTS документирует `pip install -U qwen-tts` как стандартный путь установки и после этого использует `from qwen_tts import Qwen3TTSModel`. Поэтому для Linux/Windows у Qwen уже есть authoritative install path, но поддержку всё равно нужно считать частично подтверждённой или best effort, пока полный Torch lane не будет эмпирически прогнан на этих хостах.
@@ -118,6 +130,16 @@ mv .models/Piper-en_US-lessac-medium/en_US-lessac-medium.onnx .models/Piper-en_U
 mv .models/Piper-en_US-lessac-medium/en_US-lessac-medium.onnx.json .models/Piper-en_US-lessac-medium/model.onnx.json
 ```
 
+Эквивалент для Windows PowerShell:
+
+```powershell
+.\.venv311\Scripts\Activate.ps1
+New-Item -ItemType Directory -Force -Path ".models/Piper-en_US-lessac-medium" | Out-Null
+python -m piper.download_voices en_US-lessac-medium --download-dir .models/Piper-en_US-lessac-medium
+Move-Item ".models/Piper-en_US-lessac-medium/en_US-lessac-medium.onnx" ".models/Piper-en_US-lessac-medium/model.onnx" -Force
+Move-Item ".models/Piper-en_US-lessac-medium/en_US-lessac-medium.onnx.json" ".models/Piper-en_US-lessac-medium/model.onnx.json" -Force
+```
+
 ## Runtime self-check
 
 Для проверки selected backend, per-model execution backend, missing artifacts и host/runtime-сигналов используйте встроенную утилиту self-check:
@@ -134,6 +156,22 @@ python scripts/runtime_self_check.py --strict
 ```
 
 Если `qwen_fast` включён или рассматривается для маршрутизации, self-check теперь дополнительно показывает `backend_support`, route candidates и явные причины fallback/rejection, чтобы оператор видел, когда ускоренный custom-only lane был выбран, а когда нет.
+
+Для воспроизводимых validation-сценариев используйте automation entry point, а не собирайте команды вручную:
+
+```bash
+python scripts/validate_runtime.py host-matrix
+python scripts/validate_runtime.py smoke-server
+python scripts/validate_runtime.py smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx
+python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"
+python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN" --chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
+```
+
+- `host-matrix` проверяет текущий host snapshot и симулированные сценарии optional-lane для `qwen_fast`.
+- `smoke-server` поднимает локальный HTTP-сервер, ждёт health probes, запускает smoke-suite и затем корректно останавливает runtime.
+- `smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx` явно валидирует Piper HTTP path через `POST /v1/audio/speech` и одновременно проверяет, что для этой модели используется ONNX routing.
+- `telegram-live` проверяет доступность реального Telegram Bot API и при необходимости может отправить validation message, если передан `--chat-id`.
+- Добавьте `--expect-update-chat-id` и при необходимости `--expect-update-text`, если нужен opt-in сценарий с выделенным чатом, который дополнительно подтверждает, что новый подходящий inbound update виден через `getUpdates` без запуска long-polling runtime.
 
 ## Optional GRACE CLI install
 
@@ -153,6 +191,11 @@ source .venv311/bin/activate
 python -m cli
 ```
 
+```powershell
+.\.venv311\Scripts\Activate.ps1
+python -m cli
+```
+
 Подробности по адаптеру — в [cli/README.ru.md](cli/README.ru.md).
 
 ## Запуск HTTP-сервера
@@ -161,6 +204,11 @@ python -m cli
 
 ```bash
 source .venv311/bin/activate
+python -m uvicorn server:app --host 0.0.0.0 --port 8000
+```
+
+```powershell
+.\.venv311\Scripts\Activate.ps1
 python -m uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
@@ -189,6 +237,17 @@ export QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
 python -m telegram_bot
 ```
 
+```powershell
+.\.venv311\Scripts\Activate.ps1
+$env:QWEN_TTS_TELEGRAM_BOT_TOKEN="ваш_токен_бота"
+$env:QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+$env:QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED="true"
+$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE="20"
+$env:QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=".state/telegram_delivery_store.json"
+python -m telegram_bot
+```
+
 ### Через Docker Compose
 
 ```bash
@@ -199,7 +258,7 @@ docker compose -f docker-compose.telegram-bot.yaml up --build
 
 ### Важная оговорка про Telegram-токен
 
-Сборка контейнера и базовый запуск процесса бота подтверждены, но полноценная внешняя интеграция возможна только при наличии реального и корректного Telegram-токена. Без него бот не сможет пройти live-проверки Telegram API и обрабатывать реальные обновления.
+На текущем Windows-хосте с Docker Desktop Linux containers compose-развёртывание было проверено через реальный старт бота, проверку доступности Telegram API и переход в healthy polling loop. При этом полноценная end-to-end интеграция всё равно требует реального и корректного Telegram-токена и подходящего chat/user context.
 
 Подробности по командам, эксплуатации и деплою — в [telegram_bot/README.ru.md](telegram_bot/README.ru.md).
 

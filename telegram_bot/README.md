@@ -43,6 +43,17 @@ export QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
 python -m telegram_bot
 ```
 
+```powershell
+.\.venv311\Scripts\Activate.ps1
+$env:QWEN_TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
+$env:QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+$env:QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED="true"
+$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE="20"
+$env:QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=".state/telegram_delivery_store.json"
+python -m telegram_bot
+```
+
 ## Running with Docker Compose
 
 ```bash
@@ -61,7 +72,7 @@ The image includes `ffmpeg` and persists delivery metadata at `/app/.state/teleg
 
 ## Telegram token limitation
 
-Container image build and bot process startup were verified, but full external integration requires a real Telegram bot token. Without a valid token, the bot cannot complete Telegram API connectivity checks or process live updates.
+On the current Windows host with Docker Desktop Linux containers, the Telegram compose deployment was verified beyond image build: the bot completed startup self-checks, passed Telegram API connectivity verification, and entered the healthy polling loop. Full external integration still requires a real Telegram bot token and the intended chat/user context for end-to-end command handling.
 
 ## Commands
 
