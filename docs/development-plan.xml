@@ -4,12 +4,14 @@
     <non-goal>No distributed or multi-node execution patterns.</non-goal>
     <risk-1>Backend selection at startup must handle missing runtimes gracefully.</risk-1>
     <risk-2>Single inference guard serializes all generation requests across adapters.</risk-2>
+    <risk-3>Additional Torch-backed families must isolate family semantics from backend loading so OmniVoice and VoxCPM do not regress Qwen3 transport behavior.</risk-3>
     <migration-objective>Evolve the current Qwen3-first runtime into a multi-platform, multi-backend, multi-model architecture without breaking existing server, Telegram, or CLI adapter behavior during the migration.</migration-objective>
     <migration-invariants>
       <item-1>Current transport adapters continue to depend only on shared core and application contracts.</item-1>
       <item-2>Qwen3-TTS remains the compatibility bridge until planner, family-adapter, and backend-contract seams are proven.</item-2>
       <item-3>No big-bang rewrite is allowed; planning and family seams land before manifest and backend generalization.</item-3>
       <item-4>Readiness, observability, and job execution remain first-class artifacts throughout migration.</item-4>
+      <item-5>OmniVoice and VoxCPM onboarding reuse the existing Torch backend contract through family adapters instead of introducing transport-visible forks.</item-5>
     </migration-invariants>
   </ArchitectureNotes>
 

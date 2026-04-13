@@ -133,7 +133,7 @@ class BackendRegistry:
         # START_BLOCK_RESOLVE_MODEL_BY_NAME
         if model_name:
             for spec in self.model_specs:
-                if model_name in {spec.api_name, spec.folder, spec.key}:
+                if model_name in {spec.api_name, spec.folder, spec.key, spec.model_id}:
                     if spec.supports_backend(self.selected_backend.key):
                         self.ensure_model_supported(spec)
                     else:

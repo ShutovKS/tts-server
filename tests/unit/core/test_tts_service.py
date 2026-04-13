@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from core.config import CoreSettings
-from core.contracts.commands import VoiceCloneCommand
+from core.contracts.commands import VoiceCloneCommand, VoiceDesignCommand
 from core.models.catalog import MODEL_SPECS
 from core.services.tts_service import TTSService
 from tests.support.api_fakes import extract_json_logs, make_wav_bytes
@@ -60,6 +60,18 @@ class LoggingRegistry(StubRegistry):
 
     def get_model(self, model_name=None, mode=None):
         self.calls += 1
+        return super().get_model(model_name=model_name, mode=mode)
+
+
+class FamilyAwareRegistry(StubRegistry):
+    def get_model(self, model_name=None, mode=None):
+        if model_name is not None:
+            spec = next(
+                spec
+                for spec in MODEL_SPECS.values()
+                if model_name in {spec.api_name, spec.folder, spec.key, spec.model_id}
+            )
+            return spec, type("HandleStub", (), {"backend_key": "torch", "spec": spec})()
         return super().get_model(model_name=model_name, mode=mode)
 
 
@@ -175,3 +187,62 @@ def test_tts_service_emits_structured_logs(
         and item["language"] == "auto"
         for item in completed_logs
     )
+
+
+def test_tts_service_routes_omnivoice_family_payload_to_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    settings = _make_core_settings(tmp_path)
+    service = TTSService(registry=FamilyAwareRegistry(), settings=settings)  # type: ignore[arg-type]
+    captured_kwargs = {}
+
+    def fake_generate_audio(**kwargs):
+        captured_kwargs.update(kwargs)
+        output_dir = Path(kwargs["output_path"])
+        (output_dir / "audio_0001.wav").write_bytes(make_wav_bytes())
+
+    monkeypatch.setattr("core.services.tts_service.generate_audio", fake_generate_audio)
+
+    result = service.synthesize_design(
+        VoiceDesignCommand(
+            text="Hello",
+            model="omnivoice-design-1",
+            voice_description="Warm bilingual narrator",
+        )
+    )
+
+    assert result.mode == "design"
+    assert captured_kwargs["mode"] == "design"
+    assert captured_kwargs["instruct"] == "Warm bilingual narrator"
+    assert captured_kwargs["language"] == "auto"
+
+
+def test_tts_service_routes_voxcpm_family_clone_payload_to_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    settings = _make_core_settings(tmp_path)
+    service = TTSService(registry=FamilyAwareRegistry(), settings=settings)  # type: ignore[arg-type]
+    captured_kwargs = {}
+    ref_audio_path = tmp_path / "reference.wav"
+    ref_audio_path.write_bytes(make_wav_bytes())
+
+    def fake_generate_audio(**kwargs):
+        captured_kwargs.update(kwargs)
+        output_dir = Path(kwargs["output_path"])
+        (output_dir / "audio_0001.wav").write_bytes(make_wav_bytes())
+
+    monkeypatch.setattr("core.services.tts_service.generate_audio", fake_generate_audio)
+
+    result = service.synthesize_clone(
+        VoiceCloneCommand(
+            text="Clone this",
+            model="voxcpm-clone-1",
+            ref_audio_path=ref_audio_path,
+            ref_text="Prompt transcript",
+        )
+    )
+
+    assert result.mode == "clone"
+    assert captured_kwargs["mode"] == "clone"
+    assert captured_kwargs["ref_text"] == "Prompt transcript"
+    assert isinstance(captured_kwargs["ref_audio"], str)

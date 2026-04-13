@@ -163,6 +163,30 @@
       <CrossLink from="M-QWEN3-FAMILY" to="M-MODEL-FAMILY" relation="implements-base-contract" />
     </M-QWEN3-FAMILY>
 
+    <M-OMNIVOICE-FAMILY NAME="OmniVoiceFamilyAdapter" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Adapt OmniVoice custom, design, and clone semantics into planner-prepared backend execution inputs.</purpose>
+      <path>core/model_families/omnivoice.py</path>
+      <depends>M-MODEL-FAMILY, M-CONTRACTS, M-MODELS</depends>
+      <verification-ref>V-M-OMNIVOICE-FAMILY</verification-ref>
+      <annotations>
+        <class-OmniVoiceFamilyAdapter PURPOSE="Planner-facing family adapter for OmniVoice runtime semantics" />
+      </annotations>
+      <CrossLink from="M-OMNIVOICE-FAMILY" to="M-MODEL-FAMILY" relation="implements-base-contract" />
+      <CrossLink from="M-OMNIVOICE-FAMILY" to="M-BACKENDS" relation="prepares-torch-execution-inputs" />
+    </M-OMNIVOICE-FAMILY>
+
+    <M-VOXCPM-FAMILY NAME="VoxCPMFamilyAdapter" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Adapt VoxCPM custom, design, and clone semantics into planner-prepared backend execution inputs.</purpose>
+      <path>core/model_families/voxcpm.py</path>
+      <depends>M-MODEL-FAMILY, M-CONTRACTS, M-MODELS</depends>
+      <verification-ref>V-M-VOXCPM-FAMILY</verification-ref>
+      <annotations>
+        <class-VoxCPMFamilyAdapter PURPOSE="Planner-facing family adapter for VoxCPM runtime semantics" />
+      </annotations>
+      <CrossLink from="M-VOXCPM-FAMILY" to="M-MODEL-FAMILY" relation="implements-base-contract" />
+      <CrossLink from="M-VOXCPM-FAMILY" to="M-BACKENDS" relation="prepares-torch-execution-inputs" />
+    </M-VOXCPM-FAMILY>
+
     <M-INFRASTRUCTURE NAME="Infrastructure" TYPE="DATA_LAYER" STATUS="implemented">
       <purpose>Provide local implementations for job execution, audio I/O, admission control, and concurrency.</purpose>
       <path>core/infrastructure/</path>

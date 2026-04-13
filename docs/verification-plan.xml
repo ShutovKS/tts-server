@@ -223,6 +223,34 @@
       </scenarios>
     </V-M-QWEN3-FAMILY>
 
+    <V-M-OMNIVOICE-FAMILY MODULE="M-OMNIVOICE-FAMILY" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_model_families.py</file>
+        <file>tests/unit/core/test_synthesis_planner.py</file>
+        <file>tests/unit/core/test_tts_service.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_model_families.py tests/unit/core/test_synthesis_planner.py tests/unit/core/test_tts_service.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">OmniVoice family plans preserve custom, design, and clone capability mapping without transport-specific branching.</scenario-1>
+      </scenarios>
+    </V-M-OMNIVOICE-FAMILY>
+
+    <V-M-VOXCPM-FAMILY MODULE="M-VOXCPM-FAMILY" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_model_families.py</file>
+        <file>tests/unit/core/test_synthesis_planner.py</file>
+        <file>tests/unit/core/test_tts_service.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_model_families.py tests/unit/core/test_synthesis_planner.py tests/unit/core/test_tts_service.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">VoxCPM family plans preserve custom, design, and clone capability mapping without transport-specific branching.</scenario-1>
+      </scenarios>
+    </V-M-VOXCPM-FAMILY>
+
     <V-M-BACKENDS MODULE="M-BACKENDS" PRIORITY="high">
       <test-files>
         <file>tests/unit/core/test_backend_registry.py</file>

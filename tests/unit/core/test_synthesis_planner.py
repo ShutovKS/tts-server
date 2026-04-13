@@ -67,7 +67,7 @@ class PlannerRegistryStub:
             return next(
                 spec
                 for spec in MODEL_SPECS.values()
-                if model_name in {spec.api_name, spec.folder, spec.key}
+                if model_name in {spec.api_name, spec.folder, spec.key, spec.model_id}
             )
         return next(spec for spec in MODEL_SPECS.values() if spec.mode == mode)
 
@@ -220,3 +220,37 @@ def test_synthesis_planner_surfaces_fast_backend_selection_reason():
     assert plan.backend_key == "qwen_fast"
     assert plan.backend_label == "Qwen Fast CUDA"
     assert plan.selection_reason == "selected_backend_supports_model"
+
+
+def test_synthesis_planner_resolves_omnivoice_family_key_from_manifest():
+    registry = PlannerRegistryStub()
+    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+
+    plan = planner.plan_command(
+        VoiceDesignCommand(
+            text="Hello",
+            model="omnivoice-design-1",
+            voice_description="Warm audiobook narrator",
+        )
+    )
+
+    assert plan.family_key == "omnivoice"
+    assert plan.family_label == "OmniVoice"
+
+
+def test_synthesis_planner_resolves_voxcpm_family_key_from_manifest(tmp_path: Path):
+    registry = PlannerRegistryStub()
+    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+    ref_audio_path = tmp_path / "reference.wav"
+    ref_audio_path.write_bytes(b"wav")
+
+    plan = planner.plan_command(
+        VoiceCloneCommand(
+            text="Clone this",
+            model="voxcpm-clone-1",
+            ref_audio_path=ref_audio_path,
+        )
+    )
+
+    assert plan.family_key == "voxcpm"
+    assert plan.family_label == "VoxCPM"

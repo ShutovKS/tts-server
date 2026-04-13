@@ -14,7 +14,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.1.3 - Normalized OmniVoice generation outputs and resolved sample rate from the nested audio-tokenizer config]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from core.models.catalog import ModelSpec
 
 try:
     import torch
-except ImportError as exc:  # pragma: no cover
+except Exception as exc:  # pragma: no cover
     torch = None
     TORCH_IMPORT_ERROR = exc
 else:
@@ -41,6 +41,10 @@ else:
 
 Qwen3TTSModel = None
 QWEN_TTS_IMPORT_ERROR = None
+OmniVoiceModel = None
+OMNIVOICE_IMPORT_ERROR = None
+VoxCPMModel = None
+VOXCPM_IMPORT_ERROR = None
 
 
 def _load_qwen_tts_model_cls():
@@ -51,7 +55,7 @@ def _load_qwen_tts_model_cls():
         return None
     try:
         module = importlib.import_module("qwen_tts")
-    except ImportError as exc:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover
         QWEN_TTS_IMPORT_ERROR = exc
         return None
     model_cls = getattr(module, "Qwen3TTSModel", None)
@@ -63,6 +67,48 @@ def _load_qwen_tts_model_cls():
     Qwen3TTSModel = model_cls
     QWEN_TTS_IMPORT_ERROR = None
     return Qwen3TTSModel
+
+
+def _load_omnivoice_model_cls():
+    global OmniVoiceModel, OMNIVOICE_IMPORT_ERROR
+    if OmniVoiceModel is not None:
+        return OmniVoiceModel
+    if OMNIVOICE_IMPORT_ERROR is not None:
+        return None
+    try:
+        module = importlib.import_module("omnivoice")
+    except Exception as exc:  # pragma: no cover
+        OMNIVOICE_IMPORT_ERROR = exc
+        return None
+    model_cls = getattr(module, "OmniVoice", None)
+    if model_cls is None:
+        OMNIVOICE_IMPORT_ERROR = ImportError(
+            "omnivoice does not expose OmniVoice"
+        )
+        return None
+    OmniVoiceModel = model_cls
+    OMNIVOICE_IMPORT_ERROR = None
+    return OmniVoiceModel
+
+
+def _load_voxcpm_model_cls():
+    global VoxCPMModel, VOXCPM_IMPORT_ERROR
+    if VoxCPMModel is not None:
+        return VoxCPMModel
+    if VOXCPM_IMPORT_ERROR is not None:
+        return None
+    try:
+        module = importlib.import_module("voxcpm")
+    except Exception as exc:  # pragma: no cover
+        VOXCPM_IMPORT_ERROR = exc
+        return None
+    model_cls = getattr(module, "VoxCPM", None)
+    if model_cls is None:
+        VOXCPM_IMPORT_ERROR = ImportError("voxcpm does not expose VoxCPM")
+        return None
+    VoxCPMModel = model_cls
+    VOXCPM_IMPORT_ERROR = None
+    return VoxCPMModel
 
 
 # START_CONTRACT: TorchBackend
@@ -112,7 +158,14 @@ class TorchBackend(TTSBackend):
     #   LINKS: M-BACKENDS
     # END_CONTRACT: is_available
     def is_available(self) -> bool:
-        return torch is not None and _load_qwen_tts_model_cls() is not None
+        return torch is not None and any(
+            loader() is not None
+            for loader in (
+                _load_qwen_tts_model_cls,
+                _load_omnivoice_model_cls,
+                _load_voxcpm_model_cls,
+            )
+        )
 
     # START_CONTRACT: supports_platform
     #   PURPOSE: Report whether the current platform is supported by the Torch backend.
@@ -163,15 +216,17 @@ class TorchBackend(TTSBackend):
                 f"Torch model path is unavailable: {spec.folder}",
                 details={"model": spec.api_name, "backend": self.key},
             )
-        model_cls = _load_qwen_tts_model_cls()
+        model_cls = self._model_class_for_spec(spec)
+        runtime_dependency = self._runtime_dependency_for_spec(spec)
         if model_cls is None or torch is None:
             raise ModelLoadError(
-                str(QWEN_TTS_IMPORT_ERROR or TORCH_IMPORT_ERROR),
+                str(self._runtime_import_error_for_spec(spec) or TORCH_IMPORT_ERROR),
                 details={
                     "model": spec.api_name,
                     "model_path": str(model_path),
-                    "runtime_dependency": "qwen_tts.Qwen3TTSModel",
+                    "runtime_dependency": runtime_dependency,
                     "backend": self.key,
+                    "family": spec.family_key,
                 },
             )
 
@@ -184,8 +239,7 @@ class TorchBackend(TTSBackend):
                 try:
                     runtime_model = model_cls.from_pretrained(
                         str(model_path),
-                        device_map=self._resolve_device_map(),
-                        dtype=self._resolve_dtype(),
+                        **self._load_kwargs_for_spec(spec),
                     )
                 except Exception as exc:  # pragma: no cover
                     self._metrics.collector.increment(
@@ -197,6 +251,8 @@ class TorchBackend(TTSBackend):
                             "model": spec.api_name,
                             "model_path": str(model_path),
                             "backend": self.key,
+                            "family": spec.family_key,
+                            "runtime_dependency": runtime_dependency,
                         },
                     ) from exc
                 self._cache[spec.folder] = runtime_model
@@ -297,12 +353,20 @@ class TorchBackend(TTSBackend):
                 "platform_supported": self.supports_platform(),
                 "torch_available": torch is not None,
                 "qwen_tts_available": _load_qwen_tts_model_cls() is not None,
+                "omnivoice_available": _load_omnivoice_model_cls() is not None,
+                "voxcpm_available": _load_voxcpm_model_cls() is not None,
                 "torch_error": None
                 if TORCH_IMPORT_ERROR is None
                 else str(TORCH_IMPORT_ERROR),
                 "qwen_tts_error": None
                 if QWEN_TTS_IMPORT_ERROR is None
                 else str(QWEN_TTS_IMPORT_ERROR),
+                "omnivoice_error": None
+                if OMNIVOICE_IMPORT_ERROR is None
+                else str(OMNIVOICE_IMPORT_ERROR),
+                "voxcpm_error": None
+                if VOXCPM_IMPORT_ERROR is None
+                else str(VOXCPM_IMPORT_ERROR),
                 "device_map": self._resolve_device_map_name(),
                 "dtype": self._resolve_dtype_name(),
             },
@@ -406,10 +470,13 @@ class TorchBackend(TTSBackend):
     ) -> None:
         # START_BLOCK_RESOLVE_MODEL
         runtime_model = handle.runtime_model
+        family = handle.spec.family_key
         resolved_language = self._resolve_language(language)
         # END_BLOCK_RESOLVE_MODEL
         # START_BLOCK_RUN_TORCH_INFERENCE
-        wavs, sr = runtime_model.generate_custom_voice(
+        wavs, sr = self._run_custom_generation(
+            runtime_model=runtime_model,
+            family=family,
             text=text,
             language=resolved_language,
             speaker=speaker,
@@ -437,10 +504,12 @@ class TorchBackend(TTSBackend):
         language: str,
         voice_description: str,
     ) -> None:
-        wavs, sr = handle.runtime_model.generate_voice_design(
+        wavs, sr = self._run_design_generation(
+            runtime_model=handle.runtime_model,
+            family=handle.spec.family_key,
             text=text,
             language=self._resolve_language(language),
-            instruct=voice_description,
+            voice_description=voice_description,
         )
         self._persist_first_wav(output_dir, wavs, sr)
 
@@ -466,7 +535,9 @@ class TorchBackend(TTSBackend):
         prepared_ref_audio = str(ref_audio_path)
         # END_BLOCK_PREPARE_CLONE_INPUT
         # START_BLOCK_RUN_CLONE_INFERENCE
-        wavs, sr = handle.runtime_model.generate_voice_clone(
+        wavs, sr = self._run_clone_generation(
+            runtime_model=handle.runtime_model,
+            family=handle.spec.family_key,
             text=text,
             language=resolved_language,
             ref_audio=prepared_ref_audio,
@@ -474,6 +545,240 @@ class TorchBackend(TTSBackend):
         )
         # END_BLOCK_RUN_CLONE_INFERENCE
         self._persist_first_wav(output_dir, wavs, sr)
+
+    @staticmethod
+    def _model_class_for_spec(spec: ModelSpec):
+        mapping = {
+            "qwen3_tts": _load_qwen_tts_model_cls,
+            "omnivoice": _load_omnivoice_model_cls,
+            "voxcpm": _load_voxcpm_model_cls,
+        }
+        loader = mapping.get(spec.family_key)
+        if loader is None:
+            return None
+        return loader()
+
+    @staticmethod
+    def _runtime_import_error_for_spec(spec: ModelSpec):
+        mapping = {
+            "qwen3_tts": QWEN_TTS_IMPORT_ERROR,
+            "omnivoice": OMNIVOICE_IMPORT_ERROR,
+            "voxcpm": VOXCPM_IMPORT_ERROR,
+        }
+        return mapping.get(spec.family_key)
+
+    @staticmethod
+    def _runtime_dependency_for_spec(spec: ModelSpec) -> str:
+        mapping = {
+            "qwen3_tts": "qwen_tts.Qwen3TTSModel",
+            "omnivoice": "omnivoice.OmniVoice",
+            "voxcpm": "voxcpm.VoxCPM",
+        }
+        return mapping.get(spec.family_key, "torch_runtime")
+
+    @staticmethod
+    def _extra_load_kwargs_for_spec(spec: ModelSpec) -> dict[str, Any]:
+        if spec.family_key == "voxcpm":
+            return {"optimize": False, "load_denoiser": False}
+        return {}
+
+    def _load_kwargs_for_spec(self, spec: ModelSpec) -> dict[str, Any]:
+        kwargs = dict(self._extra_load_kwargs_for_spec(spec))
+        if spec.family_key in {"qwen3_tts", "omnivoice"}:
+            kwargs["device_map"] = self._resolve_device_map()
+            kwargs["dtype"] = self._resolve_dtype()
+        return kwargs
+
+    def _run_custom_generation(
+        self,
+        *,
+        runtime_model: Any,
+        family: str,
+        text: str,
+        language: str,
+        speaker: str,
+        instruct: str,
+        speed: float,
+    ) -> tuple[list[Any], int]:
+        if family == "qwen3_tts":
+            return runtime_model.generate_custom_voice(
+                text=text,
+                language=language,
+                speaker=speaker,
+                instruct=instruct,
+                speed=speed,
+            )
+        if family == "omnivoice":
+            kwargs: dict[str, Any] = {
+                "text": text,
+                "speed": speed,
+            }
+            normalized_language = self._resolve_omnivoice_language(language)
+            normalized_instruct = self._normalize_omnivoice_instruct(instruct)
+            if normalized_language is not None:
+                kwargs["language"] = normalized_language
+            if normalized_instruct is not None:
+                kwargs["instruct"] = normalized_instruct
+            return self._run_omnivoice_generation(runtime_model=runtime_model, **kwargs)
+        if family == "voxcpm":
+            styled_text = self._inject_voxcpm_style(text=text, instruct=instruct)
+            return self._run_voxcpm_generation(
+                runtime_model=runtime_model,
+                text=styled_text,
+            )
+        raise TTSGenerationError(
+            "Torch backend does not support custom synthesis for the requested family",
+            details={"backend": self.key, "family": family, "mode": "custom"},
+        )
+
+    def _run_design_generation(
+        self,
+        *,
+        runtime_model: Any,
+        family: str,
+        text: str,
+        language: str,
+        voice_description: str,
+    ) -> tuple[list[Any], int]:
+        if family == "qwen3_tts":
+            return runtime_model.generate_voice_design(
+                text=text,
+                language=language,
+                instruct=voice_description,
+            )
+        if family == "omnivoice":
+            kwargs: dict[str, Any] = {"text": text}
+            normalized_language = self._resolve_omnivoice_language(language)
+            normalized_instruct = self._normalize_omnivoice_instruct(voice_description)
+            if normalized_language is not None:
+                kwargs["language"] = normalized_language
+            if normalized_instruct is not None:
+                kwargs["instruct"] = normalized_instruct
+            return self._run_omnivoice_generation(runtime_model=runtime_model, **kwargs)
+        if family == "voxcpm":
+            return self._run_voxcpm_generation(
+                runtime_model=runtime_model,
+                text=self._inject_voxcpm_style(text=text, instruct=voice_description),
+            )
+        raise TTSGenerationError(
+            "Torch backend does not support voice design for the requested family",
+            details={"backend": self.key, "family": family, "mode": "design"},
+        )
+
+    def _run_clone_generation(
+        self,
+        *,
+        runtime_model: Any,
+        family: str,
+        text: str,
+        language: str,
+        ref_audio: str,
+        ref_text: str | None,
+    ) -> tuple[list[Any], int]:
+        if family == "qwen3_tts":
+            return runtime_model.generate_voice_clone(
+                text=text,
+                language=language,
+                ref_audio=ref_audio,
+                ref_text=ref_text,
+            )
+        if family == "omnivoice":
+            kwargs = {
+                "text": text,
+                "ref_audio": ref_audio,
+            }
+            normalized_language = self._resolve_omnivoice_language(language)
+            if normalized_language is not None:
+                kwargs["language"] = normalized_language
+            if ref_text is not None:
+                kwargs["ref_text"] = ref_text
+            return self._run_omnivoice_generation(runtime_model=runtime_model, **kwargs)
+        if family == "voxcpm":
+            kwargs = {
+                "text": text,
+                "reference_wav_path": ref_audio,
+            }
+            return self._run_voxcpm_generation(runtime_model=runtime_model, **kwargs)
+        raise TTSGenerationError(
+            "Torch backend does not support voice cloning for the requested family",
+            details={"backend": self.key, "family": family, "mode": "clone"},
+        )
+
+    def _run_voxcpm_generation(
+        self,
+        *,
+        runtime_model: Any,
+        text: str,
+        reference_wav_path: str | None = None,
+    ) -> tuple[list[Any], int]:
+        wav = runtime_model.generate(
+            text=text,
+            reference_wav_path=reference_wav_path,
+        )
+        sample_rate = self._resolve_voxcpm_sample_rate(runtime_model)
+        return [wav], sample_rate
+
+    def _run_omnivoice_generation(
+        self,
+        *,
+        runtime_model: Any,
+        **kwargs: Any,
+    ) -> tuple[list[Any], int]:
+        wavs = runtime_model.generate(**kwargs)
+        sample_rate = self._resolve_omnivoice_sample_rate(runtime_model)
+        return list(wavs), sample_rate
+
+    def _resolve_omnivoice_sample_rate(self, runtime_model: Any) -> int:
+        audio_tokenizer = getattr(runtime_model, "audio_tokenizer", None)
+        tokenizer_config = getattr(audio_tokenizer, "config", None)
+        sample_rate = getattr(tokenizer_config, "sample_rate", None)
+        if sample_rate is None:
+            raise TTSGenerationError(
+                "OmniVoice runtime did not expose a sample rate",
+                details={
+                    "backend": self.key,
+                    "family": "omnivoice",
+                    "failure_kind": "missing_sample_rate",
+                },
+            )
+        return int(sample_rate)
+
+    def _resolve_voxcpm_sample_rate(self, runtime_model: Any) -> int:
+        tts_model = getattr(runtime_model, "tts_model", None)
+        sample_rate = getattr(tts_model, "sample_rate", None)
+        if sample_rate is None:
+            raise TTSGenerationError(
+                "VoxCPM runtime did not expose a sample rate",
+                details={
+                    "backend": self.key,
+                    "family": "voxcpm",
+                    "failure_kind": "missing_sample_rate",
+                },
+            )
+        return int(sample_rate)
+
+    @staticmethod
+    def _inject_voxcpm_style(*, text: str, instruct: str) -> str:
+        normalized = instruct.strip()
+        if not normalized:
+            return text
+        return f"({normalized}) {text}"
+
+    @staticmethod
+    def _resolve_omnivoice_language(language: str) -> str | None:
+        normalized = language.strip().lower()
+        if normalized == "auto":
+            return None
+        return language
+
+    @staticmethod
+    def _normalize_omnivoice_instruct(instruct: str) -> str | None:
+        normalized = instruct.strip()
+        if not normalized:
+            return None
+        if normalized.lower() == "normal tone":
+            return None
+        return normalized
 
     @staticmethod
     def _resolve_language(language: str) -> str:

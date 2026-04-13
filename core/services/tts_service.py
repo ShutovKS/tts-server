@@ -43,7 +43,12 @@ from core.infrastructure.audio_io import (
     temporary_output_dir,
 )
 from core.infrastructure.concurrency import InferenceGuard
-from core.model_families import PiperFamilyAdapter, Qwen3FamilyAdapter
+from core.model_families import (
+    OmniVoiceFamilyAdapter,
+    PiperFamilyAdapter,
+    Qwen3FamilyAdapter,
+    VoxCPMFamilyAdapter,
+)
 from core.models.catalog import ModelSpec
 from core.observability import Timer, get_logger, log_event, operation_scope
 from core.planning import SynthesisPlanner
@@ -107,7 +112,7 @@ class SynthesisCoordinator:
     def synthesize_custom(self, command: CustomVoiceCommand) -> GenerationResult:
         plan = self.planner.plan_command(command)
         spec, handle = self.registry.get_model(
-            model_name=plan.model_spec.api_name,
+            model_name=plan.model_spec.model_id,
             mode=plan.legacy_mode,
         )
         prepared = self._prepare_execution(plan)
@@ -122,7 +127,7 @@ class SynthesisCoordinator:
     def synthesize_design(self, command: VoiceDesignCommand) -> GenerationResult:
         plan = self.planner.plan_command(command)
         spec, handle = self.registry.get_model(
-            model_name=plan.model_spec.api_name,
+            model_name=plan.model_spec.model_id,
             mode=plan.legacy_mode,
         )
         prepared = self._prepare_execution(plan)
@@ -137,7 +142,7 @@ class SynthesisCoordinator:
     def synthesize_clone(self, command: VoiceCloneCommand) -> GenerationResult:
         plan = self.planner.plan_command(command)
         spec, handle = self.registry.get_model(
-            model_name=plan.model_spec.api_name,
+            model_name=plan.model_spec.model_id,
             mode=plan.legacy_mode,
         )
 
@@ -313,7 +318,7 @@ class SynthesisCoordinator:
                 result = GenerationResult(
                     audio=audio,
                     saved_path=saved_path,
-                    model=spec.api_name,
+                    model=spec.model_id,
                     mode=spec.mode,
                     backend=backend.key,
                 )
@@ -366,7 +371,9 @@ class TTSService:
         self.planner = SynthesisPlanner(registry)
         self._family_adapters = {
             "qwen3_tts": Qwen3FamilyAdapter(),
+            "omnivoice": OmniVoiceFamilyAdapter(),
             "piper": PiperFamilyAdapter(),
+            "voxcpm": VoxCPMFamilyAdapter(),
         }
         self.coordinator = SynthesisCoordinator(
             registry=registry,

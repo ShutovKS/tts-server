@@ -376,10 +376,10 @@ class ModelManifest:
         if len(models) != len(models_payload):
             raise ModelManifestValidationError("Manifest models must have unique keys")
 
-        folders = [spec.folder for spec in models.values()]
-        if len(set(folders)) != len(folders):
+        model_ids = [spec.model_id for spec in models.values()]
+        if len(set(model_ids)) != len(model_ids):
             raise ModelManifestValidationError(
-                "Manifest models must have unique folder ids"
+                "Manifest models must have unique model ids"
             )
 
         for spec in models.values():
