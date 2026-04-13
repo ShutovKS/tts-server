@@ -24,7 +24,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Made smoke requests model-aware with default Qwen custom coverage plus an optional Piper ONNX path through the public /v1/audio/speech API]
+#   LAST_CHANGE: [v1.2.0 - Extended smoke target resolution for OmniVoice and VoxCPM2 while preserving the existing Qwen and Piper request paths]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -49,13 +49,91 @@ SMOKE_BASE_URL = os.getenv("QWEN_TTS_SMOKE_BASE_URL", "http://127.0.0.1:8001").r
 )
 MODELS_DIR = Path(os.getenv("QWEN_TTS_MODELS_DIR", ".models"))
 CUSTOM_MODEL_DIR = MODELS_DIR / "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+OMNIVOICE_MODEL_DIR = MODELS_DIR / "OmniVoice"
+VOXCPM_MODEL_DIR = MODELS_DIR / "VoxCPM2"
 PIPER_MODEL_DIR = MODELS_DIR / "Piper-en_US-lessac-medium"
 SMOKE_MODEL_ID = os.getenv("QWEN_TTS_SMOKE_MODEL_ID", "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit")
 EXPECTED_BACKEND = os.getenv("QWEN_TTS_SMOKE_EXPECTED_BACKEND")
-SUPPORTED_SMOKE_MODEL_IDS = {
-    "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
-    "Piper-en_US-lessac-medium",
+DEFAULT_CUSTOM_SMOKE_TEXT = "Smoke test for local custom voice endpoint."
+ASYNC_CUSTOM_SMOKE_TEXT = "Smoke async job test for local custom voice endpoint."
+SMOKE_TARGETS: dict[str, dict[str, str | Path | bool | dict[str, object]]] = {
+    "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit": {
+        "model_id": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+        "model_dir": CUSTOM_MODEL_DIR,
+        "speaker": "Vivian",
+        "sync_path": "/api/v1/tts/custom",
+        "sync_payload": {
+            "text": DEFAULT_CUSTOM_SMOKE_TEXT,
+            "speaker": "Vivian",
+            "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+            "save_output": False,
+        },
+        "expected_backend": EXPECTED_BACKEND,
+        "supports_async_custom_jobs": True,
+        "async_submit_payload": {
+            "text": ASYNC_CUSTOM_SMOKE_TEXT,
+            "speaker": "Vivian",
+            "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+            "save_output": False,
+        },
+    },
+    "OmniVoice-Custom": {
+        "model_id": "OmniVoice-Custom",
+        "model_dir": OMNIVOICE_MODEL_DIR,
+        "speaker": "Vivian",
+        "sync_path": "/api/v1/tts/custom",
+        "sync_payload": {
+            "text": DEFAULT_CUSTOM_SMOKE_TEXT,
+            "speaker": "Vivian",
+            "model": "OmniVoice-Custom",
+            "save_output": False,
+        },
+        "expected_backend": EXPECTED_BACKEND or "torch",
+        "supports_async_custom_jobs": True,
+        "async_submit_payload": {
+            "text": ASYNC_CUSTOM_SMOKE_TEXT,
+            "speaker": "Vivian",
+            "model": "OmniVoice-Custom",
+            "save_output": False,
+        },
+    },
+    "VoxCPM2-Custom": {
+        "model_id": "VoxCPM2-Custom",
+        "model_dir": VOXCPM_MODEL_DIR,
+        "speaker": "Vivian",
+        "sync_path": "/api/v1/tts/custom",
+        "sync_payload": {
+            "text": DEFAULT_CUSTOM_SMOKE_TEXT,
+            "speaker": "Vivian",
+            "model": "VoxCPM2-Custom",
+            "save_output": False,
+        },
+        "expected_backend": EXPECTED_BACKEND or "torch",
+        "supports_async_custom_jobs": True,
+        "async_submit_payload": {
+            "text": ASYNC_CUSTOM_SMOKE_TEXT,
+            "speaker": "Vivian",
+            "model": "VoxCPM2-Custom",
+            "save_output": False,
+        },
+    },
+    "Piper-en_US-lessac-medium": {
+        "model_id": "Piper-en_US-lessac-medium",
+        "model_dir": PIPER_MODEL_DIR,
+        "speaker": "en_US-lessac-medium",
+        "sync_path": "/v1/audio/speech",
+        "sync_payload": {
+            "model": "Piper-en_US-lessac-medium",
+            "input": DEFAULT_CUSTOM_SMOKE_TEXT,
+            "voice": "en_US-lessac-medium",
+            "response_format": "wav",
+            "speed": 1.0,
+        },
+        "expected_backend": "onnx",
+        "supports_async_custom_jobs": False,
+    },
 }
+SUPPORTED_SMOKE_MODEL_IDS = set(SMOKE_TARGETS)
 ASYNC_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timeout"}
 ASYNC_POLL_ATTEMPTS = int(os.getenv("QWEN_TTS_SMOKE_ASYNC_POLL_ATTEMPTS", "60"))
 ASYNC_POLL_INTERVAL_SECONDS = float(
@@ -107,36 +185,7 @@ def resolve_smoke_target() -> dict[str, str | Path | bool]:
             "unsupported smoke model id "
             f"'{smoke_model_id}'; expected one of {sorted(SUPPORTED_SMOKE_MODEL_IDS)}"
         )
-    if smoke_model_id == "Piper-en_US-lessac-medium":
-        return {
-            "model_id": smoke_model_id,
-            "model_dir": PIPER_MODEL_DIR,
-            "speaker": "en_US-lessac-medium",
-            "sync_path": "/v1/audio/speech",
-            "sync_payload": {
-                "model": smoke_model_id,
-                "input": "Smoke test for local custom voice endpoint.",
-                "voice": "en_US-lessac-medium",
-                "response_format": "wav",
-                "speed": 1.0,
-            },
-            "expected_backend": "onnx",
-            "supports_async_custom_jobs": False,
-        }
-    return {
-        "model_id": smoke_model_id,
-        "model_dir": CUSTOM_MODEL_DIR,
-        "speaker": "Vivian",
-        "sync_path": "/api/v1/tts/custom",
-        "sync_payload": {
-            "text": "Smoke test for local custom voice endpoint.",
-            "speaker": "Vivian",
-            "model": smoke_model_id,
-            "save_output": False,
-        },
-        "expected_backend": EXPECTED_BACKEND,
-        "supports_async_custom_jobs": True,
-    }
+    return dict(SMOKE_TARGETS[smoke_model_id])
 
 
 def request_json(method: str, path: str, payload: dict | None = None) -> dict:
@@ -238,9 +287,12 @@ def test_health_ready_smoke():
     if runtime_ready_models is not None:
         assert runtime_ready_models >= 1
     if EXPECTED_BACKEND and smoke_target["supports_async_custom_jobs"] is True:
-        assert (
-            response["json"]["checks"]["models"]["selected_backend"] == EXPECTED_BACKEND
+        models_check = response["json"]["checks"]["models"]
+        selected_backend = models_check.get("selected_backend")
+        mixed_backend_routing = models_check.get("routing", {}).get(
+            "mixed_backend_routing"
         )
+        assert selected_backend == EXPECTED_BACKEND or mixed_backend_routing is True
 
 
 def test_custom_tts_endpoint_smoke():
@@ -264,19 +316,14 @@ def test_async_custom_job_flow_smoke():
     smoke_target = resolve_smoke_target()
     if smoke_target["supports_async_custom_jobs"] is not True:
         pytest.skip(
-            "async custom smoke flow is only applicable to Qwen custom model coverage"
+            "async custom smoke flow is only applicable to custom-family smoke targets"
         )
 
     try:
         submit_response = request_json(
             "POST",
             "/api/v1/tts/custom/jobs",
-            payload={
-                "text": "Smoke async job test for local custom voice endpoint.",
-                "speaker": "Vivian",
-                "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
-                "save_output": False,
-            },
+            payload=dict(smoke_target["async_submit_payload"]),
         )
     except urllib.error.HTTPError as exc:
         skip_if_missing_runtime_feature(exc, feature="async custom job submit")
@@ -311,7 +358,7 @@ def test_async_custom_job_flow_smoke():
         skip_if_missing_runtime_feature(exc, feature="async job result")
 
     assert_audio_response(
-        result_response, expected_model="Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+        result_response, expected_model=str(smoke_target["model_id"])
     )
     assert result_response["headers"].get("x-job-id") == job_id
     assert result_response["headers"].get("x-tts-mode") == "custom"
