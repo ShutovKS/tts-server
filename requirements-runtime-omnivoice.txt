@@ -1,0 +1,5 @@
+-r requirements-base-omnivoice.txt
+
+# Upstream OmniVoice currently expects a newer transformers stack than qwen-tts.
+# Install this pack in a dedicated runtime environment rather than alongside Qwen.
+omnivoice==0.1.4

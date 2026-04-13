@@ -13,7 +13,10 @@
 # START_MODULE_MAP
 #   DEFAULT_SERVER_HOST - Default bind host for automated local smoke runs
 #   DEFAULT_SERVER_PORT - Default bind port for automated local smoke runs
-#   CUSTOM_SMOKE_MODEL_ID - Required custom model used by server smoke validation
+#   CUSTOM_SMOKE_MODEL_ID - Default Qwen custom model used by server smoke validation
+#   OMNIVOICE_SMOKE_MODEL_ID - OmniVoice custom model used by torch-backed smoke validation
+#   VOXCPM_SMOKE_MODEL_ID - VoxCPM2 custom model used by torch-backed smoke validation
+#   resolve_smoke_model_folder - Resolve the local model directory name for a smoke model entry
 #   parse_args - Parse CLI arguments for validation subcommands
 #   build_validation_env - Build a normalized environment mapping for validation runs
 #   _next_update_offset - Compute the follow-up update offset after a baseline Telegram poll
@@ -25,7 +28,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.0 - Added model-aware smoke-server selection so smoke validation can target default Qwen custom coverage or Piper ONNX routing through the existing HTTP API]
+#   LAST_CHANGE: [v1.3.0 - Extended smoke validation targets for OmniVoice and VoxCPM2 and resolved shared-folder model directories from readiness metadata]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -58,8 +61,15 @@ from telegram_bot.client import RetryConfig, TelegramBotClient  # noqa: E402
 DEFAULT_SERVER_HOST = "127.0.0.1"
 DEFAULT_SERVER_PORT = 0
 CUSTOM_SMOKE_MODEL_ID = "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+OMNIVOICE_SMOKE_MODEL_ID = "OmniVoice-Custom"
+VOXCPM_SMOKE_MODEL_ID = "VoxCPM2-Custom"
 PIPER_SMOKE_MODEL_ID = "Piper-en_US-lessac-medium"
-SUPPORTED_SMOKE_MODEL_IDS = (CUSTOM_SMOKE_MODEL_ID, PIPER_SMOKE_MODEL_ID)
+SUPPORTED_SMOKE_MODEL_IDS = (
+    CUSTOM_SMOKE_MODEL_ID,
+    OMNIVOICE_SMOKE_MODEL_ID,
+    VOXCPM_SMOKE_MODEL_ID,
+    PIPER_SMOKE_MODEL_ID,
+)
 
 
 # START_CONTRACT: parse_args
@@ -193,6 +203,13 @@ def build_validation_env(
     port: int | None = None,
 ) -> dict[str, str]:
     env = dict(os.environ if environ is None else environ)
+    sox_dir = Path.home() / "AppData" / "Local" / "Programs" / "sox"
+    if sox_dir.exists():
+        current_path = env.get("PATH", "")
+        path_entries = [entry for entry in current_path.split(os.pathsep) if entry]
+        normalized_entries = {entry.lower() for entry in path_entries}
+        if str(sox_dir).lower() not in normalized_entries:
+            env["PATH"] = os.pathsep.join([str(sox_dir), *path_entries])
     env.setdefault(
         "QWEN_TTS_MODELS_DIR", (PROJECT_ROOT / ".models").resolve().as_posix()
     )
@@ -257,6 +274,15 @@ def _model_entry(payload: dict[str, Any], model_id: str) -> dict[str, Any]:
         if item.get("id") == model_id:
             return item
     raise RuntimeError(f"Model entry not found in readiness payload: {model_id}")
+
+
+def resolve_smoke_model_folder(model_entry: Mapping[str, Any]) -> str:
+    folder = str(model_entry.get("folder") or "").strip()
+    _require(
+        bool(folder),
+        f"Smoke model entry is missing folder metadata: {model_entry.get('id')}",
+    )
+    return folder
 
 
 def _route_candidate(model_entry: dict[str, Any], backend_key: str) -> dict[str, Any]:
@@ -522,8 +548,10 @@ def run_smoke_server_validation(
     )
     payload = build_self_check_payload(env)
     host = payload["readiness"]["host"]
-    smoke_model_dir = Path(env["QWEN_TTS_MODELS_DIR"]) / smoke_model_id
     smoke_model = _model_entry(payload, smoke_model_id)
+    smoke_model_dir = (
+        Path(env["QWEN_TTS_MODELS_DIR"]) / resolve_smoke_model_folder(smoke_model)
+    )
     _require(
         smoke_model_dir.exists(),
         f"Required smoke model directory is missing: {smoke_model_dir}",
