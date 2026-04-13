@@ -1,5 +1,5 @@
 # FILE: cli/runtime.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Define CLI runtime container with core runtime and CLI-specific state.
 #   SCOPE: CLIRuntime dataclass
@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.1.0 - Hardened Windows CLI audio playback by preferring os.startfile over fragile cmd/start shell invocation]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -114,11 +114,16 @@ class CliRuntime:
         if not self.settings.auto_play_cli:
             return
 
+        if os.name == "nt":
+            try:
+                os.startfile(str(path))
+                return
+            except OSError:
+                pass
+
         commands = []
         if sys.platform == "darwin":
             commands.append(["afplay", str(path)])
-        elif os.name == "nt":
-            commands.append(["cmd", "/c", "start", "", str(path)])
         else:
             if shutil.which("ffplay"):
                 commands.append(["ffplay", "-nodisp", "-autoexit", str(path)])

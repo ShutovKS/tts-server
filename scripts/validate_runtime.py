@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # FILE: scripts/validate_runtime.py
-# VERSION: 1.1.0
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide operator- and CI-facing validation commands for host-specific backend checks, automated local smoke orchestration, and optional Telegram live connectivity.
 #   SCOPE: CLI subcommands, runtime validation environment helpers, HTTP smoke start/stop orchestration, qwen_fast host-matrix assertions, Telegram Bot API reachability checks, and opt-in inbound Telegram update validation
@@ -25,7 +25,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Extended Telegram live validation with opt-in inbound update checks suitable for dedicated validation chats]
+#   LAST_CHANGE: [v1.2.0 - Added model-aware smoke-server selection so smoke validation can target default Qwen custom coverage or Piper ONNX routing through the existing HTTP API]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -58,6 +58,8 @@ from telegram_bot.client import RetryConfig, TelegramBotClient  # noqa: E402
 DEFAULT_SERVER_HOST = "127.0.0.1"
 DEFAULT_SERVER_PORT = 0
 CUSTOM_SMOKE_MODEL_ID = "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+PIPER_SMOKE_MODEL_ID = "Piper-en_US-lessac-medium"
+SUPPORTED_SMOKE_MODEL_IDS = (CUSTOM_SMOKE_MODEL_ID, PIPER_SMOKE_MODEL_ID)
 
 
 # START_CONTRACT: parse_args
@@ -114,6 +116,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--expected-backend",
         default=None,
         help="Optional expected backend override passed into the smoke tests.",
+    )
+    smoke_parser.add_argument(
+        "--smoke-model-id",
+        default=(os.getenv("QWEN_TTS_SMOKE_MODEL_ID") or CUSTOM_SMOKE_MODEL_ID),
+        help=(
+            "Smoke model id to validate through the HTTP API. "
+            f"Defaults to QWEN_TTS_SMOKE_MODEL_ID or {CUSTOM_SMOKE_MODEL_ID}."
+        ),
     )
     smoke_parser.add_argument(
         "--strict-runtime",
@@ -183,14 +193,22 @@ def build_validation_env(
     port: int | None = None,
 ) -> dict[str, str]:
     env = dict(os.environ if environ is None else environ)
-    env.setdefault("QWEN_TTS_MODELS_DIR", str((PROJECT_ROOT / ".models").resolve()))
     env.setdefault(
-        "QWEN_TTS_MLX_MODELS_DIR", str((PROJECT_ROOT / ".models" / "mlx").resolve())
+        "QWEN_TTS_MODELS_DIR", (PROJECT_ROOT / ".models").resolve().as_posix()
     )
-    env.setdefault("QWEN_TTS_OUTPUTS_DIR", str((PROJECT_ROOT / ".outputs").resolve()))
-    env.setdefault("QWEN_TTS_VOICES_DIR", str((PROJECT_ROOT / ".voices").resolve()))
     env.setdefault(
-        "QWEN_TTS_UPLOAD_STAGING_DIR", str((PROJECT_ROOT / ".uploads").resolve())
+        "QWEN_TTS_MLX_MODELS_DIR",
+        (PROJECT_ROOT / ".models" / "mlx").resolve().as_posix(),
+    )
+    env.setdefault(
+        "QWEN_TTS_OUTPUTS_DIR", (PROJECT_ROOT / ".outputs").resolve().as_posix()
+    )
+    env.setdefault(
+        "QWEN_TTS_VOICES_DIR", (PROJECT_ROOT / ".voices").resolve().as_posix()
+    )
+    env.setdefault(
+        "QWEN_TTS_UPLOAD_STAGING_DIR",
+        (PROJECT_ROOT / ".uploads").resolve().as_posix(),
     )
     if backend is not None:
         env["QWEN_TTS_BACKEND"] = backend
@@ -381,6 +399,9 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
     _require("onnx" in baseline_backends, "onnx backend is missing")
 
     baseline_qwen_fast = baseline_backends["qwen_fast"]
+    qwen_fast_enabled = bool(
+        baseline["settings"].get("qwen_fast_enabled", True)
+    )
     if host["platform_system"] == "darwin":
         _require(
             baseline_qwen_fast["diagnostics"]["reason"] == "platform_unsupported",
@@ -389,10 +410,6 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
 
     eligible_qwen_fast = eligible_backends["qwen_fast"]
     _require(
-        eligible_qwen_fast["diagnostics"]["ready"] is True,
-        "Expected qwen_fast eligible simulation to become ready",
-    )
-    _require(
         eligible_qwen_fast["diagnostics"]["details"].get("test_mode") == "eligible",
         "Expected qwen_fast eligible simulation to report eligible test mode",
     )
@@ -400,27 +417,53 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
     eligible_custom_route = _route_candidate(
         _model_entry(eligible, CUSTOM_SMOKE_MODEL_ID), "qwen_fast"
     )
-    _require(
-        eligible_custom_route["ready"] is True,
-        "Expected qwen_fast eligible simulation to produce a ready custom route candidate",
-    )
-    _require(
-        eligible_custom_route["route_reason"] == "route_candidate_accepted",
-        "Expected qwen_fast eligible simulation to accept the custom route candidate",
-    )
+    if qwen_fast_enabled:
+        _require(
+            eligible_qwen_fast["diagnostics"]["ready"] is True,
+            "Expected qwen_fast eligible simulation to become ready",
+        )
+        _require(
+            eligible_custom_route["ready"] is True,
+            "Expected qwen_fast eligible simulation to produce a ready custom route candidate",
+        )
+        _require(
+            eligible_custom_route["route_reason"] == "route_candidate_accepted",
+            "Expected qwen_fast eligible simulation to accept the custom route candidate",
+        )
+    else:
+        _require(
+            eligible_qwen_fast["diagnostics"]["reason"] == "disabled_by_config",
+            "Expected qwen_fast eligible simulation to remain disabled when qwen_fast is disabled by config",
+        )
+        _require(
+            eligible_custom_route["route_reason"] == "disabled_by_config",
+            "Expected qwen_fast eligible simulation to keep the custom route disabled when qwen_fast is disabled by config",
+        )
 
     cuda_missing_qwen_fast = cuda_missing_backends["qwen_fast"]
-    _require(
-        cuda_missing_qwen_fast["diagnostics"]["reason"] == "cuda_required",
-        "Expected qwen_fast cuda_missing simulation to report cuda_required",
-    )
+    if qwen_fast_enabled:
+        _require(
+            cuda_missing_qwen_fast["diagnostics"]["reason"] == "cuda_required",
+            "Expected qwen_fast cuda_missing simulation to report cuda_required",
+        )
+    else:
+        _require(
+            cuda_missing_qwen_fast["diagnostics"]["reason"] == "disabled_by_config",
+            "Expected qwen_fast cuda_missing simulation to remain disabled when qwen_fast is disabled by config",
+        )
 
     dependency_missing_qwen_fast = dependency_missing_backends["qwen_fast"]
-    _require(
-        dependency_missing_qwen_fast["diagnostics"]["reason"]
-        == "runtime_dependency_missing",
-        "Expected qwen_fast dependency_missing simulation to report runtime_dependency_missing",
-    )
+    if qwen_fast_enabled:
+        _require(
+            dependency_missing_qwen_fast["diagnostics"]["reason"]
+            == "runtime_dependency_missing",
+            "Expected qwen_fast dependency_missing simulation to report runtime_dependency_missing",
+        )
+    else:
+        _require(
+            dependency_missing_qwen_fast["diagnostics"]["reason"] == "disabled_by_config",
+            "Expected qwen_fast dependency_missing simulation to remain disabled when qwen_fast is disabled by config",
+        )
     # END_BLOCK_ASSERT_HOST_MATRIX
 
     # START_BLOCK_BUILD_HOST_MATRIX_SUMMARY
@@ -435,6 +478,7 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
         "simulated_qwen_fast": {
             "eligible": {
                 "ready": eligible_qwen_fast["diagnostics"]["ready"],
+                "reason": eligible_qwen_fast["diagnostics"]["reason"],
                 "custom_route_reason": eligible_custom_route["route_reason"],
             },
             "cuda_missing": {
@@ -461,6 +505,14 @@ def run_smoke_server_validation(
     args: argparse.Namespace, environ: Mapping[str, str]
 ) -> dict[str, Any]:
     # START_BLOCK_PREPARE_SMOKE_ENVIRONMENT
+    smoke_model_id = str(getattr(args, "smoke_model_id", CUSTOM_SMOKE_MODEL_ID)).strip()
+    _require(
+        smoke_model_id in SUPPORTED_SMOKE_MODEL_IDS,
+        (
+            "Unsupported smoke model id "
+            f"'{smoke_model_id}'. Supported values: {', '.join(SUPPORTED_SMOKE_MODEL_IDS)}"
+        ),
+    )
     resolved_port = _choose_server_port(args.host, int(args.port))
     env = build_validation_env(
         environ,
@@ -470,17 +522,25 @@ def run_smoke_server_validation(
     )
     payload = build_self_check_payload(env)
     host = payload["readiness"]["host"]
-    custom_model_dir = Path(env["QWEN_TTS_MODELS_DIR"]) / CUSTOM_SMOKE_MODEL_ID
-    custom_model = _model_entry(payload, CUSTOM_SMOKE_MODEL_ID)
+    smoke_model_dir = Path(env["QWEN_TTS_MODELS_DIR"]) / smoke_model_id
+    smoke_model = _model_entry(payload, smoke_model_id)
+    _require(
+        smoke_model_dir.exists(),
+        f"Required smoke model directory is missing: {smoke_model_dir}",
+    )
+    _require(
+        smoke_model["runtime_ready"] is True,
+        f"Required smoke model is not runtime-ready: {smoke_model_id}",
+    )
+    if smoke_model_id == PIPER_SMOKE_MODEL_ID:
+        _require(
+            smoke_model.get("execution_backend") == "onnx",
+            (
+                "Piper smoke validation expects ONNX execution backend, "
+                f"got: {smoke_model.get('execution_backend')}"
+            ),
+        )
     _require(host["ffmpeg_available"], "ffmpeg is required for smoke validation")
-    _require(
-        custom_model_dir.exists(),
-        f"Required smoke model directory is missing: {custom_model_dir}",
-    )
-    _require(
-        custom_model["runtime_ready"] is True,
-        f"Required smoke model is not runtime-ready: {CUSTOM_SMOKE_MODEL_ID}",
-    )
     if args.strict_runtime:
         _require(
             not payload["assets"]["models_missing_assets"],
@@ -488,9 +548,14 @@ def run_smoke_server_validation(
         )
     expected_backend = (
         args.expected_backend
-        or custom_model.get("execution_backend")
+        or smoke_model.get("execution_backend")
         or payload["readiness"]["backend_diagnostics"]["backend"]
     )
+    if smoke_model_id == PIPER_SMOKE_MODEL_ID:
+        _require(
+            str(expected_backend) == "onnx",
+            f"Piper smoke validation requires expected backend 'onnx', got '{expected_backend}'",
+        )
     base_url = f"http://{args.host}:{resolved_port}"
     # END_BLOCK_PREPARE_SMOKE_ENVIRONMENT
 
@@ -527,6 +592,7 @@ def run_smoke_server_validation(
         smoke_env = dict(env)
         smoke_env["QWEN_TTS_RUN_SMOKE"] = "1"
         smoke_env["QWEN_TTS_SMOKE_BASE_URL"] = base_url
+        smoke_env["QWEN_TTS_SMOKE_MODEL_ID"] = smoke_model_id
         smoke_env["QWEN_TTS_SMOKE_EXPECTED_BACKEND"] = str(expected_backend)
         smoke_result = subprocess.run(
             [
@@ -557,6 +623,7 @@ def run_smoke_server_validation(
     return {
         "status": "ok",
         "base_url": base_url,
+        "smoke_model_id": smoke_model_id,
         "expected_backend": expected_backend,
         "server_log_path": log_file.name,
         "health": health,

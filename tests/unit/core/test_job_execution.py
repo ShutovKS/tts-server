@@ -51,6 +51,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event
+import tempfile
 from time import sleep
 
 import pytest
@@ -100,6 +101,9 @@ from core.infrastructure.job_execution_local import (
 
 
 pytestmark = pytest.mark.unit
+
+
+TEST_TMP_ROOT = Path(tempfile.gettempdir()) / "qwen-tts-tests"
 
 
 class StubApplicationService:
@@ -168,7 +172,7 @@ def _make_submission(
         response_format="wav",
         save_output=False,
         execution_timeout_seconds=timeout_seconds,
-        staged_input_paths=(Path("/tmp/staged-input.wav"),),
+        staged_input_paths=(TEST_TMP_ROOT / "staged-input.wav",),
         idempotency_key=idempotency_key,
         idempotency_scope=idempotency_scope,
         idempotency_fingerprint=idempotency_fingerprint,
@@ -177,8 +181,8 @@ def _make_submission(
 
 def _make_generation_result() -> GenerationResult:
     return GenerationResult(
-        audio=AudioResult(path=Path("/tmp/audio.wav"), bytes_data=b"audio-bytes"),
-        saved_path=Path("/tmp/saved.wav"),
+        audio=AudioResult(path=TEST_TMP_ROOT / "audio.wav", bytes_data=b"audio-bytes"),
+        saved_path=TEST_TMP_ROOT / "saved.wav",
         model="demo-model",
         mode="custom",
         backend="mlx",
@@ -241,7 +245,7 @@ def test_in_memory_job_store_marks_running_and_succeeded_with_result():
     assert succeeded.status is JobStatus.SUCCEEDED
     assert succeeded.completed_at == completed_at
     assert succeeded.backend == "mlx"
-    assert succeeded.saved_path == Path("/tmp/saved.wav")
+    assert succeeded.saved_path == TEST_TMP_ROOT / "saved.wav"
     assert succeeded.retention_expires_at == completed_at + timedelta(seconds=60)
     assert resolution is not None
     assert resolution.snapshot.status is JobStatus.SUCCEEDED
@@ -466,7 +470,7 @@ def test_in_memory_job_executor_dispatches_by_operation():
             command=VoiceCloneCommand(
                 text="hello",
                 ref_text="sample",
-                ref_audio_path=Path("/tmp/source.wav"),
+                ref_audio_path=TEST_TMP_ROOT / "source.wav",
                 model="demo-model",
                 save_output=False,
             ),

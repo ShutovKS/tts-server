@@ -1,5 +1,5 @@
 # FILE: tests/smoke/test_local_runtime.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Smoke tests for the local runtime HTTP service.
 #   SCOPE: Health endpoints, sync/async synthesis smoke checks
@@ -10,7 +10,8 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   require_smoke_prerequisites - Autouse smoke gate for local runtime dependencies and readiness
+#   require_smoke_prerequisites - Autouse smoke gate for local runtime dependencies and selected smoke-model readiness
+#   resolve_smoke_target - Resolve smoke model/backend expectations used by sync and async smoke requests
 #   request_json - JSON HTTP helper for smoke endpoint checks
 #   request_binary - Binary HTTP helper for smoke audio/result checks
 #   skip_if_missing_runtime_feature - Skip smoke checks when optional runtime endpoints are absent
@@ -23,7 +24,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.1.0 - Made smoke requests model-aware with default Qwen custom coverage plus an optional Piper ONNX path through the public /v1/audio/speech API]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -49,7 +50,12 @@ SMOKE_BASE_URL = os.getenv("QWEN_TTS_SMOKE_BASE_URL", "http://127.0.0.1:8001").r
 MODELS_DIR = Path(os.getenv("QWEN_TTS_MODELS_DIR", ".models"))
 CUSTOM_MODEL_DIR = MODELS_DIR / "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
 PIPER_MODEL_DIR = MODELS_DIR / "Piper-en_US-lessac-medium"
+SMOKE_MODEL_ID = os.getenv("QWEN_TTS_SMOKE_MODEL_ID", "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit")
 EXPECTED_BACKEND = os.getenv("QWEN_TTS_SMOKE_EXPECTED_BACKEND")
+SUPPORTED_SMOKE_MODEL_IDS = {
+    "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+    "Piper-en_US-lessac-medium",
+}
 ASYNC_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timeout"}
 ASYNC_POLL_ATTEMPTS = int(os.getenv("QWEN_TTS_SMOKE_ASYNC_POLL_ATTEMPTS", "60"))
 ASYNC_POLL_INTERVAL_SECONDS = float(
@@ -65,8 +71,9 @@ def require_smoke_prerequisites():
         )
     if not shutil.which("ffmpeg"):
         pytest.skip("ffmpeg is not available in PATH")
-    if not CUSTOM_MODEL_DIR.exists():
-        pytest.skip(f"required local model is missing: {CUSTOM_MODEL_DIR}")
+    smoke_target = resolve_smoke_target()
+    if not smoke_target["model_dir"].exists():
+        pytest.skip(f"required local model is missing: {smoke_target['model_dir']}")
     try:
         live_response = request_json("GET", "/health/live")
     except Exception as exc:  # pragma: no cover - environment-dependent gate
@@ -91,6 +98,45 @@ def require_smoke_prerequisites():
     runtime_ready_models = models_check.get("runtime_ready_models")
     if runtime_ready_models is not None and runtime_ready_models < 1:
         pytest.skip("local runtime reports zero runtime-ready models")
+
+
+def resolve_smoke_target() -> dict[str, str | Path | bool]:
+    smoke_model_id = SMOKE_MODEL_ID.strip()
+    if smoke_model_id not in SUPPORTED_SMOKE_MODEL_IDS:
+        pytest.skip(
+            "unsupported smoke model id "
+            f"'{smoke_model_id}'; expected one of {sorted(SUPPORTED_SMOKE_MODEL_IDS)}"
+        )
+    if smoke_model_id == "Piper-en_US-lessac-medium":
+        return {
+            "model_id": smoke_model_id,
+            "model_dir": PIPER_MODEL_DIR,
+            "speaker": "en_US-lessac-medium",
+            "sync_path": "/v1/audio/speech",
+            "sync_payload": {
+                "model": smoke_model_id,
+                "input": "Smoke test for local custom voice endpoint.",
+                "voice": "en_US-lessac-medium",
+                "response_format": "wav",
+                "speed": 1.0,
+            },
+            "expected_backend": "onnx",
+            "supports_async_custom_jobs": False,
+        }
+    return {
+        "model_id": smoke_model_id,
+        "model_dir": CUSTOM_MODEL_DIR,
+        "speaker": "Vivian",
+        "sync_path": "/api/v1/tts/custom",
+        "sync_payload": {
+            "text": "Smoke test for local custom voice endpoint.",
+            "speaker": "Vivian",
+            "model": smoke_model_id,
+            "save_output": False,
+        },
+        "expected_backend": EXPECTED_BACKEND,
+        "supports_async_custom_jobs": True,
+    }
 
 
 def request_json(method: str, path: str, payload: dict | None = None) -> dict:
@@ -179,6 +225,7 @@ def test_health_live_smoke():
 
 
 def test_health_ready_smoke():
+    smoke_target = resolve_smoke_target()
     response = request_json("GET", "/health/ready")
 
     assert response["status"] == 200
@@ -190,33 +237,36 @@ def test_health_ready_smoke():
     )
     if runtime_ready_models is not None:
         assert runtime_ready_models >= 1
-    if EXPECTED_BACKEND:
+    if EXPECTED_BACKEND and smoke_target["supports_async_custom_jobs"] is True:
         assert (
             response["json"]["checks"]["models"]["selected_backend"] == EXPECTED_BACKEND
         )
 
 
 def test_custom_tts_endpoint_smoke():
+    smoke_target = resolve_smoke_target()
     try:
         response = request_binary(
             "POST",
-            "/api/v1/tts/custom",
-            payload={
-                "text": "Smoke test for local custom voice endpoint.",
-                "speaker": "Vivian",
-                "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
-                "save_output": False,
-            },
+            str(smoke_target["sync_path"]),
+            payload=dict(smoke_target["sync_payload"]),
         )
     except urllib.error.HTTPError as exc:
         skip_if_missing_runtime_feature(exc, feature="sync custom TTS")
 
-    assert_audio_response(
-        response, expected_model="Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
-    )
+    assert_audio_response(response, expected_model=str(smoke_target["model_id"]))
+    expected_backend = str(smoke_target["expected_backend"] or "")
+    if expected_backend:
+        assert response["headers"].get("x-backend-id") == expected_backend
 
 
 def test_async_custom_job_flow_smoke():
+    smoke_target = resolve_smoke_target()
+    if smoke_target["supports_async_custom_jobs"] is not True:
+        pytest.skip(
+            "async custom smoke flow is only applicable to Qwen custom model coverage"
+        )
+
     try:
         submit_response = request_json(
             "POST",

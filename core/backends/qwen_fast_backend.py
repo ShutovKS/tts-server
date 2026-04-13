@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import platform
+import inspect
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -224,7 +225,7 @@ class QwenFastBackend(TTSBackend):
 
     def readiness_diagnostics(self) -> BackendDiagnostics:
         platform_supported = self.supports_platform()
-        dependency_available = self.is_available()
+        dependency_available = self.enabled and self.is_available()
         cuda_available = self._cuda_available()
         torch_version = self._torch_version_text()
         version_supported = self._torch_version_supported()
@@ -349,13 +350,20 @@ class QwenFastBackend(TTSBackend):
                     "runtime_type": type(runtime_model).__name__,
                 },
             )
-        wavs, sample_rate = runtime_model.generate_custom_voice(
-            text=text,
-            language=self._resolve_language(language),
-            speaker=speaker,
-            instruct=instruct,
-            speed=speed,
-        )
+        generate_custom_voice = runtime_model.generate_custom_voice
+        call_kwargs = {
+            "text": text,
+            "language": self._resolve_language(language),
+            "speaker": speaker,
+            "instruct": instruct,
+        }
+        try:
+            signature = inspect.signature(generate_custom_voice)
+        except (TypeError, ValueError):
+            signature = None
+        if signature is None or "speed" in signature.parameters:
+            call_kwargs["speed"] = speed
+        wavs, sample_rate = generate_custom_voice(**call_kwargs)
         self._persist_first_wav(output_dir, wavs, sample_rate)
 
     def synthesize_design(
@@ -457,6 +465,13 @@ class QwenFastBackend(TTSBackend):
                     "runtime_dependency": "faster_qwen3_tts",
                 },
             )
+        faster_runtime_cls = getattr(
+            faster_qwen3_tts_runtime, "FasterQwen3TTS", None
+        )
+        if faster_runtime_cls is not None and hasattr(
+            faster_runtime_cls, "from_pretrained"
+        ):
+            return faster_runtime_cls.from_pretrained(str(model_path))
         runtime_cls = getattr(faster_qwen3_tts_runtime, "Qwen3TTSModel", None)
         if runtime_cls is not None and hasattr(runtime_cls, "from_pretrained"):
             return runtime_cls.from_pretrained(str(model_path))
