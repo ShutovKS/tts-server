@@ -110,13 +110,17 @@ Transport-specific настройки описаны в [../server/README.ru.md]
 
 Манифест расположен в [models/manifest.v1.json](models/manifest.v1.json). Локальные директории моделей разрешаются через [`ModelRegistry`](services/model_registry.py:20) относительно `QWEN_TTS_MODELS_DIR`.
 
-Runtime сейчас поддерживает две model families:
+Runtime сейчас поддерживает следующие model families:
 
 - `Qwen3-TTS` через `mlx` и `torch`
 - `Qwen3-TTS` custom-only accelerated lane через `qwen_fast` с безопасным fallback на `torch`
+- `OmniVoice` через `torch`
+- `VoxCPM2` через `torch`
 - `Piper` через `onnx`
 
 Для `qwen_fast` нужен optional runtime faster-qwen3-tts; pinned upstream README документирует установку через `pip install faster-qwen3-tts` и указывает prerequisites: Python 3.10+, PyTorch 2.5.1+ и NVIDIA CUDA.
+
+Для операторов в корне репозитория теперь есть split runtime-pack файлы. `requirements.txt` оставляет стабильное общее окружение Qwen + Piper, а `requirements-runtime-omnivoice.txt` и `requirements-runtime-voxcpm.txt` рассчитаны на отдельные окружения в тех случаях, когда этим upstream families нужна изоляция зависимостей относительно Qwen.
 
 ## Эксплуатационные замечания
 

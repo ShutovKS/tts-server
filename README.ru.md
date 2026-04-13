@@ -23,6 +23,8 @@ English version: [README.md](README.md)
 ## Возможности
 
 - Локальный Qwen3 TTS inference на общей платформе из [core/](core/README.ru.md)
+- Локальный OmniVoice inference через общий Torch family-adapter lane
+- Локальный VoxCPM2 inference через общий Torch family-adapter lane
 - Локальный Piper inference через ONNX runtime с использованием поддерживаемого Python API `piper-tts`
 - OpenAI-совместимый endpoint `POST /v1/audio/speech`
 - Расширенные HTTP endpoints для custom voice, voice design и voice cloning
@@ -39,14 +41,22 @@ English version: [README.md](README.md)
 - `ffmpeg`, доступный в `PATH`
 - Локальные директории моделей в [`.models/`](.models)
 - Для macOS Apple Silicon: MLX-совместимое окружение и MLX-подготовленные артефакты Qwen или ONNX-совместимое окружение для Piper
-- Для Linux или Windows: окружение, совместимое с PyTorch/Transformers для Qwen, либо ONNX runtime для Piper
+- Для Linux или Windows: окружение, совместимое с PyTorch/Transformers для Qwen, OmniVoice и VoxCPM2, либо ONNX runtime для Piper
 
 ## Установка
 
 ### Наборы зависимостей
 
-- `requirements.txt` — полный набор локальных operator-зависимостей, включая optional backend runtime-пакеты для поддерживаемых deployment lanes
+- `requirements.txt` — дефолтная локальная operator-установка для стабильного общего окружения: базовый runtime + стандартный Qwen + Piper
 - `requirements-ci.txt` — облегчённый набор для CI/проверок репозитория без тяжёлых optional runtime-зависимостей
+- `requirements-base.txt` — общий базовый слой для runtime-pack файлов ниже
+- `requirements-runtime-qwen.txt` — стандартный Qwen Torch lane для общего дефолтного окружения
+- `requirements-runtime-piper.txt` — Piper ONNX lane для общего дефолтного окружения
+- `requirements-runtime-qwen-fast.txt` — optional ускоренный Qwen lane для совместимых CUDA-хостов
+- `requirements-runtime-omnivoice.txt` — отдельный runtime-pack для выделенного OmniVoice-окружения
+- `requirements-runtime-voxcpm.txt` — отдельный runtime-pack для выделенного VoxCPM2-окружения
+
+Ключевое практическое изменение: OmniVoice и VoxCPM2 больше не описываются как часть дефолтной общей установки. Они по-прежнему поддерживаются runtime, но для живого запуска их лучше ставить в отдельные окружения, потому что upstream dependency stack может расходиться со стабильным Qwen-окружением.
 
 ### macOS Apple Silicon
 
@@ -79,6 +89,65 @@ choco install ffmpeg -y
 
 Если PowerShell блокирует запуск activation script, сначала выполните `Set-ExecutionPolicy -Scope Process Bypass` в текущей сессии.
 
+### Рекомендуемые схемы окружений
+
+#### Дефолтное общее runtime-окружение
+
+Используйте его для стабильного operator lane, который описывает `requirements.txt`:
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Это окружение рассчитано на:
+
+- стандартный Qwen Torch inference
+- optional `qwen_fast` fallback/route decisions в self-check
+- Piper ONNX inference
+
+#### Отдельное окружение для OmniVoice
+
+Когда нужен локальный запуск OmniVoice, используйте отдельное окружение:
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements-runtime-omnivoice.txt
+```
+
+На текущем Windows-хосте OmniVoice сейчас требует более новый `transformers` surface, чем стабильное общее Qwen-окружение, поэтому отдельный venv — это безопасный operator path.
+
+#### Отдельное окружение для VoxCPM2
+
+Когда нужен управляемый локальный стек для VoxCPM2, используйте отдельное окружение:
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements-runtime-voxcpm.txt
+```
+
+#### Optional ускоренное окружение для Qwen
+
+Для CUDA-only ускоренного Qwen lane можно поверх подходящего хоста установить fast-pack:
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements-runtime-qwen-fast.txt
+```
+
+### Host prerequisites для Windows
+
+- `ffmpeg` должен быть доступен в `PATH`
+- `sox` настоятельно рекомендуется для host-side audio tooling и некоторых upstream runtime workflows
+
+На текущем хосте `sox` установлен как standalone binary в:
+
+```text
+C:\Users\shutov.k.s\AppData\Local\Programs\sox
+```
+
+Если `sox --version` всё ещё не работает, добавьте эту директорию в пользовательский `PATH` и откройте новый shell.
+
 ### Важная оговорка по Qwen Torch lane
 
 Немаковый Qwen lane зависит от официального Python-пакета `qwen-tts`, который используется в [`TorchBackend`](core/backends/torch_backend.py). Upstream-репозиторий Qwen3-TTS документирует `pip install -U qwen-tts` как стандартный путь установки и после этого использует `from qwen_tts import Qwen3TTSModel`. Поэтому для Linux/Windows у Qwen уже есть authoritative install path, но поддержку всё равно нужно считать частично подтверждённой или best effort, пока полный Torch lane не будет эмпирически прогнан на этих хостах.
@@ -99,6 +168,14 @@ pip install faster-qwen3-tts
 
 В репозитории теперь есть поддерживаемый Piper lane через `piper-tts` + `onnxruntime`. На macOS wheel `piper-tts` уже включает `espeakbridge` и `espeak-ng-data`; на других платформах всё равно нужно отдельно проверить phonemization/runtime-совместимость в целевом окружении.
 
+### Примечание по OmniVoice
+
+OmniVoice встроен как **Torch-backed model family**, а не как отдельный backend key. Upstream-проект документирует Python install path вокруг `pip install omnivoice` и `from omnivoice import OmniVoice`. В этом репозитории OmniVoice нужно считать optional operator-managed зависимостью, которая использует уже существующий выбор backend `torch`, но для живого запуска на Linux/Windows её лучше ставить в **отдельное окружение**.
+
+### Примечание по VoxCPM2
+
+VoxCPM2 также встроен как **Torch-backed model family**, а не как отдельный backend key. Upstream-проект документирует `pip install voxcpm` и Python API `from voxcpm import VoxCPM`. В этом репозитории VoxCPM2 использует тот же `torch` lane и должен рассматриваться как optional operator-managed runtime dependency, предпочтительно в отдельном окружении, если нужен предсказуемый operator stack.
+
 ## Модели
 
 Поместите загруженные директории моделей в [`.models/`](.models). Поддерживаемые локальные model ID регистрируются в [`ModelRegistry`](core/services/model_registry.py:20) и описаны в [core/models/manifest.v1.json](core/models/manifest.v1.json).
@@ -111,7 +188,35 @@ pip install faster-qwen3-tts
 - `Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit`
 - `Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit`
 - `Qwen3-TTS-12Hz-0.6B-Base-8bit`
+- `OmniVoice`
+- `VoxCPM2`
 - `Piper-en_US-lessac-medium`
+
+### Формат директории OmniVoice
+
+Для встроенного семейства OmniVoice поместите загруженный Hugging Face snapshot или локально экспортированную модель в `.models/OmniVoice`. Текущий manifest проверяет минимальный root-набор config / weights / tokenizer, а опубликованный upstream model repo дополнительно содержит обязательное поддерево `audio_tokenizer/`. Поэтому практичная локальная раскладка должна включать как минимум:
+
+- `.models/OmniVoice/config.json`
+- `.models/OmniVoice/model.safetensors` или `.models/OmniVoice/model.safetensors.index.json`
+- `.models/OmniVoice/tokenizer_config.json` или `.models/OmniVoice/tokenizer.json`
+- `.models/OmniVoice/chat_template.jinja`
+- `.models/OmniVoice/audio_tokenizer/config.json`
+- `.models/OmniVoice/audio_tokenizer/model.safetensors`
+- `.models/OmniVoice/audio_tokenizer/preprocessor_config.json`
+
+Если модель загружена в виде Hugging Face cache snapshot layout, можно оставить вложенную структуру `snapshots/<revision>/...` — [`TorchBackend`](core/backends/torch_backend.py) уже умеет корректно её разрешать.
+
+### Формат директории VoxCPM2
+
+Для встроенного семейства VoxCPM2 поместите модель в `.models/VoxCPM2`. Текущий manifest проверяет минимальный root-набор config / weights / tokenizer, а опубликованный upstream repo дополнительно содержит companion files, которые стоит зеркалировать для надёжного локального inference. Поэтому практичная локальная раскладка должна включать как минимум:
+
+- `.models/VoxCPM2/config.json`
+- `.models/VoxCPM2/model.safetensors` или `.models/VoxCPM2/model.safetensors.index.json`
+- `.models/VoxCPM2/tokenizer_config.json` или `.models/VoxCPM2/tokenizer.json`
+- `.models/VoxCPM2/special_tokens_map.json`
+- `.models/VoxCPM2/audiovae.pth`
+
+Сейчас репозиторий рассматривает VoxCPM2 как shared-folder multi-mode family: одна и та же локальная директория используется для custom, design и clone, а runtime различает эти сценарии через стабильные manifest `model_id`.
 
 ### Формат Piper voice directory
 
@@ -157,12 +262,16 @@ python scripts/runtime_self_check.py --strict
 
 Если `qwen_fast` включён или рассматривается для маршрутизации, self-check теперь дополнительно показывает `backend_support`, route candidates и явные причины fallback/rejection, чтобы оператор видел, когда ускоренный custom-only lane был выбран, а когда нет.
 
+Для OmniVoice и VoxCPM2 тот же self-check теперь показывает их как **Torch-routed family entries**. Они не добавляют новые backend keys; вместо этого они появляются как model-family элементы, у которых `execution_backend` должен разрешаться в `torch`, если локальные артефакты и optional Python packages доступны.
+
 Для воспроизводимых validation-сценариев используйте automation entry point, а не собирайте команды вручную:
 
 ```bash
 python scripts/validate_runtime.py host-matrix
 python scripts/validate_runtime.py smoke-server
 python scripts/validate_runtime.py smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx
+python scripts/validate_runtime.py smoke-server --smoke-model-id OmniVoice-Custom --expected-backend torch
+python scripts/validate_runtime.py smoke-server --smoke-model-id VoxCPM2-Custom --expected-backend torch
 python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"
 python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN" --chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
 ```
@@ -170,6 +279,8 @@ python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM
 - `host-matrix` проверяет текущий host snapshot и симулированные сценарии optional-lane для `qwen_fast`.
 - `smoke-server` поднимает локальный HTTP-сервер, ждёт health probes, запускает smoke-suite и затем корректно останавливает runtime.
 - `smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx` явно валидирует Piper HTTP path через `POST /v1/audio/speech` и одновременно проверяет, что для этой модели используется ONNX routing.
+- `smoke-server --smoke-model-id OmniVoice-Custom --expected-backend torch` валидирует OmniVoice HTTP path через общий Torch family lane.
+- `smoke-server --smoke-model-id VoxCPM2-Custom --expected-backend torch` валидирует VoxCPM2 HTTP path через общий Torch family lane.
 - `telegram-live` проверяет доступность реального Telegram Bot API и при необходимости может отправить validation message, если передан `--chat-id`.
 - Добавьте `--expect-update-chat-id` и при необходимости `--expect-update-text`, если нужен opt-in сценарий с выделенным чатом, который дополнительно подтверждает, что новый подходящий inbound update виден через `getUpdates` без запуска long-polling runtime.
 
@@ -279,7 +390,7 @@ docker compose -f docker-compose.telegram-bot.yaml up --build
 
 - `mlx` — Qwen3 на Apple Silicon
 - `qwen_fast` — optional ускоренный Qwen custom-only lane с безопасным fallback на `torch`
-- `torch` — Qwen3 на Torch CPU/CUDA-совместимых runtime
+- `torch` — Qwen3, OmniVoice и VoxCPM2 на Torch CPU/CUDA-совместимых runtime
 - `onnx` — Piper local voice inference через ONNX runtime
 
 Для release-facing platform claims используйте [docs/support-matrix.md](docs/support-matrix.md) как канонический источник.
