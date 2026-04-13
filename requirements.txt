@@ -66,7 +66,8 @@ transformers==5.4.0; platform_system == "Darwin"
 transformers==4.57.3; platform_system != "Darwin"
 onnxruntime==1.23.2
 piper-tts==1.4.2
-sox==1.5.0
+# `sox` is intentionally excluded from the base runtime set because the current repository runtime does not import it,
+# and requiring a separate SoX system binary creates avoidable Windows setup friction.
 mlx==0.31.1; platform_system == "Darwin"
 mlx-audio==0.4.1; platform_system == "Darwin"
 mlx-lm==0.31.1; platform_system == "Darwin"

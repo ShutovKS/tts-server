@@ -63,26 +63,28 @@ jobs:
       - name: Run unit and integration tests
         run: python -m pytest -m "unit or integration"
 
-  test-windows-best-effort:
-    name: Windows best-effort validation
+  test-windows:
+    name: Windows validation
     runs-on: windows-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install system dependencies
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
       - name: Install Python dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-ci.txt
-      - name: Run runtime self-check (best effort)
+      - name: Run runtime self-check
         shell: pwsh
         run: python scripts/runtime_self_check.py
-      - name: Run host matrix validation (best effort)
+      - name: Run host matrix validation
         shell: pwsh
         run: python scripts/validate_runtime.py host-matrix
-      - name: Run unit tests (best effort)
+      - name: Run unit and integration tests
         shell: pwsh
-        run: python -m pytest -m unit
+        run: python -m pytest -m "unit or integration"

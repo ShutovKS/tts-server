@@ -34,6 +34,7 @@ tmp_stage3_debug/
 temp_*/
 temp_convert_*.wav
 *_converted.wav
+*.wav
 
 # User-generated data (preserve directory structure)
 .voices/*
@@ -64,3 +65,5 @@ docs/plans/
 .kilo/plans/1775719613323-hidden-comet.md
 .state/
 .sisyphus/
+
+*.crt
