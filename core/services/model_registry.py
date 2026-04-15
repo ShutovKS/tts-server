@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Added mixed-family route reporting, host snapshot exposure, and richer per-model readiness metadata]
+#   LAST_CHANGE: [v1.3.0 - Delegated model path and identifier lookup helpers to catalog/artifact split surfaces so ModelRegistry stays thinner as a facade]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ class ModelRegistry:
         self._preload_model_ids = tuple(preload_model_ids)
         self.catalog = ModelCatalogRegistry(self.backend_registry.model_specs)
         self.artifacts = ArtifactRegistry(self.catalog, self.backend_registry)
-        self.runtime_models = RuntimeModelRegistry(self.artifacts, self)
+        self.runtime_models = RuntimeModelRegistry(self.artifacts, self.preload_report)
         self._preload_report = self._build_preload_report(status="not_started")
         self._apply_preload_policy()
 
@@ -144,73 +144,109 @@ class ModelRegistry:
             )
             return spec, handle
 
+    # START_CONTRACT: preload_report
+    #   PURPOSE: Expose the current preload report through a stable public registry contract.
+    #   INPUTS: {}
+    #   OUTPUTS: { dict[str, Any] - Copy of the preload policy execution report }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-MODEL-REGISTRY, M-RUNTIME-MODEL-REGISTRY
+    # END_CONTRACT: preload_report
+    def preload_report(self) -> dict[str, Any]:
+        return self._build_preload_report(
+            status=self._preload_report["status"],
+            requested_model_ids=list(self._preload_report["requested_model_ids"]),
+            resolved_model_ids=list(self._preload_report["resolved_model_ids"]),
+            loaded_model_ids=list(self._preload_report["loaded_model_ids"]),
+            failed_model_ids=list(self._preload_report["failed_model_ids"]),
+            errors=list(self._preload_report["errors"]),
+            policy_reason=self._preload_report["policy_reason"],
+        )
+
     def resolve_model_path(self, folder_name: str):
-        for spec in self.model_specs:
-            if folder_name == spec.folder:
-                return self.backend_for_spec(spec).resolve_model_path(folder_name)
-        return self.backend.resolve_model_path(folder_name)
+        return self.artifacts.resolve_model_path(folder_name)
 
     def inspect_model(self, spec: ModelSpec) -> dict[str, Any]:
         route = self.backend_route_for_spec(spec)
         execution_backend_key = route["execution_backend"]
+        descriptor = self.catalog.get_descriptor(spec.model_id)
         try:
-            backend = self.backend_for_spec(spec)
+            self.backend_for_spec(spec)
         except BackendCapabilityError:
-            item = {
-                "key": spec.key,
-                "id": spec.model_id,
-                "name": spec.public_name,
-                "mode": spec.mode,
-                "family": spec.family,
-                "family_key": spec.family_key,
-                "capabilities_supported": list(spec.supported_capabilities),
-                "backend_support": list(spec.backend_support),
-                "folder": spec.folder,
-                "backend": execution_backend_key,
-                "selected_backend": route["selected_backend"],
-                "selected_backend_label": route["selected_backend_label"],
-                "execution_backend": execution_backend_key,
-                "execution_backend_label": route["execution_backend_label"],
-                "route": route,
-                "configured": True,
-                "available": False,
-                "loadable": False,
-                "runtime_ready": False,
-                "cached": False,
-                "resolved_path": None,
-                "runtime_path": None,
-                "cache": {
+            item = self.runtime_models.descriptor_readiness(
+                descriptor,
+                route=route,
+                artifact_state={
+                    "model_id": descriptor.model_id,
+                    "family_key": descriptor.family_key,
+                    "declared": True,
+                    "installed": False,
+                    "loadable": False,
+                    "runtime_ready": False,
+                    "resolved_path": None,
+                    "missing_artifacts": [],
+                    "required_artifacts": [],
                     "loaded": False,
-                    "cache_key": spec.folder,
-                    "backend": None,
-                    "normalized_runtime": False,
-                    "runtime_path": None,
-                    "eviction_policy": "not_configured",
+                    "preload_status": "not_requested",
                 },
-                "missing_artifacts": [],
-                "required_artifacts": [],
-                "capabilities": {},
-                "availability_reason": route["route_reason"],
-            }
-        else:
-            item = backend.inspect_model(spec)
+            )
             item.update(
                 {
-                    "id": spec.model_id,
-                    "family": spec.family,
-                    "family_key": spec.family_key,
-                    "capabilities_supported": list(spec.supported_capabilities),
-                    "backend_support": list(spec.backend_support),
-                    "selected_backend": route["selected_backend"],
-                    "selected_backend_label": route["selected_backend_label"],
-                    "execution_backend": route["execution_backend"],
-                    "execution_backend_label": route["execution_backend_label"],
-                    "route": route,
-                    "availability_reason": route["route_reason"],
+                    "key": spec.key,
+                    "name": spec.public_name,
+                    "mode": spec.mode,
+                    "folder": spec.folder,
+                    "backend": execution_backend_key,
+                    "configured": True,
+                    "available": False,
+                    "cached": False,
+                    "runtime_path": None,
+                    "cache": {
+                        "loaded": False,
+                        "cache_key": spec.folder,
+                        "backend": None,
+                        "normalized_runtime": False,
+                        "runtime_path": None,
+                        "eviction_policy": "not_configured",
+                    },
+                    "capabilities": {},
                 }
             )
-        preload_state = self._preload_state_for_model(spec)
-        item["preload"] = preload_state
+        else:
+            item = self.artifacts.inspect(spec)
+            item.update(
+                self.runtime_models.descriptor_readiness(
+                    descriptor,
+                    route=route,
+                    artifact_state={
+                        "model_id": descriptor.model_id,
+                        "family_key": descriptor.family_key,
+                        "declared": True,
+                        "installed": bool(item["available"]),
+                        "loadable": bool(item["loadable"]),
+                        "runtime_ready": bool(item["runtime_ready"]),
+                        "resolved_path": item["resolved_path"],
+                        "missing_artifacts": list(item["missing_artifacts"]),
+                        "required_artifacts": list(item["required_artifacts"]),
+                        "loaded": bool(item.get("cached")),
+                        "preload_status": "loaded"
+                        if spec.model_id in self.preload_report()["loaded_model_ids"]
+                        else "failed"
+                        if spec.model_id in self.preload_report()["failed_model_ids"]
+                        else "requested"
+                        if spec.model_id in self.preload_report()["requested_model_ids"]
+                        else "not_requested",
+                    },
+                )
+            )
+            item.update(
+                {
+                    "key": spec.key,
+                    "name": spec.public_name,
+                    "mode": spec.mode,
+                    "folder": spec.folder,
+                    "backend": execution_backend_key,
+                }
+            )
         return item
 
     # START_CONTRACT: readiness_report
@@ -236,8 +272,7 @@ class ModelRegistry:
         degraded_routes = sum(
             1
             for item in items
-            if item.get("route", {}).get("route_reason")
-            == "no_ready_backend_for_model_using_best_effort_fallback"
+            if item.get("route", {}).get("route_reason") == "no_ready_backend_for_model"
         )
         family_summary: dict[str, dict[str, Any]] = {}
         for item in items:
@@ -284,15 +319,7 @@ class ModelRegistry:
             },
             "family_summary": family_summary,
             "metrics": self._build_metrics_summary(),
-            "preload": self._build_preload_report(
-                status=self._preload_report["status"],
-                requested_model_ids=self._preload_report["requested_model_ids"],
-                resolved_model_ids=self._preload_report["resolved_model_ids"],
-                loaded_model_ids=self._preload_report["loaded_model_ids"],
-                failed_model_ids=self._preload_report["failed_model_ids"],
-                errors=self._preload_report["errors"],
-                policy_reason=self._preload_report["policy_reason"],
-            ),
+            "preload": self.preload_report(),
             "available_backends": self.backend_registry.list_backends(),
             "items": items,
             "manifest": {
@@ -396,30 +423,6 @@ class ModelRegistry:
     def _is_preloadable(self, spec: ModelSpec) -> bool:
         status = self.inspect_model(spec)
         return bool(status["runtime_ready"])
-
-    def _preload_state_for_model(self, spec: ModelSpec) -> dict[str, Any]:
-        requested = (
-            self._preload_policy == "all"
-            or spec.api_name in self._preload_model_ids
-            or spec.model_id in self._preload_model_ids
-            or spec.folder in self._preload_model_ids
-            or spec.key in self._preload_model_ids
-        )
-        if self._preload_policy == "none":
-            status = "disabled"
-        elif spec.model_id in self._preload_report["loaded_model_ids"]:
-            status = "loaded"
-        elif spec.model_id in self._preload_report["failed_model_ids"]:
-            status = "failed"
-        elif requested:
-            status = "requested"
-        else:
-            status = "not_requested"
-        return {
-            "policy": self._preload_policy,
-            "requested": requested,
-            "status": status,
-        }
 
     def _build_metrics_summary(self) -> dict[str, Any]:
         return {

@@ -2,7 +2,7 @@
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Define normalized synthesis capability, request, and execution-plan contracts for planner-driven runtime orchestration.
-#   SCOPE: Capability types, normalized request payloads, execution plan dataclasses, compatibility helpers
+#   SCOPE: Capability types, normalized request payloads, and execution plan dataclasses
 #   DEPENDS: M-CONTRACTS, M-MODELS
 #   LINKS: M-EXECUTION-PLAN
 #   ROLE: TYPES
@@ -17,8 +17,8 @@
 #   SynthesisPayload - Union payload covering all normalized synthesis request variants
 #   SynthesisRequest - Normalized synthesis request consumed by planner and family adapters
 #   ExecutionPlan - Planner output describing family, model, backend, and selection rationale
-#   capability_to_legacy_mode - Map normalized capability to current legacy mode identifiers
-#   legacy_mode_to_capability - Map current legacy modes to normalized capability identifiers
+#   capability_to_execution_mode - Map normalized capability to execution mode identifiers
+#   execution_mode_to_capability - Map execution mode identifiers to normalized capability identifiers
 #   normalize_family_key - Normalize family labels from manifest metadata into stable family keys
 # END_MODULE_MAP
 #
@@ -47,14 +47,14 @@ SynthesisCapability = Literal[
     "reference_voice_clone",
 ]
 
-_CAPABILITY_TO_LEGACY_MODE: dict[SynthesisCapability, str] = {
+_CAPABILITY_TO_EXECUTION_MODE: dict[SynthesisCapability, str] = {
     "preset_speaker_tts": "custom",
     "voice_description_tts": "design",
     "reference_voice_clone": "clone",
 }
 
-_LEGACY_MODE_TO_CAPABILITY: dict[str, SynthesisCapability] = {
-    value: key for key, value in _CAPABILITY_TO_LEGACY_MODE.items()
+_EXECUTION_MODE_TO_CAPABILITY: dict[str, SynthesisCapability] = {
+    value: key for key, value in _CAPABILITY_TO_EXECUTION_MODE.items()
 }
 
 
@@ -79,15 +79,15 @@ class VoiceClonePayload:
 SynthesisPayload = PresetSpeakerPayload | VoiceDesignPayload | VoiceClonePayload
 
 
-def capability_to_legacy_mode(capability: SynthesisCapability) -> str:
-    return _CAPABILITY_TO_LEGACY_MODE[capability]
+def capability_to_execution_mode(capability: SynthesisCapability) -> str:
+    return _CAPABILITY_TO_EXECUTION_MODE[capability]
 
 
-def legacy_mode_to_capability(mode: str) -> SynthesisCapability:
+def execution_mode_to_capability(mode: str) -> SynthesisCapability:
     try:
-        return _LEGACY_MODE_TO_CAPABILITY[mode]
+        return _EXECUTION_MODE_TO_CAPABILITY[mode]
     except KeyError as exc:  # pragma: no cover
-        raise ValueError(f"Unsupported legacy mode: {mode}") from exc
+        raise ValueError(f"Unsupported execution mode: {mode}") from exc
 
 
 def normalize_family_key(family_label: str | None) -> str:
@@ -162,8 +162,8 @@ class SynthesisRequest:
         )
 
     @property
-    def legacy_mode(self) -> str:
-        return capability_to_legacy_mode(self.capability)
+    def execution_mode(self) -> str:
+        return capability_to_execution_mode(self.capability)
 
 
 @dataclass(frozen=True)
@@ -175,7 +175,7 @@ class ExecutionPlan:
     family_key: str
     family_label: str
     selection_reason: str
-    legacy_mode: str
+    execution_mode: str
 
 
 __all__ = [
@@ -186,7 +186,7 @@ __all__ = [
     "SynthesisRequest",
     "VoiceClonePayload",
     "VoiceDesignPayload",
-    "capability_to_legacy_mode",
-    "legacy_mode_to_capability",
+    "capability_to_execution_mode",
+    "execution_mode_to_capability",
     "normalize_family_key",
 ]

@@ -10,11 +10,11 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   QwenFastBackend - Optional accelerated Qwen custom-only backend with safe readiness gating
+#   QwenFastBackend - Optional accelerated Qwen custom-only backend with explicit readiness gating
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added additive accelerated Qwen custom-only backend with explicit fallback-safe diagnostics]
+#   LAST_CHANGE: [v1.1.0 - Updated backend wording to describe explicit readiness and rejection diagnostics instead of fallback semantics]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from core.backends.base import LoadedModelHandle, TTSBackend
+from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
 from core.errors import ModelLoadError, TTSGenerationError
 from core.metrics import OperationalMetricsRegistry
@@ -329,7 +329,45 @@ class QwenFastBackend(TTSBackend):
             "errors": errors,
         }
 
-    def synthesize_custom(
+    def execute(self, request: ExecutionRequest) -> None:
+        payload = dict(request.generation_kwargs)
+        if request.execution_mode == "custom":
+            self._execute_custom(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                speaker=str(payload.pop("voice")),
+                instruct=str(payload.pop("instruct")),
+                speed=float(payload.pop("speed")),
+            )
+            return
+        if request.execution_mode == "design":
+            self._execute_design(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                voice_description=str(payload.pop("instruct")),
+            )
+            return
+        if request.execution_mode == "clone":
+            ref_audio = payload.pop("ref_audio")
+            self._execute_clone(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                ref_audio_path=Path(str(ref_audio)),
+                ref_text=None if payload.get("ref_text") is None else str(payload.pop("ref_text")),
+            )
+            return
+        raise TTSGenerationError(
+            f"Unsupported execution mode '{request.execution_mode}' for backend '{self.key}'",
+            details={"backend": self.key, "mode": request.execution_mode, "model": request.handle.spec.api_name},
+        )
+
+    def _execute_custom(
         self,
         handle: LoadedModelHandle,
         *,
@@ -366,7 +404,7 @@ class QwenFastBackend(TTSBackend):
         wavs, sample_rate = generate_custom_voice(**call_kwargs)
         self._persist_first_wav(output_dir, wavs, sample_rate)
 
-    def synthesize_design(
+    def _execute_design(
         self,
         handle: LoadedModelHandle,
         *,
@@ -384,7 +422,7 @@ class QwenFastBackend(TTSBackend):
             },
         )
 
-    def synthesize_clone(
+    def _execute_clone(
         self,
         handle: LoadedModelHandle,
         *,

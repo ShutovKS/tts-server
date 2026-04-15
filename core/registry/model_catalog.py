@@ -14,7 +14,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added family-aware catalog registry as the first split registry surface]
+#   LAST_CHANGE: [v1.1.0 - Added explicit model spec lookup helpers so facade layers can delegate identifier resolution to the catalog surface]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -41,6 +41,12 @@ class ModelCatalogRegistry:
         for descriptor in self._descriptors:
             if model_id in {descriptor.model_id, descriptor.folder, descriptor.key}:
                 return descriptor
+        raise KeyError(model_id)
+
+    def get_spec(self, model_id: str) -> ModelSpec:
+        for spec in self._model_specs:
+            if model_id in {spec.model_id, spec.api_name, spec.folder, spec.key}:
+                return spec
         raise KeyError(model_id)
 
 

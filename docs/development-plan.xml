@@ -2,15 +2,15 @@
   <ArchitectureNotes>
     <objective>Clean layered architecture: transport adapters depend on shared core, never on each other.</objective>
     <non-goal>No distributed or multi-node execution patterns.</non-goal>
-    <risk-1>Backend selection at startup must handle missing runtimes gracefully.</risk-1>
+    <risk-1>Backend selection at startup must fail fast with explicit diagnostics when no registered backend is actually ready.</risk-1>
     <risk-2>Single inference guard serializes all generation requests across adapters.</risk-2>
     <risk-3>Additional Torch-backed families must isolate family semantics from backend loading so OmniVoice and VoxCPM do not regress Qwen3 transport behavior.</risk-3>
-    <migration-objective>Evolve the current Qwen3-first runtime into a multi-platform, multi-backend, multi-model architecture without breaking existing server, Telegram, or CLI adapter behavior during the migration.</migration-objective>
+    <migration-objective>Maintain the current multi-platform, multi-backend, multi-model runtime without regressing server, Telegram, or CLI adapter behavior.</migration-objective>
     <migration-invariants>
       <item-1>Current transport adapters continue to depend only on shared core and application contracts.</item-1>
-      <item-2>Qwen3-TTS remains the compatibility bridge until planner, family-adapter, and backend-contract seams are proven.</item-2>
-      <item-3>No big-bang rewrite is allowed; planning and family seams land before manifest and backend generalization.</item-3>
-      <item-4>Readiness, observability, and job execution remain first-class artifacts throughout migration.</item-4>
+      <item-2>Qwen3-TTS remains the reference family while planner, family-adapter, and backend-contract seams are proven.</item-2>
+      <item-3>No big-bang rewrite is allowed; planning and family seams remain explicit and contract-driven.</item-3>
+      <item-4>Readiness, observability, and job execution remain first-class runtime artifacts.</item-4>
       <item-5>OmniVoice and VoxCPM onboarding reuse the existing Torch backend contract through family adapters instead of introducing transport-visible forks.</item-5>
     </migration-invariants>
   </ArchitectureNotes>
@@ -140,7 +140,7 @@
 
     <M-BACKENDS NAME="BackendRegistry" TYPE="CORE_LOGIC" LAYER="1" ORDER="1" STATUS="implemented">
       <contract>
-        <purpose>Register, select, and manage TTS inference backends (MLX and Torch).</purpose>
+        <purpose>Register, select, and manage TTS inference backends (MLX, Torch, Qwen Fast, and ONNX).</purpose>
         <inputs>
           <param name="backends" type="list[TTSBackend]" />
           <param name="settings" type="CoreSettings" />
@@ -158,6 +158,8 @@
         <export-BackendRegistry PURPOSE="Backend selection and model spec resolution" />
         <export-MLXBackend PURPOSE="Apple Silicon MLX inference backend" />
         <export-TorchBackend PURPOSE="PyTorch CPU/CUDA inference backend" />
+        <export-QwenFastBackend PURPOSE="Accelerated Qwen custom-only backend with explicit readiness diagnostics" />
+        <export-ONNXBackend PURPOSE="ONNX runtime backend for Piper voices" />
         <export-TTSBackend PURPOSE="Abstract backend interface" />
         <export-LoadedModelHandle PURPOSE="Handle to a loaded model with metadata" />
       </interface>
@@ -166,6 +168,8 @@
         <source>core/backends/registry.py</source>
         <source>core/backends/base.py</source>
         <source>core/backends/mlx_backend.py</source>
+        <source>core/backends/qwen_fast_backend.py</source>
+        <source>core/backends/onnx_backend.py</source>
         <source>core/backends/torch_backend.py</source>
         <source>core/backends/capabilities.py</source>
       </target>
@@ -456,7 +460,7 @@
       </interface>
       <depends>M-MODEL-FAMILY, M-CONTRACTS, M-MODELS</depends>
       <target>
-        <source>core/model_families/qwen3/</source>
+        <source>core/model_families/qwen3.py</source>
       </target>
       <verification-ref>V-M-QWEN3-FAMILY</verification-ref>
     </M-QWEN3-FAMILY>
@@ -473,6 +477,7 @@
         <source>core/registry/model_catalog.py</source>
       </target>
       <verification-ref>V-M-MODEL-CATALOG</verification-ref>
+      <migration-note>Current code uses this registry as the family-aware metadata surface alongside the runtime-facing registry layers.</migration-note>
     </M-MODEL-CATALOG>
 
     <M-ARTIFACT-REGISTRY NAME="ArtifactRegistry" TYPE="DATA_LAYER" LAYER="2" ORDER="5" STATUS="implemented">
@@ -487,20 +492,22 @@
         <source>core/registry/artifacts.py</source>
       </target>
       <verification-ref>V-M-ARTIFACT-REGISTRY</verification-ref>
+      <migration-note>Current code uses this registry as the artifact-state facade over backend inspection for readiness and model-asset validation.</migration-note>
     </M-ARTIFACT-REGISTRY>
 
     <M-RUNTIME-MODEL-REGISTRY NAME="RuntimeModelRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="6" STATUS="implemented">
       <contract>
-        <purpose>Manage loaded model handles, preload policy, and runtime cache state independently of declared model metadata.</purpose>
+        <purpose>Manage preload policy and runtime cache state independently of declared model metadata and artifact lookup.</purpose>
       </contract>
       <interface>
-        <export-RuntimeModelRegistry PURPOSE="Runtime model handle and preload registry" />
+        <export-RuntimeModelRegistry PURPOSE="Runtime preload and descriptor-readiness registry" />
       </interface>
-      <depends>M-BACKENDS, M-ARTIFACT-REGISTRY, M-MODELS, M-METRICS</depends>
+      <depends>M-ARTIFACT-REGISTRY, M-MODELS, M-MODEL-REGISTRY</depends>
       <target>
         <source>core/registry/runtime_models.py</source>
       </target>
       <verification-ref>V-M-RUNTIME-MODEL-REGISTRY</verification-ref>
+      <migration-note>Current code exposes runtime-facing preload and cache state through a stable wrapper that reads artifact state and the public ModelRegistry preload contract directly.</migration-note>
     </M-RUNTIME-MODEL-REGISTRY>
 
     <M-CAPABILITY-RESOLVER NAME="CapabilityResolver" TYPE="CORE_LOGIC" LAYER="2" ORDER="7" STATUS="implemented">
@@ -519,25 +526,27 @@
 
     <M-SYNTHESIS-PLANNER NAME="SynthesisPlanner" TYPE="CORE_LOGIC" LAYER="2" ORDER="8" STATUS="implemented">
       <contract>
-        <purpose>Resolve normalized synthesis requests into executable plans that preserve transport adapter isolation.</purpose>
+        <purpose>Resolve normalized synthesis requests into executable plans that preserve transport adapter isolation and treat the registry contract as the single source of model resolution.</purpose>
       </contract>
       <interface>
         <export-SynthesisPlanner PURPOSE="Planner that resolves request capability, family, model, backend, and artifacts" />
       </interface>
-      <depends>M-EXECUTION-PLAN, M-CAPABILITY-RESOLVER, M-RUNTIME-MODEL-REGISTRY</depends>
+      <depends>M-EXECUTION-PLAN, M-MODEL-REGISTRY, M-OBSERVABILITY, M-MODELS</depends>
       <target>
         <source>core/planning/planner.py</source>
+        <source>core/contracts/runtime.py</source>
       </target>
       <verification-ref>V-M-SYNTHESIS-PLANNER</verification-ref>
+      <migration-note>Current code no longer falls back to direct catalog scanning inside the planner; model resolution is expected to arrive through the registry contract only, with the planning seam typed through core/contracts/runtime.py.</migration-note>
     </M-SYNTHESIS-PLANNER>
 
     <M-BACKENDS-V2 NAME="ExecutionBackendContract" TYPE="CORE_LOGIC" LAYER="2" ORDER="9" STATUS="implemented">
       <contract>
-        <purpose>Evolve the current backend surface from Qwen3 mode-shaped methods into runtime-oriented execution and diagnostics contracts.</purpose>
+        <purpose>Own the direct backend execution contract and diagnostics surface used by family-prepared runtime requests.</purpose>
       </contract>
       <interface>
         <export-ExecutionRequest PURPOSE="Backend execution request carrying family-prepared runtime inputs" />
-        <export-TTSBackend PURPOSE="Future runtime-oriented backend contract" />
+        <export-TTSBackend PURPOSE="Direct runtime-oriented backend contract" />
       </interface>
       <depends>M-BACKENDS, M-EXECUTION-PLAN, M-MODELS</depends>
       <target>
@@ -559,8 +568,10 @@
       <depends>M-SYNTHESIS-PLANNER, M-RUNTIME-MODEL-REGISTRY, M-INFRASTRUCTURE, M-OBSERVABILITY</depends>
       <target>
         <source>core/services/tts_service.py</source>
+        <source>core/contracts/runtime.py</source>
       </target>
       <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
+      <migration-note>Current code binds planner/coordinator seams to typed runtime registry protocols so service layers depend on explicit contracts instead of concrete registry implementations.</migration-note>
     </M-TTS-COORDINATOR>
   </Modules>
 
@@ -606,18 +617,19 @@
 
     <DF-BACKEND-SELECTION NAME="Backend Autoselection at Startup" TRIGGER="build_runtime() invocation">
       <step-1>BackendRegistry receives list of backend instances and settings</step-1>
-      <step-2>If backend is explicitly set, select that backend</step-2>
-      <step-3>If autoselect is enabled, prefer MLX (Apple Silicon) then Torch</step-3>
-      <step-4>Selected backend loads model manifest and resolves model specs</step-4>
-      <step-5>ModelRegistry applies preload policy if configured</step-5>
+      <step-2>If backend is explicitly set, validate that the configured backend is ready before selecting it</step-2>
+      <step-3>If autoselect is enabled, rank registered backends by capability and host fit, then pick the first ready candidate</step-3>
+      <step-4>If no registered backend is ready, fail startup with explicit backend diagnostics</step-4>
+      <step-5>Selected backend loads model manifest and resolves model specs</step-5>
+      <step-6>ModelRegistry applies preload policy if configured</step-6>
       <evidence>BackendRegistry selection report, model readiness report</evidence>
     </DF-BACKEND-SELECTION>
 
     <DF-REQUEST-TO-PLAN NAME="Planned Request-To-Plan Execution" TRIGGER="Application facade receives normalized synthesis command during migration target architecture">
       <step-1>Transport adapter maps incoming payload into application command DTO</step-1>
       <step-2>Synthesis coordinator normalizes the request into capability-oriented execution input</step-2>
-      <step-3>SynthesisPlanner and CapabilityResolver select family adapter, model descriptor, backend, and artifact path</step-3>
-      <step-4>RuntimeModelRegistry loads or reuses the backend-specific model handle</step-4>
+      <step-3>SynthesisPlanner resolves model and backend through the runtime planning contract</step-3>
+      <step-4>SynthesisCoordinator acquires the backend-specific model handle through the runtime execution contract</step-4>
       <step-5>Model-family adapter prepares backend execution input and output semantics</step-5>
       <step-6>Execution backend performs inference and coordinator persists the result</step-6>
       <evidence>Planner resolution report, backend execution diagnostics, persisted GenerationResult</evidence>

@@ -12,6 +12,7 @@
 # START_MODULE_MAP
 #   Command contracts - Re-export custom, clone, and design request command types
 #   Job contracts - Re-export async job snapshots, statuses, operations, and submission helpers
+#   Runtime seam contracts - Re-export typed runtime registry protocols and backend-route payloads
 #   Synthesis planning contracts - Re-export normalized request and execution plan DTOs
 #   Result contracts - Re-export generated audio/result DTOs used across adapters
 # END_MODULE_MAP
@@ -39,6 +40,11 @@ from core.contracts.jobs import (
     create_queued_job,
 )
 from core.contracts.results import AudioResult, GenerationResult
+from core.contracts.runtime import (
+    BackendRouteInfo,
+    RuntimeExecutionRegistry,
+    RuntimePlanningRegistry,
+)
 from core.contracts.synthesis import (
     ExecutionPlan,
     PresetSpeakerPayload,
@@ -49,6 +55,7 @@ from core.contracts.synthesis import (
 
 __all__ = [
     "AudioResult",
+    "BackendRouteInfo",
     "CustomVoiceCommand",
     "ExecutionPlan",
     "GenerationResult",
@@ -63,6 +70,8 @@ __all__ = [
     "StoredJob",
     "SynthesisRequest",
     "PresetSpeakerPayload",
+    "RuntimeExecutionRegistry",
+    "RuntimePlanningRegistry",
     "VoiceCloneCommand",
     "VoiceClonePayload",
     "VoiceDesignCommand",

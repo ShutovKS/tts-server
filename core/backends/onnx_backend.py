@@ -25,7 +25,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from core.backends.base import LoadedModelHandle, TTSBackend
+from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
 from core.errors import ModelLoadError, TTSGenerationError
 from core.metrics import OperationalMetricsRegistry
@@ -254,7 +254,31 @@ class ONNXBackend(TTSBackend):
             "errors": errors,
         }
 
-    def synthesize_custom(
+    def execute(self, request: ExecutionRequest) -> None:
+        payload = dict(request.generation_kwargs)
+        if request.execution_mode == "custom":
+            self._execute_custom(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                speaker=str(payload.pop("voice")),
+                instruct=str(payload.pop("instruct")),
+                speed=float(payload.pop("speed")),
+            )
+            return
+        if request.execution_mode == "design":
+            self._execute_design(request.handle)
+            return
+        if request.execution_mode == "clone":
+            self._execute_clone(request.handle)
+            return
+        raise TTSGenerationError(
+            f"Unsupported execution mode '{request.execution_mode}' for backend '{self.key}'",
+            details={"backend": self.key, "mode": request.execution_mode, "model": request.handle.spec.model_id},
+        )
+
+    def _execute_custom(
         self,
         handle: LoadedModelHandle,
         *,
@@ -281,13 +305,13 @@ class ONNXBackend(TTSBackend):
                 details={"backend": self.key, "model": handle.spec.model_id},
             ) from exc
 
-    def synthesize_design(self, handle: LoadedModelHandle, **kwargs) -> None:
+    def _execute_design(self, handle: LoadedModelHandle) -> None:
         raise TTSGenerationError(
             "Piper models do not support voice design synthesis",
             details={"backend": self.key, "model": handle.spec.model_id},
         )
 
-    def synthesize_clone(self, handle: LoadedModelHandle, **kwargs) -> None:
+    def _execute_clone(self, handle: LoadedModelHandle) -> None:
         raise TTSGenerationError(
             "Piper models do not support voice cloning synthesis",
             details={"backend": self.key, "model": handle.spec.model_id},

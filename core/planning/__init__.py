@@ -10,11 +10,11 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   Planning surface - Re-export the synthesis planner compatibility bridge plus host and capability helpers
+#   Planning surface - Re-export the synthesis planner plus host and capability helpers
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added planning barrel exports for synthesis planner migration seams]
+#   LAST_CHANGE: [v1.1.0 - Removed outdated migration wording from the planning barrel summary]
 # END_CHANGE_SUMMARY
 
 __all__ = [

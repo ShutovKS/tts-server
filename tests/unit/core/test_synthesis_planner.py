@@ -3,7 +3,7 @@
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for normalized synthesis requests and planner-backed execution plan resolution.
 #   SCOPE: Request normalization, capability mapping, planner resolution, family key normalization
-#   DEPENDS: M-CORE
+#   DEPENDS: M-EXECUTION-PLAN, M-SYNTHESIS-PLANNER, M-MODEL-REGISTRY
 #   LINKS: V-M-EXECUTION-PLAN, V-M-SYNTHESIS-PLANNER
 #   ROLE: TEST
 #   MAP_MODE: LOCALS
@@ -14,12 +14,12 @@
 #   test_synthesis_request_from_custom_command_normalizes_to_preset_speaker_capability - Verifies custom command normalization
 #   test_synthesis_request_from_design_command_normalizes_to_voice_description_capability - Verifies design command normalization
 #   test_synthesis_request_from_clone_command_normalizes_to_reference_clone_capability - Verifies clone command normalization
-#   test_synthesis_planner_resolves_execution_plan_for_current_backend_registry - Verifies planner output fields for current compatibility bridge
+#   test_synthesis_planner_resolves_execution_plan_for_current_backend_registry - Verifies planner output fields for the current execution seam
 #   test_synthesis_planner_honors_explicit_requested_model_identifier - Verifies planner passes explicit model selection through registry resolution
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added unit coverage for synthesis normalization and planner seams]
+#   LAST_CHANGE: [v1.1.0 - Removed planner catalog fallback and locked tests to the registry contract seam]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -99,7 +99,7 @@ def test_synthesis_request_from_custom_command_normalizes_to_preset_speaker_capa
     )
 
     assert request.capability == "preset_speaker_tts"
-    assert request.legacy_mode == "custom"
+    assert request.execution_mode == "custom"
     assert request.language == "en"
     assert request.requested_model == "1"
     assert request.save_output is True
@@ -120,7 +120,7 @@ def test_synthesis_request_from_design_command_normalizes_to_voice_description_c
     )
 
     assert request.capability == "voice_description_tts"
-    assert request.legacy_mode == "design"
+    assert request.execution_mode == "design"
     assert request.payload == VoiceDesignPayload(
         voice_description="Warm radio host",
     )
@@ -142,7 +142,7 @@ def test_synthesis_request_from_clone_command_normalizes_to_reference_clone_capa
     )
 
     assert request.capability == "reference_voice_clone"
-    assert request.legacy_mode == "clone"
+    assert request.execution_mode == "clone"
     assert request.language == "ru"
     assert request.payload == VoiceClonePayload(
         ref_audio_path=ref_audio_path,
@@ -163,7 +163,7 @@ def test_synthesis_planner_resolves_execution_plan_for_current_backend_registry(
     assert plan.backend_label == "PyTorch + Transformers"
     assert plan.family_key == "qwen3_tts"
     assert plan.family_label == "Qwen3-TTS"
-    assert plan.legacy_mode == "custom"
+    assert plan.execution_mode == "custom"
     assert plan.model_spec == MODEL_SPECS["1"]
     assert plan.selection_reason == "registry_model_resolution"
 
@@ -184,6 +184,16 @@ def test_synthesis_planner_honors_explicit_requested_model_identifier():
     assert registry.last_mode == "clone"
     assert plan.model_spec == MODEL_SPECS["6"]
     assert plan.request.requested_model == "6"
+
+
+def test_synthesis_planner_uses_registry_contract_as_single_resolution_path():
+    registry = PlannerRegistryStub()
+    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+
+    plan = planner.plan_command(CustomVoiceCommand(text="Hello", speaker="Ryan"))
+
+    assert registry.last_mode == "custom"
+    assert plan.model_spec == MODEL_SPECS["1"]
 
 
 def test_synthesis_planner_rejects_unsupported_family_capability():

@@ -2,7 +2,7 @@
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Implement TTS inference using PyTorch framework.
-#   SCOPE: TorchBackend class with synthesize_custom/design/clone, model loading, caching
+#   SCOPE: TorchBackend class with direct execute contract, model loading, caching, and family-aware execution helpers
 #   DEPENDS: M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS
 #   LINKS: M-BACKENDS
 #   ROLE: RUNTIME
@@ -25,7 +25,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from core.backends.base import LoadedModelHandle, TTSBackend
+from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
 from core.errors import ModelLoadError, TTSGenerationError
 from core.metrics import OperationalMetricsRegistry
@@ -121,6 +121,44 @@ def _load_voxcpm_model_cls():
 class TorchBackend(TTSBackend):
     key = "torch"
     label = "PyTorch + Transformers"
+
+    def execute(self, request: ExecutionRequest) -> None:
+        payload = dict(request.generation_kwargs)
+        if request.execution_mode == "custom":
+            self._execute_custom(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                speaker=str(payload.pop("voice")),
+                instruct=str(payload.pop("instruct")),
+                speed=float(payload.pop("speed")),
+            )
+            return
+        if request.execution_mode == "design":
+            self._execute_design(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                voice_description=str(payload.pop("instruct")),
+            )
+            return
+        if request.execution_mode == "clone":
+            ref_audio = payload.pop("ref_audio")
+            self._execute_clone(
+                request.handle,
+                text=request.text,
+                output_dir=request.output_dir,
+                language=request.language,
+                ref_audio_path=Path(str(ref_audio)),
+                ref_text=None if payload.get("ref_text") is None else str(payload.pop("ref_text")),
+            )
+            return
+        raise TTSGenerationError(
+            f"Unsupported execution mode '{request.execution_mode}' for backend '{self.key}'",
+            details={"backend": self.key, "mode": request.execution_mode, "model": request.handle.spec.api_name},
+        )
 
     def __init__(
         self, models_dir: Path, *, metrics: OperationalMetricsRegistry | None = None
@@ -457,7 +495,7 @@ class TorchBackend(TTSBackend):
     #   SIDE_EFFECTS: Performs Torch inference and writes audio artifacts to disk
     #   LINKS: M-BACKENDS
     # END_CONTRACT: synthesize_custom
-    def synthesize_custom(
+    def _execute_custom(
         self,
         handle: LoadedModelHandle,
         *,
@@ -495,7 +533,7 @@ class TorchBackend(TTSBackend):
     #   SIDE_EFFECTS: Performs Torch inference and writes audio artifacts to disk
     #   LINKS: M-BACKENDS
     # END_CONTRACT: synthesize_design
-    def synthesize_design(
+    def _execute_design(
         self,
         handle: LoadedModelHandle,
         *,
@@ -520,7 +558,7 @@ class TorchBackend(TTSBackend):
     #   SIDE_EFFECTS: Performs Torch inference and writes audio artifacts to disk
     #   LINKS: M-BACKENDS
     # END_CONTRACT: synthesize_clone
-    def synthesize_clone(
+    def _execute_clone(
         self,
         handle: LoadedModelHandle,
         *,

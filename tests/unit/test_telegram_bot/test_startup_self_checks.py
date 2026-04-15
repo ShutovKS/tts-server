@@ -11,7 +11,7 @@ These tests verify:
 """
 
 # FILE: tests/unit/test_telegram_bot/test_startup_self_checks.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for Telegram startup self-checks and validation gates.
 #   SCOPE: Startup phases, token validation, backend checks, ffmpeg checks
@@ -24,11 +24,11 @@ These tests verify:
 # START_MODULE_MAP
 #   TestStartupCheckPhase - Verifies startup self-check phase ordering and constants
 #   TestStartupCheckResult - Verifies startup self-check result state, warnings, and failures
-#   TestRunStartupSelfChecks - Verifies token, ffmpeg, allowlist, and runtime startup validation flows
+#   TestRunStartupSelfChecks - Verifies settings validation, token, ffmpeg, allowlist, and runtime startup validation flows
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.1.0 - Expanded startup self-check coverage for invalid Telegram settings and runtime validation failures]
 # END_CHANGE_SUMMARY
 
 import pytest
@@ -136,6 +136,7 @@ class TestRunStartupSelfChecks:
                 "telegram_default_speaker",
                 "telegram_max_text_length",
                 "backend",
+                "validate",
             ]
         )
         settings.telegram_bot_token = "valid_test_token"
@@ -143,6 +144,7 @@ class TestRunStartupSelfChecks:
         settings.telegram_default_speaker = "af_bella"
         settings.telegram_max_text_length = 1000
         settings.backend = "mlx"
+        settings.validate.return_value = []
         return settings
 
     @pytest.fixture
@@ -155,6 +157,7 @@ class TestRunStartupSelfChecks:
                 "telegram_default_speaker",
                 "telegram_max_text_length",
                 "backend",
+                "validate",
             ]
         )
         settings.telegram_bot_token = "valid_test_token"
@@ -162,6 +165,7 @@ class TestRunStartupSelfChecks:
         settings.telegram_default_speaker = "af_bella"
         settings.telegram_max_text_length = 1000
         settings.backend = "mlx"
+        settings.validate.return_value = []
         return settings
 
     @pytest.fixture
@@ -174,6 +178,7 @@ class TestRunStartupSelfChecks:
                 "telegram_default_speaker",
                 "telegram_max_text_length",
                 "backend",
+                "validate",
             ]
         )
         settings.telegram_bot_token = ""
@@ -181,6 +186,7 @@ class TestRunStartupSelfChecks:
         settings.telegram_default_speaker = "af_bella"
         settings.telegram_max_text_length = 1000
         settings.backend = "mlx"
+        settings.validate.return_value = ["QWEN_TTS_TELEGRAM_BOT_TOKEN is required"]
         return settings
 
     def test_all_checks_pass(self, mock_settings):
@@ -207,6 +213,82 @@ class TestRunStartupSelfChecks:
         assert not result.is_success
         assert len(result.errors) > 0
         assert any("TOKEN" in e.upper() for e in result.errors)
+
+    def test_short_bot_token_validation_is_fatal(self, mock_settings):
+        """Invalid short Telegram token from settings validation is fatal."""
+        mock_settings.validate.return_value = [
+            "QWEN_TTS_TELEGRAM_BOT_TOKEN appears to be invalid (too short)"
+        ]
+
+        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
+            mock_ffmpeg.return_value = True
+
+            result = run_startup_self_checks(mock_settings)
+
+        assert not result.success
+        assert any("too short" in error.lower() for error in result.errors)
+
+    def test_invalid_text_length_validation_is_fatal(self, mock_settings):
+        """Settings validation errors for impossible text length abort startup."""
+        mock_settings.validate.return_value = [
+            "QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH must be positive"
+        ]
+        mock_settings.telegram_max_text_length = -1
+
+        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
+            mock_ffmpeg.return_value = True
+
+            result = run_startup_self_checks(mock_settings)
+
+        assert not result.success
+        assert any("MAX_TEXT_LENGTH" in error for error in result.errors)
+
+    def test_settings_validation_exception_is_fatal(self, mock_settings):
+        """Unexpected settings validation failure aborts startup."""
+        mock_settings.validate.side_effect = RuntimeError("validation exploded")
+
+        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
+            mock_ffmpeg.return_value = True
+
+            result = run_startup_self_checks(mock_settings)
+
+        assert not result.success
+        assert any("validation failed" in error.lower() for error in result.errors)
+
+    def test_backend_unavailable_is_fatal_when_runtime_core_present(self, mock_settings):
+        """A connected runtime core can make backend unavailability fatal."""
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.core = MagicMock()
+        mock_tts_service = MagicMock()
+        mock_tts_service.is_backend_available.return_value = False
+
+        with patch("telegram_bot.__main__.get_tts_service", return_value=mock_tts_service):
+            with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
+                mock_ffmpeg.return_value = True
+
+                result = run_startup_self_checks(mock_runtime)
+
+        assert not result.success
+        assert any("backend" in error.lower() for error in result.errors)
+
+    def test_backend_check_exception_is_fatal_when_runtime_core_present(self, mock_settings):
+        """Backend probe exceptions are surfaced as fatal startup errors."""
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.core = MagicMock()
+
+        with patch(
+            "telegram_bot.__main__.get_tts_service",
+            side_effect=RuntimeError("backend probe failed"),
+        ):
+            with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
+                mock_ffmpeg.return_value = True
+
+                result = run_startup_self_checks(mock_runtime)
+
+        assert not result.success
+        assert any("backend check failed" in error.lower() for error in result.errors)
 
     def test_ffmpeg_missing(self, mock_settings):
         """Missing FFmpeg is fatal."""

@@ -1,8 +1,8 @@
 # FILE: tests/support/api_fakes.py
-# VERSION: 1.0.0
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Test doubles and audio helpers for API and readiness tests.
-#   SCOPE: Fake registries, stub TTS services, WAV fixture helpers
+#   PURPOSE: Test doubles and helper builders for API, readiness, and runtime-validation tests.
+#   SCOPE: Fake registries, stub TTS services, subprocess doubles, readiness payload helpers, WAV fixture helpers
 #   DEPENDS: M-SERVER, M-CORE
 #   LINKS: none
 #   ROLE: TEST
@@ -19,12 +19,15 @@
 #   SlowTTSService - Fake synthesis service that sleeps to exercise timeout paths
 #   WorkerFailingTTSService - Fake synthesis service that simulates worker execution failures
 #   DegradedRegistry - Fake registry that reports degraded readiness state
+#   ManagedProcessDouble - Deterministic subprocess double for start/stop orchestration tests
+#   make_validation_model_entry - Build a minimal readiness item for validation harness tests
+#   make_validation_self_check_payload - Build a minimal self-check payload for validation harness tests
 #   make_wav_bytes - Deterministic WAV fixture helper
 #   extract_json_logs - Structured log extraction helper for assertions
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.2.0 - Expanded validation payload doubles for representative-model preflight and routing semantics]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -204,7 +207,7 @@ class DummyRegistry(ModelRegistry):
                     "selected_backend_ready_for_model": False,
                     "execution_backend": "onnx",
                     "execution_backend_label": "ONNX Runtime",
-                    "routing_mode": "per_model_backend_fallback",
+                    "routing_mode": "per_model_backend_override",
                     "route_reason": "selected_backend_incompatible_with_model",
                     "candidates": [],
                 },
@@ -752,6 +755,104 @@ class DegradedRegistry(DummyRegistry):
         return report
 
 
+class ManagedProcessDouble:
+    def __init__(self, *, poll_result: int | None = None, wait_result: int = 0):
+        self._poll_result = poll_result
+        self.wait_result = wait_result
+        self.terminated = False
+        self.killed = False
+        self.wait_calls: list[float | int | None] = []
+
+    def poll(self) -> int | None:
+        return self._poll_result
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self._poll_result = self.wait_result
+
+    def wait(self, timeout: float | int | None = None) -> int:
+        self.wait_calls.append(timeout)
+        return self.wait_result
+
+    def kill(self) -> None:
+        self.killed = True
+        self._poll_result = self.wait_result
+
+
+def make_validation_model_entry(
+    *,
+    model_id: str,
+    folder: str,
+    runtime_ready: bool = True,
+    execution_backend: str = "mlx",
+    available: bool | None = None,
+    loadable: bool | None = None,
+    selected_backend: str | None = None,
+    missing_artifacts: list[str] | None = None,
+    required_artifacts: list[str] | None = None,
+    route_reason: str | None = None,
+    selected_backend_compatible_with_model: bool | None = None,
+    candidate_diagnostics: list[dict] | None = None,
+) -> dict:
+    resolved_available = runtime_ready if available is None else available
+    resolved_loadable = runtime_ready if loadable is None else loadable
+    resolved_selected_backend = selected_backend or execution_backend
+    return {
+        "id": model_id,
+        "folder": folder,
+        "runtime_ready": runtime_ready,
+        "execution_backend": execution_backend,
+        "available": resolved_available,
+        "loadable": resolved_loadable,
+        "selected_backend": resolved_selected_backend,
+        "missing_artifacts": list(missing_artifacts or []),
+        "required_artifacts": list(required_artifacts or []),
+        "route": {
+            "selected_backend": resolved_selected_backend,
+            "execution_backend": execution_backend,
+            "selected_backend_compatible_with_model": (
+                runtime_ready
+                if selected_backend_compatible_with_model is None
+                else selected_backend_compatible_with_model
+            ),
+            "route_reason": route_reason or ("selected_backend_supports_model" if runtime_ready else "runtime_not_ready"),
+            "candidates": [
+                {"diagnostics": item} if "diagnostics" not in item else item
+                for item in list(candidate_diagnostics or [])
+            ],
+        },
+    }
+
+
+def make_validation_self_check_payload(
+    *,
+    items: list[dict] | None = None,
+    ffmpeg_available: bool = True,
+    models_missing_assets: list[str] | None = None,
+    selected_backend: str = "mlx",
+) -> dict:
+    return {
+        "readiness": {
+            "host": {
+                "ffmpeg_available": ffmpeg_available,
+            },
+            "backend_diagnostics": {
+                "backend": selected_backend,
+            },
+            "items": list(items or []),
+        },
+        "assets": {
+            "models_missing_assets": list(models_missing_assets or []),
+        },
+        "representative_models": {
+            "targets": [],
+            "ready_targets": [],
+            "skipped_targets": [],
+            "failed_targets": [],
+        },
+    }
+
+
 def make_wav_bytes() -> bytes:
     buffer = io.BytesIO()
     silence_frame = bytes([0, 0])
@@ -789,6 +890,9 @@ __all__ = [
     "SlowTTSService",
     "WorkerFailingTTSService",
     "DegradedRegistry",
+    "ManagedProcessDouble",
+    "make_validation_model_entry",
+    "make_validation_self_check_payload",
     "make_wav_bytes",
     "extract_json_logs",
 ]

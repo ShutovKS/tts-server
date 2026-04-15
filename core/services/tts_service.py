@@ -13,11 +13,11 @@
 #   LOGGER - Module logger for synthesis service events
 #   SynthesisCoordinator - Internal coordinator over planning, family preparation, and guarded generation
 #   TTSService - Public synthesis facade preserving transport-facing command methods
-#   generate_audio - Dispatch synthesis call to the appropriate backend method
+#   generate_audio - Dispatch family-prepared execution requests to the backend contract
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+#   LAST_CHANGE: [v1.1.0 - Tightened coordinator/runtime seams to depend on explicit registry and handle contracts instead of duck-typed fallback access]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from typing import Any
 
 from core.config import CoreSettings
 from core.backends.base import ExecutionRequest
+from core.contracts import RuntimeExecutionRegistry
 from core.contracts.commands import (
     CustomVoiceCommand,
     VoiceCloneCommand,
@@ -44,6 +45,7 @@ from core.infrastructure.audio_io import (
 )
 from core.infrastructure.concurrency import InferenceGuard
 from core.model_families import (
+    ModelFamilyAdapter,
     OmniVoiceFamilyAdapter,
     PiperFamilyAdapter,
     Qwen3FamilyAdapter,
@@ -52,16 +54,15 @@ from core.model_families import (
 from core.models.catalog import ModelSpec
 from core.observability import Timer, get_logger, log_event, operation_scope
 from core.planning import SynthesisPlanner
-from core.services.model_registry import ModelRegistry
 
 
 LOGGER = get_logger(__name__)
 
 
 # START_CONTRACT: generate_audio
-#   PURPOSE: Dispatch a generation request to the backend method that matches the requested synthesis mode.
+#   PURPOSE: Dispatch a family-prepared generation request to the backend execution contract.
 #   INPUTS: { args: tuple[object, ...] - Positional passthrough arguments, kwargs: dict[str, Any] - Backend, handle, mode, text, output_path, and mode-specific generation fields }
-#   OUTPUTS: { None - Invokes the backend synthesis method and writes output artifacts }
+#   OUTPUTS: { None - Invokes the backend execution contract and writes output artifacts }
 #   SIDE_EFFECTS: Triggers backend inference and writes generated audio files into the provided output directory
 #   LINKS: M-TTS-SERVICE
 # END_CONTRACT: generate_audio
@@ -78,7 +79,7 @@ def generate_audio(*args, **kwargs):
             text=text,
             output_dir=output_path,
             language=language,
-            legacy_mode=mode,
+            execution_mode=mode,
             generation_kwargs=dict(kwargs),
         )
     )
@@ -87,11 +88,11 @@ def generate_audio(*args, **kwargs):
 class SynthesisCoordinator:
     def __init__(
         self,
-        registry: ModelRegistry,
+        registry: RuntimeExecutionRegistry,
         settings: CoreSettings,
         inference_guard: InferenceGuard,
         planner: SynthesisPlanner,
-        family_adapters: dict[str, Any],
+        family_adapters: dict[str, ModelFamilyAdapter],
     ):
         self.registry = registry
         self.settings = settings
@@ -99,21 +100,18 @@ class SynthesisCoordinator:
         self.planner = planner
         self._family_adapters = family_adapters
 
-    def _backend_key(self, fallback: str | None = None) -> str | None:
-        backend = getattr(self.registry, "backend", None)
-        if backend is not None:
-            return getattr(backend, "key", fallback)
-        return fallback
+    def _selected_backend_key(self) -> str:
+        return self.registry.backend.key
 
     @staticmethod
-    def _handle_backend_key(handle, fallback: str | None = None) -> str | None:
-        return getattr(handle, "backend_key", fallback)
+    def _handle_backend_key(handle) -> str:
+        return handle.backend_key
 
     def synthesize_custom(self, command: CustomVoiceCommand) -> GenerationResult:
         plan = self.planner.plan_command(command)
         spec, handle = self.registry.get_model(
             model_name=plan.model_spec.model_id,
-            mode=plan.legacy_mode,
+            mode=plan.execution_mode,
         )
         prepared = self._prepare_execution(plan)
         return self._run_generation(
@@ -128,7 +126,7 @@ class SynthesisCoordinator:
         plan = self.planner.plan_command(command)
         spec, handle = self.registry.get_model(
             model_name=plan.model_spec.model_id,
-            mode=plan.legacy_mode,
+            mode=plan.execution_mode,
         )
         prepared = self._prepare_execution(plan)
         return self._run_generation(
@@ -143,7 +141,7 @@ class SynthesisCoordinator:
         plan = self.planner.plan_command(command)
         spec, handle = self.registry.get_model(
             model_name=plan.model_spec.model_id,
-            mode=plan.legacy_mode,
+            mode=plan.execution_mode,
         )
 
         with temporary_output_dir(prefix="qwen3_tts_clone_input_") as temp_dir:
@@ -162,7 +160,7 @@ class SynthesisCoordinator:
                 source_audio=str(source_audio),
                 prepared_audio=str(wav_audio),
                 converted=converted,
-                backend=self._handle_backend_key(handle, self._backend_key()),
+                backend=self._handle_backend_key(handle),
             )
             try:
                 prepared_request = SynthesisRequest.from_command(
@@ -361,7 +359,7 @@ class SynthesisCoordinator:
 class TTSService:
     def __init__(
         self,
-        registry: ModelRegistry,
+        registry: RuntimeExecutionRegistry,
         settings: CoreSettings,
         inference_guard: InferenceGuard | None = None,
     ):
@@ -383,15 +381,8 @@ class TTSService:
             family_adapters=self._family_adapters,
         )
 
-    def _backend_key(self, fallback: str | None = None) -> str | None:
-        backend = getattr(self.registry, "backend", None)
-        if backend is not None:
-            return getattr(backend, "key", fallback)
-        return fallback
-
-    @staticmethod
-    def _handle_backend_key(handle, fallback: str | None = None) -> str | None:
-        return getattr(handle, "backend_key", fallback)
+    def _selected_backend_key(self) -> str:
+        return self.registry.backend.key
 
     # START_CONTRACT: synthesize_custom
     #   PURPOSE: Run a guarded custom-voice synthesis workflow from a validated command.
@@ -412,7 +403,7 @@ class TTSService:
                 save_output=command.save_output,
                 text_length=len(command.text),
                 language=command.language,
-                backend=self._backend_key(),
+                backend=self._selected_backend_key(),
             )
             result = self.coordinator.synthesize_custom(command)
             log_event(
@@ -446,7 +437,7 @@ class TTSService:
                 save_output=command.save_output,
                 text_length=len(command.text),
                 language=command.language,
-                backend=self._backend_key(),
+                backend=self._selected_backend_key(),
             )
             result = self.coordinator.synthesize_design(command)
             log_event(
@@ -477,7 +468,7 @@ class TTSService:
                     details={
                         "mode": "clone",
                         "reference_audio": None,
-                        "backend": self._backend_key(),
+                        "backend": self._selected_backend_key(),
                     },
                 )
             # END_BLOCK_VALIDATE_CLONE_INPUT
@@ -494,7 +485,7 @@ class TTSService:
                 language=command.language,
                 ref_text_provided=bool(command.ref_text),
                 ref_audio_path=str(command.ref_audio_path),
-                backend=self._backend_key(),
+                backend=self._selected_backend_key(),
             )
             result = self.coordinator.synthesize_clone(command)
             return result

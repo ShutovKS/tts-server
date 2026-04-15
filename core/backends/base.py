@@ -1,8 +1,8 @@
 # FILE: core/backends/base.py
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Define abstract base interface for TTS inference backends.
-#   SCOPE: TTSBackend abstract class, LoadedModelHandle dataclass
+#   PURPOSE: Define the direct execution contract for TTS inference backends.
+#   SCOPE: TTSBackend abstract class, LoadedModelHandle dataclass, ExecutionRequest dataclass
 #   DEPENDS: M-ERRORS
 #   LINKS: M-BACKENDS
 #   ROLE: TYPES
@@ -10,7 +10,7 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   TTSBackend - Abstract backend interface
+#   TTSBackend - Abstract backend interface with first-class execute contract
 #   LoadedModelHandle - Handle to a loaded model with metadata
 #   ExecutionRequest - Runtime-oriented execution request carrying family-prepared inputs
 # END_MODULE_MAP
@@ -51,7 +51,7 @@ class ExecutionRequest:
     text: str
     output_dir: Path
     language: str
-    legacy_mode: str
+    execution_mode: str
     generation_kwargs: dict[str, Any]
 
 
@@ -197,108 +197,15 @@ class TTSBackend(ABC):
             "errors": [],
         }
 
+    @abstractmethod
+    # START_CONTRACT: execute
+    #   PURPOSE: Execute a family-prepared generation request directly through the backend runtime contract.
+    #   INPUTS: { request: ExecutionRequest - Runtime execution request carrying handle, text, output directory, execution mode, and prepared generation kwargs }
+    #   OUTPUTS: { None - Writes generated audio into the request output directory }
+    #   SIDE_EFFECTS: Performs backend inference and writes audio artifacts to disk
+    #   LINKS: M-BACKENDS
+    # END_CONTRACT: execute
     def execute(self, request: ExecutionRequest) -> None:
-        payload = dict(request.generation_kwargs)
-        if request.legacy_mode == "custom":
-            self.synthesize_custom(
-                request.handle,
-                text=request.text,
-                output_dir=request.output_dir,
-                language=request.language,
-                speaker=str(payload.pop("voice")),
-                instruct=str(payload.pop("instruct")),
-                speed=float(payload.pop("speed")),
-            )
-            return
-
-        if request.legacy_mode == "design":
-            self.synthesize_design(
-                request.handle,
-                text=request.text,
-                output_dir=request.output_dir,
-                language=request.language,
-                voice_description=str(payload.pop("instruct")),
-            )
-            return
-
-        if request.legacy_mode == "clone":
-            ref_audio = payload.pop("ref_audio")
-            self.synthesize_clone(
-                request.handle,
-                text=request.text,
-                output_dir=request.output_dir,
-                language=request.language,
-                ref_audio_path=Path(str(ref_audio)),
-                ref_text=(
-                    None
-                    if payload.get("ref_text") is None
-                    else str(payload.pop("ref_text"))
-                ),
-            )
-            return
-
-        raise NotImplementedError(
-            f"Unsupported legacy mode '{request.legacy_mode}' for backend '{self.key}'"
-        )
-
-    @abstractmethod
-    # START_CONTRACT: synthesize_custom
-    #   PURPOSE: Generate custom-voice audio for the provided text and speaker inputs.
-    #   INPUTS: { handle: LoadedModelHandle - Loaded backend model handle, text: str - Input text to synthesize, output_dir: Path - Directory for generated artifacts, language: str - Requested language code, speaker: str - Speaker preset or identifier, instruct: str - Additional generation instruction, speed: float - Playback speed modifier }
-    #   OUTPUTS: { None - Writes generated audio into the output directory }
-    #   SIDE_EFFECTS: Performs backend inference and writes audio artifacts to disk
-    #   LINKS: M-BACKENDS
-    # END_CONTRACT: synthesize_custom
-    def synthesize_custom(
-        self,
-        handle: LoadedModelHandle,
-        *,
-        text: str,
-        output_dir: Path,
-        language: str,
-        speaker: str,
-        instruct: str,
-        speed: float,
-    ) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    # START_CONTRACT: synthesize_design
-    #   PURPOSE: Generate voice-design audio from text and a voice description prompt.
-    #   INPUTS: { handle: LoadedModelHandle - Loaded backend model handle, text: str - Input text to synthesize, output_dir: Path - Directory for generated artifacts, language: str - Requested language code, voice_description: str - Natural language description of the target voice }
-    #   OUTPUTS: { None - Writes generated audio into the output directory }
-    #   SIDE_EFFECTS: Performs backend inference and writes audio artifacts to disk
-    #   LINKS: M-BACKENDS
-    # END_CONTRACT: synthesize_design
-    def synthesize_design(
-        self,
-        handle: LoadedModelHandle,
-        *,
-        text: str,
-        output_dir: Path,
-        language: str,
-        voice_description: str,
-    ) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    # START_CONTRACT: synthesize_clone
-    #   PURPOSE: Generate cloned-voice audio from text and prepared reference audio.
-    #   INPUTS: { handle: LoadedModelHandle - Loaded backend model handle, text: str - Input text to synthesize, output_dir: Path - Directory for generated artifacts, language: str - Requested language code, ref_audio_path: Path - Prepared reference audio path, ref_text: str | None - Optional transcription for the reference audio }
-    #   OUTPUTS: { None - Writes generated audio into the output directory }
-    #   SIDE_EFFECTS: Performs backend inference and writes audio artifacts to disk
-    #   LINKS: M-BACKENDS
-    # END_CONTRACT: synthesize_clone
-    def synthesize_clone(
-        self,
-        handle: LoadedModelHandle,
-        *,
-        text: str,
-        output_dir: Path,
-        language: str,
-        ref_audio_path: Path,
-        ref_text: str | None,
-    ) -> None:
         raise NotImplementedError
 
 

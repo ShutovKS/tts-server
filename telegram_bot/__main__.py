@@ -1,5 +1,5 @@
 # FILE: telegram_bot/__main__.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Package entry point for running the Telegram bot via python -m telegram_bot.
 #   SCOPE: Bot bootstrap and polling loop launch
@@ -10,7 +10,7 @@
 # END_MODULE_CONTRACT
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+#   LAST_CHANGE: [v1.1.0 - Expanded Telegram startup self-check gating to honor existing settings validation errors before entering the polling loop]
 # END_CHANGE_SUMMARY
 
 """
@@ -256,6 +256,25 @@ def run_startup_self_checks(runtime_or_settings) -> StartupCheckResult:
         event="[TelegramMain][run_startup_self_checks][run_startup_self_checks]",
         message="Starting self-checks...",
     )
+
+    # Check 0: Settings validation (when available)
+    if hasattr(settings, "validate"):
+        try:
+            settings_errors = [
+                str(item).strip()
+                for item in settings.validate()
+                if str(item).strip()
+            ]
+        except Exception as exc:
+            result.errors.append(f"FATAL: Telegram settings validation failed: {exc}")
+        else:
+            for error in settings_errors:
+                if (
+                    error == "QWEN_TTS_TELEGRAM_BOT_TOKEN is required"
+                    and not settings.telegram_bot_token
+                ):
+                    continue
+                result.errors.append(f"FATAL: {error}")
 
     # Check 1: Required environment variables
     if not settings.telegram_bot_token:

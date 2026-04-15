@@ -42,16 +42,29 @@ pytestmark = pytest.mark.unit
 class StubRegistry:
     @property
     def backend(self):
-        return type("BackendStub", (), {"key": "torch"})()
+        return type("BackendStub", (), {"key": "torch", "label": "PyTorch + Transformers"})()
+
+    def get_model_spec(self, model_name=None, mode=None):
+        if model_name is not None:
+            return next(
+                spec
+                for spec in MODEL_SPECS.values()
+                if model_name in {spec.api_name, spec.folder, spec.key, spec.model_id}
+            )
+        return next(spec for spec in MODEL_SPECS.values() if spec.mode == (mode or "clone"))
 
     def get_model(self, model_name=None, mode=None):
-        spec = next(
-            spec for spec in MODEL_SPECS.values() if spec.mode == (mode or "clone")
-        )
-        return spec, object()
+        spec = self.get_model_spec(model_name=model_name, mode=mode)
+        return spec, type("HandleStub", (), {"backend_key": "torch", "spec": spec})()
 
     def backend_for_spec(self, spec):
         return self.backend
+
+    def backend_route_for_spec(self, spec):
+        return {
+            "route_reason": "registry_model_resolution",
+            "execution_backend": self.backend.key,
+        }
 
 
 class LoggingRegistry(StubRegistry):
@@ -65,14 +78,8 @@ class LoggingRegistry(StubRegistry):
 
 class FamilyAwareRegistry(StubRegistry):
     def get_model(self, model_name=None, mode=None):
-        if model_name is not None:
-            spec = next(
-                spec
-                for spec in MODEL_SPECS.values()
-                if model_name in {spec.api_name, spec.folder, spec.key, spec.model_id}
-            )
-            return spec, type("HandleStub", (), {"backend_key": "torch", "spec": spec})()
-        return super().get_model(model_name=model_name, mode=mode)
+        spec = self.get_model_spec(model_name=model_name, mode=mode)
+        return spec, type("HandleStub", (), {"backend_key": "torch", "spec": spec})()
 
 
 def _make_core_settings(tmp_path: Path) -> CoreSettings:

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # FILE: scripts/runtime_self_check.py
-# VERSION: 1.0.0
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide an operator-facing self-check utility for validating runtime dependencies, model assets, and readiness metadata.
-#   SCOPE: CLI entry point for shared runtime self-check reporting, asset validation, and support evidence snapshots
+#   SCOPE: CLI entry point for shared runtime self-check reporting, asset validation, representative optional-model gating, and support evidence snapshots
 #   DEPENDS: M-BOOTSTRAP, M-CONFIG, M-MODEL-REGISTRY
 #   LINKS: M-BOOTSTRAP
 #   ROLE: SCRIPT
@@ -13,18 +13,21 @@
 # START_MODULE_MAP
 #   parse_args - Parse CLI arguments for self-check execution
 #   build_asset_report - Build filesystem and runtime validation results for declared model assets
+#   build_representative_model_report - Build bounded representative-model readiness/gating details for optional real-model validation
+#   build_self_check_payload_with_diagnostics - Build the self-check payload while capturing bootstrap/runtime noise as structured diagnostics
 #   build_self_check_payload - Build the full runtime self-check payload for a given environment snapshot
 #   main - Execute the runtime self-check and print JSON results
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Added reusable self-check payload builder for validation automation and CI orchestration]
+#   LAST_CHANGE: [v1.2.0 - Added representative optional-model gating details for bounded real-model validation through the shared harness]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -40,6 +43,34 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.bootstrap import build_runtime  # noqa: E402
 from core.config import CoreSettings, parse_core_settings_from_env  # noqa: E402
+
+
+REPRESENTATIVE_MODEL_TARGETS: tuple[dict[str, str], ...] = (
+    {
+        "target": "qwen",
+        "model_id": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+        "family_key": "qwen3_tts",
+        "expected_backend": "mlx|torch|qwen_fast",
+    },
+    {
+        "target": "omnivoice",
+        "model_id": "OmniVoice-Custom",
+        "family_key": "omnivoice",
+        "expected_backend": "torch",
+    },
+    {
+        "target": "voxcpm2",
+        "model_id": "VoxCPM2-Custom",
+        "family_key": "voxcpm",
+        "expected_backend": "torch",
+    },
+    {
+        "target": "piper",
+        "model_id": "Piper-en_US-lessac-medium",
+        "family_key": "piper",
+        "expected_backend": "onnx",
+    },
+)
 
 
 @contextmanager
@@ -126,6 +157,190 @@ def build_asset_report(readiness_report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _classify_representative_target(item: dict[str, Any] | None) -> dict[str, Any]:
+    if item is None:
+        return {
+            "status": "skipped",
+            "reason": "representative_model_not_registered",
+            "message": "Representative model is not registered in the active readiness payload.",
+            "machine_readable": True,
+        }
+
+    route = item.get("route") or {}
+    execution_backend = item.get("execution_backend") or item.get("backend")
+    missing_artifacts = list(item.get("missing_artifacts") or [])
+    required_artifacts = list(item.get("required_artifacts") or [])
+    available = item.get("available") is True
+    loadable = item.get("loadable") is True
+    runtime_ready = item.get("runtime_ready") is True
+
+    if runtime_ready:
+        return {
+            "status": "ready",
+            "reason": "representative_model_ready",
+            "message": "Representative model is runtime-ready for opt-in validation.",
+            "machine_readable": True,
+        }
+
+    if missing_artifacts or not available:
+        return {
+            "status": "skipped",
+            "reason": "model_assets_missing",
+            "message": "Representative model assets are missing.",
+            "machine_readable": True,
+        }
+
+    selected_backend = route.get("selected_backend") or item.get("selected_backend")
+    if route.get("selected_backend_compatible_with_model") is False:
+        return {
+            "status": "skipped",
+            "reason": "selected_backend_incompatible_with_model",
+            "message": "Representative model is installed, but the selected backend does not support it on this host.",
+            "machine_readable": True,
+        }
+
+    candidate_diagnostics = []
+    for candidate in route.get("candidates", []):
+        diagnostics = candidate.get("diagnostics") or {}
+        if diagnostics:
+            candidate_diagnostics.append(diagnostics)
+            reason = diagnostics.get("reason")
+            if reason in {
+                "runtime_dependency_missing",
+                "dependency_missing",
+                "python_package_missing",
+                "optional_dependency_missing",
+            }:
+                return {
+                    "status": "skipped",
+                    "reason": "optional_dependency_pack_missing",
+                    "message": "Representative model requires an optional runtime dependency pack that is not installed.",
+                    "machine_readable": True,
+                }
+            if reason in {
+                "platform_unsupported",
+                "cuda_required",
+                "backend_unavailable",
+                "runtime_unavailable",
+                "host_unsupported",
+            }:
+                return {
+                    "status": "skipped",
+                    "reason": "backend_or_runtime_unsupported",
+                    "message": "Representative model cannot run on the current host/runtime backend combination.",
+                    "machine_readable": True,
+                }
+
+    route_reason = route.get("route_reason")
+    if route_reason in {
+        "selected_backend_incompatible_with_model",
+        "platform_unsupported",
+        "cuda_required",
+    }:
+        return {
+            "status": "skipped",
+            "reason": "backend_or_runtime_unsupported",
+            "message": "Representative model cannot run on the current host/runtime backend combination.",
+            "machine_readable": True,
+        }
+
+    if available and not loadable:
+        return {
+            "status": "failed",
+            "reason": "model_artifacts_corrupt_or_incomplete",
+            "message": "Representative model assets exist but the runtime did not classify them as loadable.",
+            "machine_readable": True,
+        }
+
+    return {
+        "status": "skipped",
+        "reason": "runtime_not_ready",
+        "message": "Representative model is present but not runtime-ready for an unspecified readiness reason.",
+        "machine_readable": True,
+        "details": {
+            "selected_backend": selected_backend,
+            "execution_backend": execution_backend,
+            "route_reason": route_reason,
+            "candidate_diagnostics": candidate_diagnostics,
+            "required_artifacts": required_artifacts,
+        },
+    }
+
+
+# START_CONTRACT: build_representative_model_report
+#   PURPOSE: Build bounded representative-model gating details for optional real-model validation lanes.
+#   INPUTS: { readiness_report: dict[str, Any] - registry readiness payload }
+#   OUTPUTS: { dict[str, Any] - representative target readiness report with explicit machine-readable reasons }
+#   SIDE_EFFECTS: none
+#   LINKS: M-MODEL-REGISTRY
+# END_CONTRACT: build_representative_model_report
+def build_representative_model_report(readiness_report: dict[str, Any]) -> dict[str, Any]:
+    items = readiness_report.get("items", [])
+    indexed_items = {str(item.get("id")): item for item in items}
+    targets: list[dict[str, Any]] = []
+    for spec in REPRESENTATIVE_MODEL_TARGETS:
+        item = indexed_items.get(spec["model_id"])
+        classification = _classify_representative_target(item)
+        target_payload = {
+            "target": spec["target"],
+            "model_id": spec["model_id"],
+            "family_key": spec["family_key"],
+            "expected_backend": spec["expected_backend"],
+            **classification,
+        }
+        if item is not None:
+            target_payload.update(
+                {
+                    "selected_backend": item.get("selected_backend"),
+                    "execution_backend": item.get("execution_backend") or item.get("backend"),
+                    "available": item.get("available"),
+                    "loadable": item.get("loadable"),
+                    "runtime_ready": item.get("runtime_ready"),
+                    "missing_artifacts": list(item.get("missing_artifacts") or []),
+                    "required_artifacts": list(item.get("required_artifacts") or []),
+                    "route_reason": (item.get("route") or {}).get("route_reason"),
+                }
+            )
+        targets.append(target_payload)
+    return {
+        "targets": targets,
+        "ready_targets": [item for item in targets if item["status"] == "ready"],
+        "skipped_targets": [item for item in targets if item["status"] == "skipped"],
+        "failed_targets": [item for item in targets if item["status"] == "failed"],
+    }
+
+
+# START_CONTRACT: build_self_check_payload_with_diagnostics
+#   PURPOSE: Build the self-check payload while capturing bootstrap/runtime noise into structured diagnostics.
+#   INPUTS: { environ: Mapping[str, str] | None - optional environment override used to resolve runtime settings }
+#   OUTPUTS: { tuple[dict[str, Any], list[dict[str, Any]]] - self-check payload plus captured runtime diagnostics }
+#   SIDE_EFFECTS: Builds the shared runtime and intercepts direct stdout/stderr messages emitted by imported dependencies
+#   LINKS: M-BOOTSTRAP, M-MODEL-REGISTRY
+# END_CONTRACT: build_self_check_payload_with_diagnostics
+def build_self_check_payload_with_diagnostics(
+    environ: Mapping[str, str] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+        payload = build_self_check_payload(environ)
+
+    diagnostics: list[dict[str, Any]] = []
+    for source, raw_output in (
+        ("stdout", stdout_buffer.getvalue()),
+        ("stderr", stderr_buffer.getvalue()),
+    ):
+        for message in [line.strip() for line in raw_output.splitlines() if line.strip()]:
+            diagnostics.append(
+                {
+                    "kind": "captured_runtime_message",
+                    "source": source,
+                    "message": message,
+                }
+            )
+    return payload, diagnostics
+
+
 # START_CONTRACT: build_self_check_payload
 #   PURPOSE: Build the full runtime self-check payload for the active or provided environment mapping.
 #   INPUTS: { environ: Mapping[str, str] | None - optional environment override used to resolve runtime settings }
@@ -158,6 +373,7 @@ def build_self_check_payload(
         },
         "readiness": readiness,
         "assets": build_asset_report(readiness),
+        "representative_models": build_representative_model_report(readiness),
     }
 
 
@@ -170,7 +386,9 @@ def build_self_check_payload(
 # END_CONTRACT: main
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    payload = build_self_check_payload()
+    payload, diagnostics = build_self_check_payload_with_diagnostics()
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
     print(json.dumps(payload, indent=args.indent, sort_keys=True))
 
     if not args.strict:

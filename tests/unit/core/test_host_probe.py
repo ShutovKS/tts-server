@@ -71,13 +71,7 @@ class ProbeBackendStub(TTSBackend):
             details={},
         )
 
-    def synthesize_custom(self, handle, **kwargs):  # pragma: no cover
-        raise NotImplementedError
-
-    def synthesize_design(self, handle, **kwargs):  # pragma: no cover
-        raise NotImplementedError
-
-    def synthesize_clone(self, handle, **kwargs):  # pragma: no cover
+    def execute(self, request):  # pragma: no cover
         raise NotImplementedError
 
 

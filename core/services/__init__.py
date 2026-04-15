@@ -12,7 +12,7 @@
 # START_MODULE_MAP
 #   ModelRegistry - Re-export model discovery and readiness service
 #   TTSService - Re-export core synthesis orchestration service
-#   SynthesisPlanner - Re-export synthesis planner compatibility bridge
+#   SynthesisPlanner - Re-export synthesis planner
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY

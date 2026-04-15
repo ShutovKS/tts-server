@@ -10,7 +10,7 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   FamilyPreparedExecution - Family-prepared legacy mode and generation kwargs for backend execution
+#   FamilyPreparedExecution - Family-prepared execution mode and generation kwargs for backend execution
 #   ModelFamilyAdapter - Base contract for family capability matching and execution preparation
 # END_MODULE_MAP
 #
@@ -28,7 +28,7 @@ from core.contracts.synthesis import ExecutionPlan, SynthesisCapability
 
 @dataclass(frozen=True)
 class FamilyPreparedExecution:
-    legacy_mode: str
+    execution_mode: str
     generation_kwargs: dict[str, object]
 
 

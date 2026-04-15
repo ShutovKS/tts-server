@@ -408,7 +408,7 @@ class ModelDescriptor:
     public_name: str
     family: str
     family_key: str
-    legacy_mode: str
+    execution_mode: str
     supported_capabilities: tuple[str, ...]
     backend_support: tuple[str, ...]
     artifact_format: str
@@ -429,7 +429,7 @@ class ModelDescriptor:
             public_name=spec.public_name,
             family=spec.family,
             family_key=spec.family_key,
-            legacy_mode=spec.mode,
+            execution_mode=spec.mode,
             supported_capabilities=spec.supported_capabilities,
             backend_support=spec.backend_support,
             artifact_format=spec.artifact_format,

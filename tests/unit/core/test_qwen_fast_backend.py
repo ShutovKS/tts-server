@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+from core.backends.base import ExecutionRequest
 from core.backends.qwen_fast_backend import QwenFastBackend
 from core.errors import TTSGenerationError
 from core.models.catalog import MODEL_SPECS
@@ -124,20 +125,25 @@ def test_qwen_fast_backend_rejects_design_and_clone_execution(tmp_path: Path):
     )()
 
     with pytest.raises(TTSGenerationError, match="custom synthesis only"):
-        backend.synthesize_design(
-            handle,
-            text="hello",
-            output_dir=tmp_path,
-            language="auto",
-            voice_description="Warm narrator",
+        backend.execute(
+            ExecutionRequest(
+                handle=handle,
+                text="hello",
+                output_dir=tmp_path,
+                language="auto",
+                execution_mode="design",
+                generation_kwargs={"instruct": "Warm narrator"},
+            )
         )
 
     with pytest.raises(TTSGenerationError, match="custom synthesis only"):
-        backend.synthesize_clone(
-            handle,
-            text="hello",
-            output_dir=tmp_path,
-            language="auto",
-            ref_audio_path=tmp_path / "reference.wav",
-            ref_text="hello",
+        backend.execute(
+            ExecutionRequest(
+                handle=handle,
+                text="hello",
+                output_dir=tmp_path,
+                language="auto",
+                execution_mode="clone",
+                generation_kwargs={"ref_audio": tmp_path / "reference.wav", "ref_text": "hello"},
+            )
         )

@@ -3,8 +3,8 @@
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for backend registry selection and model resolution.
 #   SCOPE: Backend discovery, capability checks, model metadata inspection
-#   DEPENDS: M-CORE
-#   LINKS: V-M-CORE
+#   DEPENDS: M-BACKENDS, M-ARTIFACT-REGISTRY, M-MODEL-REGISTRY
+#   LINKS: V-M-ARTIFACT-REGISTRY, V-M-RUNTIME-MODEL-REGISTRY, V-M-BACKENDS-V2
 #   ROLE: TEST
 #   MAP_MODE: LOCALS
 # END_MODULE_CONTRACT
@@ -12,6 +12,7 @@
 # START_MODULE_MAP
 #   StubBackend - Minimal backend stub used for registry selection and capability tests
 #   NoAffinityBackend - Backend stub with no manifest affinity match for rejection tests
+#   RoutedBackendRegistryStub - Minimal backend-registry stub used to verify artifact inspection follows per-model backend routing
 #   test_backend_registry_prefers_explicit_backend - Verifies explicit backend selection wins over autoselection
 #   test_backend_registry_raises_for_unknown_backend - Verifies unknown backend ids are rejected
 #   test_backend_registry_rejects_unsupported_mode - Verifies unsupported synthesis modes raise capability errors
@@ -25,11 +26,12 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.2.0 - Added catalog/artifact delegation coverage so ModelRegistry path lookup follows split surfaces]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
+import platform
 from pathlib import Path
 
 import pytest
@@ -42,7 +44,9 @@ from core.errors import (
     BackendNotAvailableError,
     ModelNotAvailableError,
 )
-from core.models.catalog import MODEL_SPECS
+from core.models.catalog import MODEL_SPECS, ModelSpec
+from core.registry.artifacts import ArtifactRegistry
+from core.registry.model_catalog import ModelCatalogRegistry
 from core.services.model_registry import ModelRegistry
 
 
@@ -183,46 +187,22 @@ class StubBackend(TTSBackend):
             "errors": [],
         }
 
-    def synthesize_custom(
-        self,
-        handle,
-        *,
-        text: str,
-        output_dir: Path,
-        language: str,
-        speaker: str,
-        instruct: str,
-        speed: float,
-    ) -> None:
-        return None
-
-    def synthesize_design(
-        self,
-        handle,
-        *,
-        text: str,
-        output_dir: Path,
-        language: str,
-        voice_description: str,
-    ) -> None:
-        return None
-
-    def synthesize_clone(
-        self,
-        handle,
-        *,
-        text: str,
-        output_dir: Path,
-        language: str,
-        ref_audio_path: Path,
-        ref_text: str | None,
-    ) -> None:
+    def execute(self, request: ExecutionRequest) -> None:
         return None
 
 
 class NoAffinityBackend(StubBackend):
     def __init__(self):
         super().__init__(key="custom-backend", available=True, platform_supported=True)
+
+
+class RoutedBackendRegistryStub:
+    def __init__(self, routed_backend: TTSBackend, selected_backend: TTSBackend):
+        self._routed_backend = routed_backend
+        self.selected_backend = selected_backend
+
+    def resolve_backend_for_spec(self, spec: ModelSpec) -> TTSBackend:
+        return self._routed_backend
 
 
 def test_backend_registry_prefers_explicit_backend():
@@ -246,6 +226,98 @@ def test_backend_registry_raises_for_unknown_backend():
             requested_backend="unknown",
             autoselect=True,
         )
+
+
+def test_backend_registry_rejects_explicit_backend_when_not_ready():
+    with pytest.raises(BackendNotAvailableError) as exc_info:
+        BackendRegistry(
+            [
+                StubBackend(
+                    key="torch",
+                    available=True,
+                    platform_supported=True,
+                    ready=False,
+                    diagnostics_reason="runtime_not_ready",
+                )
+            ],
+            requested_backend="torch",
+            autoselect=True,
+        )
+
+    assert exc_info.value.context.to_dict() == {
+        "reason": "runtime_not_ready",
+        "backend": "torch",
+        "known_backends": ["torch"],
+    }
+
+
+def test_backend_registry_rejects_explicit_backend_when_runtime_missing():
+    with pytest.raises(BackendNotAvailableError) as exc_info:
+        BackendRegistry(
+            [
+                StubBackend(
+                    key="mlx",
+                    available=False,
+                    platform_supported=True,
+                    ready=False,
+                    diagnostics_reason="runtime_dependency_missing",
+                )
+            ],
+            requested_backend="mlx",
+            autoselect=True,
+        )
+
+    assert exc_info.value.context.to_dict() == {
+        "reason": "runtime_dependency_missing",
+        "backend": "mlx",
+        "known_backends": ["mlx"],
+    }
+
+
+def test_backend_registry_raises_when_no_registered_backend_is_ready_for_host():
+    with pytest.raises(BackendNotAvailableError) as exc_info:
+        BackendRegistry(
+            [
+                StubBackend(key="mlx", available=False, platform_supported=False),
+                StubBackend(key="torch", available=False, platform_supported=False),
+            ],
+            autoselect=True,
+        )
+
+    assert exc_info.value.context.to_dict() == {
+        "reason": "No registered backend is ready for the current host",
+        "known_backends": ["mlx", "torch"],
+        "host_platform": platform.system().lower(),
+    }
+
+
+def test_backend_registry_rejects_platform_supported_backend_when_not_ready():
+    with pytest.raises(BackendNotAvailableError) as exc_info:
+        BackendRegistry(
+            [
+                StubBackend(
+                    key="mlx",
+                    available=True,
+                    platform_supported=True,
+                    ready=False,
+                    diagnostics_reason="runtime_not_ready",
+                ),
+                StubBackend(
+                    key="torch",
+                    available=False,
+                    platform_supported=True,
+                    ready=False,
+                    diagnostics_reason="runtime_dependency_missing",
+                ),
+            ],
+            autoselect=True,
+        )
+
+    assert exc_info.value.context.to_dict() == {
+        "reason": "No registered backend is ready for the current host",
+        "known_backends": ["mlx", "torch"],
+        "host_platform": platform.system().lower(),
+    }
 
 
 def test_backend_registry_rejects_unsupported_mode():
@@ -423,7 +495,64 @@ def test_model_registry_exposes_split_registry_runtime_state():
     assert runtime_state["preload_status"] == "loaded"
 
 
-def test_backend_execute_bridges_runtime_request_to_legacy_mode_methods():
+def test_artifact_registry_inspects_model_via_routed_backend():
+    selected_backend = StubBackend(
+        key="torch", available=True, platform_supported=True
+    )
+    routed_backend = StubBackend(
+        key="onnx", available=True, platform_supported=True
+    )
+    catalog = ModelCatalogRegistry((MODEL_SPECS["1"],))
+    artifact_registry = ArtifactRegistry(
+        catalog=catalog,
+        backend_registry=RoutedBackendRegistryStub(
+            routed_backend=routed_backend,
+            selected_backend=selected_backend,
+        ),
+    )
+
+    inspection = artifact_registry.inspect(MODEL_SPECS["1"])
+
+    assert inspection["backend"] == "onnx"
+
+
+def test_model_registry_delegates_model_path_resolution_to_artifact_registry():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(key="mlx", available=True, platform_supported=True),
+            StubBackend(key="onnx", available=True, platform_supported=True),
+        ],
+        autoselect=True,
+    )
+    registry = ModelRegistry(backend_registry=backend_registry)
+
+    resolved = registry.resolve_model_path("Piper-en_US-lessac-medium")
+
+    assert resolved == Path(".models") / "Piper-en_US-lessac-medium"
+
+
+def test_runtime_model_registry_uses_public_preload_report_contract():
+    backend = StubBackend(key="torch", available=True, platform_supported=True)
+    backend_registry = BackendRegistry(
+        [backend], requested_backend="torch", autoselect=True
+    )
+
+    registry = ModelRegistry(
+        backend_registry=backend_registry,
+        preload_policy="listed",
+        preload_model_ids=(MODEL_SPECS["1"].api_name,),
+    )
+
+    preload = registry.runtime_models.preload_report()
+    preload["loaded_model_ids"].append("mutated")
+
+    assert registry.preload_report()["loaded_model_ids"] == [MODEL_SPECS["1"].api_name]
+    assert registry.runtime_models.preload_report()["loaded_model_ids"] == [
+        MODEL_SPECS["1"].api_name
+    ]
+
+
+def test_backend_execute_runs_direct_execution_contract():
     backend = StubBackend(key="torch", available=True, platform_supported=True)
     spec = MODEL_SPECS["1"]
     handle = LoadedModelHandle(
@@ -434,10 +563,18 @@ def test_backend_execute_bridges_runtime_request_to_legacy_mode_methods():
     )
     captured: dict[str, object] = {}
 
-    def fake_synthesize_custom(handle, **kwargs):
-        captured.update(kwargs)
+    def fake_execute(request: ExecutionRequest):
+        captured.update(
+            {
+                "text": request.text,
+                "output_dir": request.output_dir,
+                "language": request.language,
+                "execution_mode": request.execution_mode,
+                **request.generation_kwargs,
+            }
+        )
 
-    backend.synthesize_custom = fake_synthesize_custom  # type: ignore[method-assign]
+    backend.execute = fake_execute  # type: ignore[method-assign]
 
     backend.execute(
         ExecutionRequest(
@@ -445,7 +582,7 @@ def test_backend_execute_bridges_runtime_request_to_legacy_mode_methods():
             text="Hello",
             output_dir=Path("/tmp"),
             language="auto",
-            legacy_mode="custom",
+            execution_mode="custom",
             generation_kwargs={
                 "voice": "Ryan",
                 "instruct": "Friendly",
@@ -458,7 +595,8 @@ def test_backend_execute_bridges_runtime_request_to_legacy_mode_methods():
         "text": "Hello",
         "output_dir": Path("/tmp"),
         "language": "auto",
-        "speaker": "Ryan",
+        "execution_mode": "custom",
+        "voice": "Ryan",
         "instruct": "Friendly",
         "speed": 1.0,
     }
@@ -500,7 +638,7 @@ def test_model_registry_lists_per_model_backend_for_second_family():
     assert piper_item["family_key"] == "piper"
     assert piper_item["selected_backend"] == "mlx"
     assert piper_item["execution_backend"] == "onnx"
-    assert piper_item["route"]["routing_mode"] == "per_model_backend_fallback"
+    assert piper_item["route"]["routing_mode"] == "per_model_backend_override"
     assert (
         piper_item["route"]["route_reason"]
         == "selected_backend_incompatible_with_model"
@@ -520,7 +658,7 @@ def test_backend_registry_explains_per_model_backend_route_for_piper():
 
     assert route["selected_backend"] == "mlx"
     assert route["execution_backend"] == "onnx"
-    assert route["routing_mode"] == "per_model_backend_fallback"
+    assert route["routing_mode"] == "per_model_backend_override"
     assert route["route_reason"] == "selected_backend_incompatible_with_model"
 
 
@@ -577,32 +715,27 @@ def test_backend_registry_prefers_qwen_fast_for_custom_model_when_ready():
     assert route["route_reason"] == "selected_backend_supports_model"
 
 
-def test_backend_registry_falls_back_to_torch_when_qwen_fast_not_ready():
-    backend_registry = BackendRegistry(
-        [
-            StubBackend(
-                key="qwen_fast",
-                available=True,
-                platform_supported=True,
-                ready=False,
-                supports_design=False,
-                supports_clone=False,
-                diagnostics_reason="cuda_required",
-            ),
-            StubBackend(key="torch", available=True, platform_supported=True),
-        ],
-        requested_backend="qwen_fast",
-        autoselect=True,
-    )
+def test_backend_registry_rejects_explicit_qwen_fast_when_not_ready():
+    with pytest.raises(BackendNotAvailableError) as exc_info:
+        BackendRegistry(
+            [
+                StubBackend(
+                    key="qwen_fast",
+                    available=True,
+                    platform_supported=True,
+                    ready=False,
+                    supports_design=False,
+                    supports_clone=False,
+                    diagnostics_reason="cuda_required",
+                ),
+                StubBackend(key="torch", available=True, platform_supported=True),
+            ],
+            requested_backend="qwen_fast",
+            autoselect=True,
+        )
 
-    route = backend_registry.explain_backend_route_for_spec(MODEL_SPECS["1"])
-
-    assert route["selected_backend"] == "qwen_fast"
-    assert route["execution_backend"] == "torch"
-    assert route["routing_mode"] == "per_model_backend_fallback"
-    assert route["route_reason"] == "selected_backend_unavailable_for_model_route"
-    qwen_fast_candidate = next(
-        item for item in route["candidates"] if item["key"] == "qwen_fast"
-    )
-    assert qwen_fast_candidate["ready"] is False
-    assert qwen_fast_candidate["route_reason"] == "cuda_required"
+    assert exc_info.value.context.to_dict() == {
+        "reason": "cuda_required",
+        "backend": "qwen_fast",
+        "known_backends": ["qwen_fast", "torch"],
+    }

@@ -14,6 +14,7 @@
 #   test_audio_response_includes_backend_header - Verifies audio responses expose selected backend metadata
 #   test_readiness_report_exposes_backend_configuration - Verifies readiness payload reports configured and selected backends
 #   test_models_endpoint_exposes_backend_and_capabilities - Verifies model listing exposes backend and capability metadata
+#   test_models_endpoint_exposes_route_candidates_for_clone_mode - Verifies clone-capable models expose mixed-backend routing diagnostics
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
@@ -71,6 +72,9 @@ def test_audio_response_includes_backend_header(client: TestClient):
     )
 
     assert response.status_code == 200
+    assert response.headers["x-request-id"]
+    assert response.headers["x-model-id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    assert response.headers["x-tts-mode"] == "custom"
     assert response.headers["x-backend-id"] == "mlx"
 
 
@@ -82,13 +86,34 @@ def test_readiness_report_exposes_backend_configuration(client: TestClient):
     assert payload["checks"]["runtime"]["configured_backend"] == "torch"
     assert payload["checks"]["runtime"]["backend_autoselect"] is True
     assert payload["checks"]["models"]["selected_backend"] == "mlx"
+    assert (
+        payload["checks"]["models"]["backend_selection"]["selection_reason"]
+        == "platform_and_runtime_match"
+    )
+    assert payload["checks"]["models"]["backend_diagnostics"]["backend"] == "mlx"
+    assert payload["checks"]["models"]["backend_diagnostics"]["ready"] is True
+    assert payload["checks"]["models"]["backend_capabilities"]["supports_clone"] is True
     assert payload["checks"]["models"]["routing"]["mixed_backend_routing"] is True
+    assert payload["checks"]["models"]["routing"]["per_model_backend_overrides"] == 1
+    assert payload["checks"]["models"]["cache_diagnostics"]["cached_model_count"] == 1
+    assert (
+        payload["checks"]["models"]["preload"]["loaded_model_ids"]
+        == ["Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"]
+    )
     assert payload["checks"]["models"]["host"]["platform_system"] == "darwin"
     assert payload["checks"]["models"]["available_backends"][0]["key"] == "mlx"
+    assert payload["checks"]["models"]["available_backends"][0]["selected"] is True
     assert any(
         item["key"] == "qwen_fast"
         and item["diagnostics"]["reason"] == "platform_unsupported"
         for item in payload["checks"]["models"]["available_backends"]
+    )
+    assert any(
+        item["id"] == "Piper-en_US-lessac-medium"
+        and item["backend"] == "onnx"
+        and item["available"] is False
+        and item["runtime_ready"] is False
+        for item in payload["checks"]["models"]["items"]
     )
 
 
@@ -108,17 +133,50 @@ def test_models_endpoint_exposes_backend_and_capabilities(client: TestClient):
     assert qwen_model["backend_support"] == ["mlx", "qwen_fast", "torch"]
     assert qwen_model["selected_backend"] == "mlx"
     assert qwen_model["execution_backend"] == "mlx"
+    assert qwen_model["selected_backend_label"] == "MLX Apple Silicon"
+    assert qwen_model["execution_backend_label"] == "MLX Apple Silicon"
     assert qwen_model["capabilities"]["supports_clone"] is True
+    assert qwen_model["runtime_ready"] is True
+    assert qwen_model["missing_artifacts"] == []
     assert qwen_model["route"]["candidates"][0]["key"] == "qwen_fast"
     assert (
         qwen_model["route"]["candidates"][0]["route_reason"] == "platform_unsupported"
     )
+    assert qwen_model["route"]["candidates"][0]["diagnostics"]["backend"] == "qwen_fast"
+    assert qwen_model["route"]["candidates"][0]["diagnostics"]["details"]["enabled"] is True
     assert piper_model["backend"] == "onnx"
     assert piper_model["selected_backend"] == "mlx"
     assert piper_model["execution_backend"] == "onnx"
+    assert piper_model["selected_backend_label"] == "MLX Apple Silicon"
+    assert piper_model["execution_backend_label"] == "ONNX Runtime"
     assert piper_model["family_key"] == "piper"
     assert piper_model["capabilities_supported"] == ["preset_speaker_tts"]
+    assert piper_model["capabilities"]["supports_clone"] is False
+    assert piper_model["capabilities"]["supports_voice_description_tts"] is False
+    assert piper_model["runtime_ready"] is False
+    assert piper_model["missing_artifacts"] == ["model.onnx", "model.onnx.json"]
     assert (
         piper_model["route"]["route_reason"]
         == "selected_backend_incompatible_with_model"
     )
+    assert piper_model["route"]["routing_mode"] == "per_model_backend_override"
+    assert piper_model["route"]["selected_backend_ready_for_model"] is False
+
+
+def test_models_endpoint_exposes_route_candidates_for_clone_mode(client: TestClient):
+    response = client.get("/api/v1/models")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    clone_model = next(
+        item for item in payload if item["id"] == "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+    )
+
+    assert clone_model["mode"] == "clone"
+    assert clone_model["selected_backend"] == "mlx"
+    assert clone_model["execution_backend"] == "mlx"
+    assert clone_model["route"]["route_reason"] == "selected_backend_supports_model"
+    assert clone_model["route"]["routing_mode"] == "selected_backend"
+    assert clone_model["route"]["candidates"] == []
+    assert clone_model["capabilities"]["supports_clone"] is True
+    assert clone_model["runtime_ready"] is True

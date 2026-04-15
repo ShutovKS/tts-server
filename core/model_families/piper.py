@@ -49,7 +49,7 @@ class PiperFamilyAdapter(ModelFamilyAdapter):
             )
 
         return FamilyPreparedExecution(
-            legacy_mode="custom",
+            execution_mode="custom",
             generation_kwargs={
                 "language": plan.request.language,
                 "voice": plan.model_spec.model_id,

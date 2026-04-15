@@ -99,18 +99,31 @@ class ContentionTTSService(DummyTTSService):
 class StubRegistry:
     @property
     def backend(self):
-        return type("BackendStub", (), {"key": "torch"})()
+        return type("BackendStub", (), {"key": "torch", "label": "PyTorch + Transformers"})()
 
-    def get_model(self, model_name=None, mode=None):
+    def get_model_spec(self, model_name=None, mode=None):
         from core.models.catalog import MODEL_SPECS
 
-        spec = next(
-            spec for spec in MODEL_SPECS.values() if spec.mode == (mode or "clone")
-        )
-        return spec, object()
+        if model_name is not None:
+            return next(
+                spec
+                for spec in MODEL_SPECS.values()
+                if model_name in {spec.api_name, spec.folder, spec.key, spec.model_id}
+            )
+        return next(spec for spec in MODEL_SPECS.values() if spec.mode == (mode or "clone"))
+
+    def get_model(self, model_name=None, mode=None):
+        spec = self.get_model_spec(model_name=model_name, mode=mode)
+        return spec, type("HandleStub", (), {"backend_key": "torch", "spec": spec})()
 
     def backend_for_spec(self, spec):
         return self.backend
+
+    def backend_route_for_spec(self, spec):
+        return {
+            "route_reason": "registry_model_resolution",
+            "execution_backend": self.backend.key,
+        }
 
 
 @pytest.fixture()
@@ -179,6 +192,10 @@ def test_design_tts_rejects_model_without_design_capability(client: TestClient):
     assert response.status_code == 422
     payload = response.json()
     assert payload["code"] == "model_capability_not_supported"
+    assert (
+        payload["details"]["reason"]
+        == "Model 'Piper-en_US-lessac-medium' does not support capability 'voice_description_tts'"
+    )
     assert payload["details"]["model"] == "Piper-en_US-lessac-medium"
     assert payload["details"]["capability"] == "voice_description_tts"
 
@@ -198,6 +215,10 @@ def test_clone_async_submit_rejects_model_without_clone_capability(
     assert response.status_code == 422
     payload = response.json()
     assert payload["code"] == "model_capability_not_supported"
+    assert (
+        payload["details"]["reason"]
+        == "Model 'Piper-en_US-lessac-medium' does not support capability 'reference_voice_clone'"
+    )
     assert payload["details"]["model"] == "Piper-en_US-lessac-medium"
     assert payload["details"]["capability"] == "reference_voice_clone"
 
@@ -232,6 +253,7 @@ def test_sync_rate_limit_returns_unified_error_with_retry_after(client: TestClie
     assert second.status_code == 429
     payload = second.json()
     assert payload["code"] == "rate_limit_exceeded"
+    assert payload["details"]["reason"] == "Request rate limit was exceeded"
     assert payload["details"]["policy"] == "sync_tts"
     assert second.headers["Retry-After"]
 
@@ -670,6 +692,12 @@ def test_async_custom_job_submit_status_result_flow(client: TestClient):
     assert submit_payload["status"] in {"queued", "running", "succeeded"}
     assert submit_payload["operation"] == "synthesize_custom"
     assert submit_payload["mode"] == "custom"
+    assert submit_payload["request_id"]
+    assert submit_payload["submit_request_id"]
+    assert submit_payload["response_format"] == "wav"
+    assert submit_payload["save_output"] is True
+    assert submit_payload["backend"] in {None, "mlx"}
+    assert submit_payload["created_at"]
     assert submit_payload["status_url"].endswith(
         f"/api/v1/tts/jobs/{submit_payload['job_id']}"
     )
@@ -690,13 +718,25 @@ def test_async_custom_job_submit_status_result_flow(client: TestClient):
             break
     assert status_payload is not None
     assert status_payload["status"] == "succeeded"
+    assert status_payload["request_id"]
+    assert status_payload["submit_request_id"] == submit_payload["submit_request_id"]
     assert status_payload["backend"] == "mlx"
+    assert status_payload["response_format"] == "wav"
+    assert status_payload["save_output"] is True
+    assert status_payload["terminal_error"] is None
+    assert status_payload["created_at"] == submit_payload["created_at"]
+    assert status_payload["started_at"] is not None
+    assert status_payload["completed_at"] is not None
     assert status_payload["saved_path"].endswith("saved_custom.wav")
 
     result = client.get(f"/api/v1/tts/jobs/{job_id}/result")
     assert result.status_code == 200
+    assert result.headers["x-request-id"]
     assert result.headers["x-job-id"] == job_id
+    assert result.headers["x-model-id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     assert result.headers["x-tts-mode"] == "custom"
+    assert result.headers["x-backend-id"] == "mlx"
+    assert result.headers["x-saved-output-file"] == "saved_custom.wav"
     assert result.content.startswith(b"RIFF")
 
 
@@ -712,7 +752,12 @@ def test_async_openai_job_submit_supports_pcm_result(client: TestClient):
         },
     )
     assert submit.status_code == 202
-    job_id = submit.json()["job_id"]
+    submit_payload = submit.json()
+    assert submit_payload["mode"] == "custom"
+    assert submit_payload["operation"] == "synthesize_custom"
+    assert submit_payload["response_format"] == "pcm"
+    assert submit_payload["save_output"] is False
+    job_id = submit_payload["job_id"]
 
     for _ in range(50):
         status = client.get(f"/api/v1/tts/jobs/{job_id}")
@@ -722,6 +767,10 @@ def test_async_openai_job_submit_supports_pcm_result(client: TestClient):
     result = client.get(f"/api/v1/tts/jobs/{job_id}/result")
     assert result.status_code == 200
     assert result.headers["content-type"].startswith("audio/pcm")
+    assert result.headers["x-request-id"]
+    assert result.headers["x-model-id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    assert result.headers["x-tts-mode"] == "custom"
+    assert result.headers["x-backend-id"] == "mlx"
     assert result.headers["x-job-id"] == job_id
     assert not result.content.startswith(b"RIFF")
 
@@ -934,6 +983,7 @@ def test_async_openai_job_submit_rejects_idempotency_conflict(client: TestClient
     assert conflict.status_code == 409
     payload = conflict.json()
     assert payload["code"] == "job_idempotency_conflict"
+    assert payload["request_id"]
     assert payload["details"]["idempotency_key"] == "idem-openai-conflict"
     assert payload["details"]["job_id"] == first.json()["job_id"]
 
@@ -1098,6 +1148,7 @@ def test_async_submit_quota_exceeded_returns_controlled_error(
     assert second.status_code == 429
     payload = second.json()
     assert payload["code"] == "quota_exceeded"
+    assert payload["details"]["reason"] == "Quota policy was exceeded"
     assert payload["details"]["policy"] == "active_async_jobs"
     assert payload["details"]["limit"] == 1
 
@@ -1135,6 +1186,7 @@ def test_async_job_result_returns_not_ready_for_queued_or_running_job(
     assert result.status_code == 409
     payload = result.json()
     assert payload["code"] == "job_not_ready"
+    assert payload["request_id"]
     assert payload["details"]["job_id"]
     assert payload["details"]["status"] in {"queued", "running"}
 
@@ -1177,11 +1229,34 @@ def test_async_job_result_returns_not_succeeded_for_failed_job(
     assert status_payload is not None
     assert status_payload["status"] == "failed"
     assert status_payload["terminal_error"]["code"] == "job_execution_failed"
+    assert status_payload["terminal_error"]["message"] == "Job execution failed"
+    assert (
+        status_payload["terminal_error"]["details"]["reason"]
+        == "worker execution failed"
+    )
+    assert (
+        status_payload["terminal_error"]["details"]["error_type"]
+        == "TTSGenerationError"
+    )
+    assert status_payload["completed_at"] is not None
     assert result.status_code == 409
     payload = result.json()
     assert payload["code"] == "job_not_succeeded"
+    assert payload["request_id"]
     assert payload["details"]["status"] == "failed"
     assert payload["details"]["terminal_error"]["code"] == "job_execution_failed"
+    assert (
+        payload["details"]["terminal_error"]["message"]
+        == "Job execution failed"
+    )
+    assert (
+        payload["details"]["terminal_error"]["details"]["reason"]
+        == "worker execution failed"
+    )
+    assert (
+        payload["details"]["terminal_error"]["details"]["error_type"]
+        == "TTSGenerationError"
+    )
 
 
 def test_async_job_cancel_queued_job_returns_cancelled_snapshot(
@@ -1223,8 +1298,16 @@ def test_async_job_cancel_queued_job_returns_cancelled_snapshot(
     assert second.status_code == 202
     assert cancelled.status_code == 202
     payload = cancelled.json()
+    assert payload["request_id"]
+    assert payload["job_id"] == second.json()["job_id"]
     assert payload["status"] == "cancelled"
+    assert payload["completed_at"] is not None
     assert payload["terminal_error"]["code"] == "job_cancelled"
+    assert (
+        payload["terminal_error"]["message"]
+        == "Job was cancelled before execution started"
+    )
+    assert payload["terminal_error"]["details"] is None
     assert status.json()["status"] == "cancelled"
 
 
@@ -1242,6 +1325,7 @@ def test_async_job_cancel_rejects_running_or_terminal_job(client: TestClient):
     assert cancel.status_code == 409
     payload = cancel.json()
     assert payload["code"] == "job_not_cancellable"
+    assert payload["request_id"]
     assert payload["details"]["job_id"] == job_id
     assert payload["details"]["status"] == "succeeded"
 
@@ -1254,10 +1338,13 @@ def test_async_job_endpoints_return_job_not_found_for_missing_job(client: TestCl
 
     assert status.status_code == 404
     assert status.json()["code"] == "job_not_found"
+    assert status.json()["request_id"]
     assert result.status_code == 404
     assert result.json()["code"] == "job_not_found"
+    assert result.json()["request_id"]
     assert cancel.status_code == 404
     assert cancel.json()["code"] == "job_not_found"
+    assert cancel.json()["request_id"]
 
 
 def test_async_job_queue_full_returns_controlled_error(
@@ -1299,6 +1386,7 @@ def test_async_job_queue_full_returns_controlled_error(
     payload = second.json()
     assert payload["code"] == "job_queue_full"
     assert payload["request_id"]
+    assert payload["details"]["reason"] == "Local job queue is full"
 
 
 def test_async_job_endpoints_handle_concurrent_reads_and_cancel_deterministically(

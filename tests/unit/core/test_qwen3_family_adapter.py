@@ -1,7 +1,7 @@
 # FILE: tests/unit/core/test_qwen3_family_adapter.py
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Unit tests for the explicit Qwen3 family adapter compatibility bridge.
+#   PURPOSE: Unit tests for the explicit Qwen3 family adapter.
 #   SCOPE: Family capability support, execution preparation, metadata exports
 #   DEPENDS: M-CORE
 #   LINKS: V-M-QWEN3-FAMILY
@@ -50,7 +50,7 @@ def _make_plan(command, model_key: str) -> ExecutionPlan:
         family_key="qwen3_tts",
         family_label="Qwen3-TTS",
         selection_reason="test",
-        legacy_mode=request.legacy_mode,
+        execution_mode=request.execution_mode,
     )
 
 
@@ -68,7 +68,7 @@ def test_qwen3_family_adapter_prepares_custom_execution_kwargs():
 
     prepared = adapter.prepare_execution(plan)
 
-    assert prepared.legacy_mode == "custom"
+    assert prepared.execution_mode == "custom"
     assert prepared.generation_kwargs == {
         "language": "auto",
         "voice": "Ryan",
@@ -89,7 +89,7 @@ def test_qwen3_family_adapter_prepares_design_execution_kwargs():
 
     prepared = adapter.prepare_execution(plan)
 
-    assert prepared.legacy_mode == "design"
+    assert prepared.execution_mode == "design"
     assert prepared.generation_kwargs == {
         "language": "auto",
         "instruct": "Warm radio host",
@@ -112,7 +112,7 @@ def test_qwen3_family_adapter_prepares_clone_execution_kwargs(tmp_path: Path):
 
     prepared = adapter.prepare_execution(plan)
 
-    assert prepared.legacy_mode == "clone"
+    assert prepared.execution_mode == "clone"
     assert prepared.generation_kwargs == {
         "language": "en",
         "ref_audio": str(ref_audio_path),
@@ -136,11 +136,11 @@ def test_piper_family_adapter_prepares_preset_speaker_execution():
         family_key="piper",
         family_label="Piper",
         selection_reason="test",
-        legacy_mode="custom",
+        execution_mode="custom",
     )
 
     prepared = adapter.prepare_execution(plan)
 
-    assert prepared.legacy_mode == "custom"
+    assert prepared.execution_mode == "custom"
     assert prepared.generation_kwargs["piper_model"] is True
     assert prepared.generation_kwargs["voice"] == "Piper-en_US-lessac-medium"

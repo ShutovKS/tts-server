@@ -14,7 +14,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added artifact registry to separate installed state from declared catalog metadata]
+#   LAST_CHANGE: [v1.2.0 - Artifact registry now owns model-path resolution for catalog entries so facade layers can delegate filesystem lookup to the split artifact surface]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -36,12 +36,10 @@ class ArtifactRegistry:
         self.backend_registry = backend_registry
 
     def inspect(self, spec: ModelSpec) -> dict[str, Any]:
-        return self.backend_registry.selected_backend.inspect_model(spec)
+        return self.backend_registry.resolve_backend_for_spec(spec).inspect_model(spec)
 
     def descriptor_state(self, descriptor: ModelDescriptor) -> dict[str, Any]:
-        spec = next(
-            spec for spec in self.catalog.model_specs if spec.key == descriptor.key
-        )
+        spec = self.catalog.get_spec(descriptor.model_id)
         status = self.inspect(spec)
         return {
             "model_id": descriptor.model_id,
@@ -54,6 +52,15 @@ class ArtifactRegistry:
             "missing_artifacts": list(status["missing_artifacts"]),
             "required_artifacts": list(status["required_artifacts"]),
         }
+
+    def resolve_model_path(self, folder_name: str):
+        try:
+            spec = self.catalog.get_spec(folder_name)
+        except KeyError:
+            return self.backend_registry.selected_backend.resolve_model_path(folder_name)
+        return self.backend_registry.resolve_backend_for_spec(spec).resolve_model_path(
+            spec.folder
+        )
 
 
 __all__ = ["ArtifactRegistry"]

@@ -55,7 +55,7 @@ from core.contracts.commands import (
     VoiceCloneCommand,
     VoiceDesignCommand,
 )
-from core.contracts.synthesis import legacy_mode_to_capability
+from core.contracts.synthesis import execution_mode_to_capability
 from core.contracts.jobs import (
     JobOperation,
     JobSnapshot,
@@ -204,13 +204,13 @@ def resolve_idempotency_scope(request: Request) -> str:
 
 # START_CONTRACT: ensure_requested_model_capability
 #   PURPOSE: Validate that an explicitly requested model supports the requested synthesis capability.
-#   INPUTS: { request: Request - request carrying the active model registry, model_name: Optional[str] - explicit model identifier to validate, legacy_mode: str - compatibility mode that maps to a normalized capability }
+#   INPUTS: { request: Request - request carrying the active model registry, model_name: Optional[str] - explicit model identifier to validate, execution_mode: str - execution mode that maps to a normalized capability }
 #   OUTPUTS: { None - completes when the model supports the capability }
 #   SIDE_EFFECTS: May resolve model metadata through the registry and raise model capability errors
 #   LINKS: M-SERVER, M-MODEL-REGISTRY, M-ERRORS
 # END_CONTRACT: ensure_requested_model_capability
 def ensure_requested_model_capability(
-    request: Request, model_name: Optional[str], *, legacy_mode: str
+    request: Request, model_name: Optional[str], *, execution_mode: str
 ) -> None:
     if not model_name:
         return
@@ -218,7 +218,7 @@ def ensure_requested_model_capability(
     if not hasattr(registry, "get_model_spec"):
         return
     spec = registry.get_model_spec(model_name=model_name)
-    capability = legacy_mode_to_capability(legacy_mode)
+    capability = execution_mode_to_capability(execution_mode)
     if capability in spec.supported_capabilities:
         return
     raise ModelCapabilityError(
@@ -339,7 +339,7 @@ def create_custom_job_submission_from_openai(
     *,
     idempotency_key: Optional[str] = None,
 ):
-    ensure_requested_model_capability(request, payload.model, legacy_mode="custom")
+    ensure_requested_model_capability(request, payload.model, execution_mode="custom")
     input_text = enforce_text_length(
         value=payload.input,
         field_name="input",
@@ -398,7 +398,7 @@ def create_custom_job_submission_from_custom(
     *,
     idempotency_key: Optional[str] = None,
 ):
-    ensure_requested_model_capability(request, payload.model, legacy_mode="custom")
+    ensure_requested_model_capability(request, payload.model, execution_mode="custom")
     text = enforce_text_length(
         value=payload.text,
         field_name="text",
@@ -462,7 +462,7 @@ def create_design_job_submission(
     *,
     idempotency_key: Optional[str] = None,
 ):
-    ensure_requested_model_capability(request, payload.model, legacy_mode="design")
+    ensure_requested_model_capability(request, payload.model, execution_mode="design")
     text = enforce_text_length(
         value=payload.text,
         field_name="text",
@@ -632,7 +632,7 @@ async def stage_clone_job_submission(
         save_output, request.app.state.settings.default_save_output
     )
     normalized_language = normalize_language_value(language)
-    ensure_requested_model_capability(request, model, legacy_mode="clone")
+    ensure_requested_model_capability(request, model, execution_mode="clone")
     staged_path = build_clone_staged_path(request, ref_audio, prefix="job_upload")
     staged_path.write_bytes(upload_bytes)
     submission = create_job_submission(
@@ -834,7 +834,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                     request=request, field_name="input", message=str(exc)
                 )
             ensure_requested_model_capability(
-                request, payload.model, legacy_mode="custom"
+                request, payload.model, execution_mode="custom"
             )
             # END_BLOCK_VALIDATE_OPENAI_REQUEST
             # START_BLOCK_EXECUTE_OPENAI_SYNTHESIS
@@ -909,7 +909,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                     request=request, field_name="text", message=str(exc)
                 )
             ensure_requested_model_capability(
-                request, payload.model, legacy_mode="custom"
+                request, payload.model, execution_mode="custom"
             )
             # END_BLOCK_VALIDATE_CUSTOM_REQUEST
             # START_BLOCK_EXECUTE_CUSTOM_SYNTHESIS
@@ -979,7 +979,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                     request=request, field_name="text", message=str(exc)
                 )
             ensure_requested_model_capability(
-                request, payload.model, legacy_mode="design"
+                request, payload.model, execution_mode="design"
             )
             # END_BLOCK_VALIDATE_DESIGN_REQUEST
             # START_BLOCK_EXECUTE_DESIGN_SYNTHESIS
@@ -1050,7 +1050,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                 return build_text_length_error(
                     request=request, field_name="text", message=str(exc)
                 )
-            ensure_requested_model_capability(request, model, legacy_mode="clone")
+            ensure_requested_model_capability(request, model, execution_mode="clone")
             # END_BLOCK_VALIDATE_CLONE_REQUEST
             # START_BLOCK_LOG_CLONE_REQUEST
             log_event(

@@ -208,7 +208,7 @@ def test_model_descriptor_exposes_family_aware_compatibility_fields():
     assert descriptor.model_id == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     assert descriptor.family == "Qwen3-TTS"
     assert descriptor.family_key == "qwen3_tts"
-    assert descriptor.legacy_mode == "custom"
+    assert descriptor.execution_mode == "custom"
     assert descriptor.supported_capabilities == ("preset_speaker_tts",)
     assert descriptor.backend_support == ("mlx", "qwen_fast", "torch")
     assert descriptor.artifact_format == "local_model_dir"

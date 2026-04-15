@@ -39,7 +39,7 @@ from core.models.catalog import MODEL_SPECS
 pytestmark = pytest.mark.unit
 
 
-def build_plan(*, model_key: str, payload, capability: str, legacy_mode: str) -> ExecutionPlan:
+def build_plan(*, model_key: str, payload, capability: str, execution_mode: str) -> ExecutionPlan:
     spec = MODEL_SPECS[model_key]
     return ExecutionPlan(
         request=SynthesisRequest(
@@ -55,7 +55,7 @@ def build_plan(*, model_key: str, payload, capability: str, legacy_mode: str) ->
         family_key=spec.family_key,
         family_label=spec.family,
         selection_reason="unit_test",
-        legacy_mode=legacy_mode,
+        execution_mode=execution_mode,
     )
 
 
@@ -65,12 +65,12 @@ def test_omnivoice_family_adapter_prepares_voice_design_execution():
         model_key="omnivoice-design-1",
         payload=VoiceDesignPayload(voice_description="Calm documentary narrator"),
         capability="voice_description_tts",
-        legacy_mode="design",
+        execution_mode="design",
     )
 
     prepared = adapter.prepare_execution(plan)
 
-    assert prepared.legacy_mode == "design"
+    assert prepared.execution_mode == "design"
     assert prepared.generation_kwargs == {
         "language": "en",
         "family": "omnivoice",
@@ -86,12 +86,12 @@ def test_voxcpm_family_adapter_prepares_clone_execution(tmp_path: Path):
         model_key="voxcpm-clone-1",
         payload=VoiceClonePayload(ref_audio_path=reference, ref_text="Prompt transcript"),
         capability="reference_voice_clone",
-        legacy_mode="clone",
+        execution_mode="clone",
     )
 
     prepared = adapter.prepare_execution(plan)
 
-    assert prepared.legacy_mode == "clone"
+    assert prepared.execution_mode == "clone"
     assert prepared.generation_kwargs == {
         "language": "en",
         "family": "voxcpm",

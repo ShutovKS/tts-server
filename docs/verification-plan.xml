@@ -477,10 +477,10 @@
         <check-7>docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot</check-7>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">Server and Telegram Docker images build successfully on the current Windows host with Docker Desktop Linux containers.</scenario-1>
+        <scenario-1 kind="success">Server Docker image build succeeds on the current Windows host with Docker Desktop Linux containers.</scenario-1>
         <scenario-2 kind="success">Container trust-store wiring includes the required corporate proxy root certificate so Python HTTPS package installation succeeds behind the daemon proxy.</scenario-2>
-        <scenario-3 kind="success">Server compose runtime exposes healthy `/health/live` and `/health/ready` responses while mounted models, outputs, uploads, voices, and ffmpeg remain visible inside the container.</scenario-3>
-        <scenario-4 kind="success">Telegram compose runtime completes startup self-checks, verifies Telegram API connectivity with a real token, and enters the healthy polling loop while persisting delivery state in the named volume.</scenario-4>
+        <scenario-3 kind="success">Server compose runtime exposes healthy `/health/live`, `/health/ready`, and `/api/v1/models` responses while mounted models, outputs, uploads, voices, and ffmpeg remain visible inside the container.</scenario-3>
+        <scenario-4 kind="success">Telegram compose runtime remains documented as a lane, but current retained evidence does not claim it as proven on this host.</scenario-4>
       </scenarios>
     </V-M-DOCKER-ASSETS>
 
@@ -512,7 +512,7 @@
         <scenario-8 kind="success">Fast-lane metadata exposes `qwen_fast` as an explicit custom-only route candidate with deterministic fallback reasons instead of implying clone/design acceleration.</scenario-8>
         <scenario-9 kind="success">Automated smoke validation can start the local server, wait for healthy startup, execute smoke pytest, and stop the runtime cleanly without manual orchestration.</scenario-9>
         <scenario-10 kind="success">Smoke validation remains Qwen custom sync/async capable by default while supporting an explicit Piper smoke model path through the same public HTTP API with ONNX backend assertions.</scenario-10>
-        <scenario-11 kind="success">On the current Windows host, Docker Desktop Linux-container deployment starts the server successfully and returns `status=ok` from both `/health/live` and `/health/ready`.</scenario-11>
+        <scenario-11 kind="success">On the current Windows host, server Docker deployment starts successfully and returns `status=ok` from `/health/live`, `/health/ready`, and `/api/v1/models`.</scenario-11>
         <scenario-12 kind="success">Server Docker readiness on the current Windows host confirms mounted `.models`, `.outputs`, `.uploads`, `.voices`, and in-container ffmpeg availability.</scenario-12>
       </scenarios>
       <required-log-markers>
@@ -551,8 +551,8 @@
         <scenario-5 kind="success">Telegram observability helpers emit structured GRACE event markers and polling metrics remain visible to tests.</scenario-5>
         <scenario-6 kind="success">Telegram live validation can verify Bot API reachability automatically when a real bot token is provided, while remaining opt-in for secretless environments.</scenario-6>
         <scenario-7 kind="success">Telegram live validation can optionally send a validation ping and confirm that a newer matching inbound message update becomes visible through getUpdates for a dedicated test chat.</scenario-7>
-        <scenario-8 kind="success">On the current Windows host, Docker Desktop Linux-container deployment starts the Telegram bot successfully, passes startup self-checks, verifies Telegram API connectivity with a real token, and reaches the healthy polling loop.</scenario-8>
-        <scenario-9 kind="success">Telegram Docker runtime on the current Windows host keeps shared model/output/upload/voice mounts and the named `/app/.state` volume available to the polling process.</scenario-9>
+        <scenario-8 kind="success">The Telegram Docker compose lane remains documented and runnable, and its checks cover startup self-checks, Bot API reachability, and polling behavior when the required bot token and validation context are available.</scenario-8>
+        <scenario-9 kind="success">Telegram Docker runtime documentation preserves the shared model/output/upload/voice mounts and the named `/app/.state` volume contract, while the retained evidence set in this session does not claim host-specific Telegram startup/API/polling proof.</scenario-9>
       </scenarios>
       <required-log-markers>
         <marker-1>[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]</marker-1>
@@ -566,14 +566,17 @@
     <V-M-CLI MODULE="M-CLI" PRIORITY="low">
       <test-files>
         <file>tests/unit/cli/test_runtime.py</file>
+        <file>tests/integration/test_cli_launchability.py</file>
       </test-files>
       <module-checks>
         <check-1>python -m pytest tests/unit/cli/test_runtime.py -m unit</check-1>
+        <check-2>python -m pytest tests/integration/test_cli_launchability.py -m integration</check-2>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">CLI runtime composes only core runtime services and the package entrypoint remains a thin wrapper.</scenario-1>
         <scenario-2 kind="success">KeyboardInterrupt exits the CLI cleanly without surfacing spurious runtime errors.</scenario-2>
         <scenario-3 kind="success">CLI documentation accurately states that the interactive menu remains Qwen-oriented while shared runtime metadata surfaces mixed-family support.</scenario-3>
+        <scenario-4 kind="success">Automated CLI launchability evidence is retained as a transcript in `.sisyphus/evidence/cli-launchability-transcript.txt` after `python -m cli` receives scripted exit input.</scenario-4>
       </scenarios>
     </V-M-CLI>
   </ModuleVerification>
@@ -689,7 +692,7 @@
       </commands>
       <required-evidence>
         <evidence-1>Support matrix in docs matches readiness and test evidence.</evidence-1>
-        <evidence-2>Windows Docker Desktop evidence covers successful image builds plus live server and Telegram container startup behavior on the validated host.</evidence-2>
+        <evidence-2>Windows Docker Desktop evidence covers successful image builds plus live server probes on the validated host. Telegram Docker remains a documented compose lane, but this retained evidence set does not claim it as proven on this host.</evidence-2>
       </required-evidence>
     </Gate-Migration-Phase-9>
 
@@ -735,9 +738,15 @@
     </Gate-Phase-4>
   </PhaseGates>
 
+  <AutomationNotes>
+    <note>Telegram Docker remains a documented compose lane, but the retained evidence set in this session only proves the server Docker path. Keep Telegram Docker wording as runnable and documented unless a specific run also retains its own logs and external validation artifacts.</note>
+    <note>`telegram-live` is a real Telegram Bot API reachability check, not Docker parity proof by itself.</note>
+  </AutomationNotes>
+
   <FailurePackets>
     <packet-template>
       <expected-fields>scenario, expected-evidence, observed-evidence, first-divergent-block, next-action</expected-fields>
     </packet-template>
   </FailurePackets>
 </VerificationPlan>
+

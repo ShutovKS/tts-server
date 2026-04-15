@@ -130,6 +130,7 @@
         <class-MLXBackend PURPOSE="Apple Silicon MLX inference backend" />
         <class-QwenFastBackend PURPOSE="Accelerated Qwen custom-only backend with explicit CUDA/runtime gating" />
         <class-TorchBackend PURPOSE="PyTorch CPU/CUDA inference backend" />
+        <class-ONNXBackend PURPOSE="ONNX runtime backend for Piper voices" />
         <class-TTSBackend PURPOSE="Abstract backend interface" />
         <class-LoadedModelHandle PURPOSE="Handle to a loaded model with metadata" />
         <class-BackendCapabilities PURPOSE="Backend feature flags" />
@@ -154,7 +155,7 @@
 
     <M-QWEN3-FAMILY NAME="Qwen3FamilyAdapter" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Wrap current custom, design, and clone semantics as the first explicit model-family adapter.</purpose>
-      <path>core/model_families/qwen3/</path>
+      <path>core/model_families/qwen3.py</path>
       <depends>M-MODEL-FAMILY, M-CONTRACTS, M-MODELS</depends>
       <verification-ref>V-M-QWEN3-FAMILY</verification-ref>
       <annotations>
@@ -224,6 +225,7 @@
       <path>core/registry/model_catalog.py</path>
       <depends>M-CONFIG, M-MODELS</depends>
       <verification-ref>V-M-MODEL-CATALOG</verification-ref>
+      <migration-note>Family-aware metadata is exposed through the split catalog surface and remains independent from runtime artifact presence.</migration-note>
       <annotations>
         <class-ModelCatalogRegistry PURPOSE="Family-aware model metadata registry" />
       </annotations>
@@ -235,6 +237,7 @@
       <path>core/registry/artifacts.py</path>
       <depends>M-MODEL-CATALOG, M-CONFIG</depends>
       <verification-ref>V-M-ARTIFACT-REGISTRY</verification-ref>
+      <migration-note>Artifact-state inspection is isolated from runtime loading and backs readiness reporting directly.</migration-note>
       <annotations>
         <class-ArtifactRegistry PURPOSE="Registry for local model artifact resolution and validation" />
       </annotations>
@@ -242,15 +245,16 @@
     </M-ARTIFACT-REGISTRY>
 
     <M-RUNTIME-MODEL-REGISTRY NAME="RuntimeModelRegistry" TYPE="CORE_LOGIC" STATUS="implemented">
-      <purpose>Manage runtime-loaded model handles, preload policy, and cache state independently from metadata and artifact discovery.</purpose>
+      <purpose>Manage runtime preload policy and descriptor-facing cache state independently from metadata and artifact discovery.</purpose>
       <path>core/registry/runtime_models.py</path>
-      <depends>M-BACKENDS, M-ARTIFACT-REGISTRY, M-METRICS</depends>
+      <depends>M-ARTIFACT-REGISTRY, M-MODELS, M-MODEL-REGISTRY</depends>
       <verification-ref>V-M-RUNTIME-MODEL-REGISTRY</verification-ref>
+      <migration-note>Runtime state depends only on artifact inspection and the public preload report contract.</migration-note>
       <annotations>
         <class-RuntimeModelRegistry PURPOSE="Registry for loaded model handles and preload state" />
       </annotations>
-      <CrossLink from="M-RUNTIME-MODEL-REGISTRY" to="M-BACKENDS" relation="loads-backend-handles" />
       <CrossLink from="M-RUNTIME-MODEL-REGISTRY" to="M-ARTIFACT-REGISTRY" relation="uses-validated-artifacts" />
+      <CrossLink from="M-RUNTIME-MODEL-REGISTRY" to="M-MODEL-REGISTRY" relation="reads-public-preload-report" />
     </M-RUNTIME-MODEL-REGISTRY>
 
     <M-CAPABILITY-RESOLVER NAME="CapabilityResolver" TYPE="CORE_LOGIC" STATUS="implemented">
@@ -269,23 +273,24 @@
     <M-SYNTHESIS-PLANNER NAME="SynthesisPlanner" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Resolve normalized synthesis requests into executable plans that preserve transport isolation.</purpose>
       <path>core/planning/planner.py</path>
-      <depends>M-EXECUTION-PLAN, M-CAPABILITY-RESOLVER, M-RUNTIME-MODEL-REGISTRY</depends>
+      <depends>M-EXECUTION-PLAN, M-MODEL-REGISTRY, M-OBSERVABILITY, M-MODELS</depends>
       <verification-ref>V-M-SYNTHESIS-PLANNER</verification-ref>
+      <migration-note>Planner resolution now relies on the registry contract as the single source of model lookup instead of carrying a direct manifest/catalog fallback, and the seam is typed through core/contracts/runtime.py.</migration-note>
       <annotations>
         <class-SynthesisPlanner PURPOSE="Planner for family, model, backend, and artifact resolution" />
       </annotations>
-      <CrossLink from="M-SYNTHESIS-PLANNER" to="M-CAPABILITY-RESOLVER" relation="delegates-compatibility-resolution" />
-      <CrossLink from="M-SYNTHESIS-PLANNER" to="M-RUNTIME-MODEL-REGISTRY" relation="requests-runtime-model-handles" />
+      <CrossLink from="M-SYNTHESIS-PLANNER" to="M-MODEL-REGISTRY" relation="resolves-models-through-registry-contract" />
+      <CrossLink from="M-SYNTHESIS-PLANNER" to="M-CONTRACTS" relation="depends-on-runtime-planning-protocol" />
     </M-SYNTHESIS-PLANNER>
 
     <M-BACKENDS-V2 NAME="ExecutionBackendContract" TYPE="CORE_LOGIC" STATUS="implemented">
-      <purpose>Evolve the backend surface from Qwen3 mode-shaped methods into runtime-oriented execution and diagnostics contracts.</purpose>
+      <purpose>Own the direct backend execution contract and diagnostics surface for family-prepared runtime requests.</purpose>
       <path>core/backends/base.py</path>
       <depends>M-BACKENDS, M-EXECUTION-PLAN, M-MODELS</depends>
       <verification-ref>V-M-BACKENDS-V2</verification-ref>
       <annotations>
         <class-ExecutionRequest PURPOSE="Backend execution request carrying family-prepared runtime inputs" />
-        <class-QwenFastBackend PURPOSE="Accelerated Qwen custom-only backend that remains additive to the generic execution contract" />
+        <class-QwenFastBackend PURPOSE="Accelerated Qwen custom-only backend that remains additive to the direct execution contract" />
       </annotations>
       <CrossLink from="M-BACKENDS-V2" to="M-EXECUTION-PLAN" relation="executes-normalized-plans" />
     </M-BACKENDS-V2>
@@ -297,7 +302,7 @@
       <verification-ref>V-M-TTS-SERVICE</verification-ref>
       <annotations>
         <class-TTSService PURPOSE="Core synthesis coordinator with inference guard" />
-        <fn-generate_audio PURPOSE="Dispatch synthesis call to the appropriate backend method" />
+        <fn-generate_audio PURPOSE="Dispatch family-prepared execution requests to the backend contract" />
       </annotations>
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-REGISTRY" relation="resolves-models" />
       <CrossLink from="M-TTS-SERVICE" to="M-INFRASTRUCTURE" relation="uses-audio-io" />
@@ -308,8 +313,9 @@
       <path>core/services/tts_service.py</path>
       <depends>M-SYNTHESIS-PLANNER, M-RUNTIME-MODEL-REGISTRY, M-INFRASTRUCTURE, M-OBSERVABILITY</depends>
       <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
+      <migration-note>Planner and coordinator seams depend on typed runtime registry protocols defined in core/contracts/runtime.py instead of concrete registry implementations.</migration-note>
       <annotations>
-        <class-TTSService PURPOSE="Coordinator-shaped synthesis service after migration" />
+        <class-TTSService PURPOSE="Coordinator-shaped synthesis service over planning, family preparation, and runtime execution" />
       </annotations>
       <CrossLink from="M-TTS-COORDINATOR" to="M-SYNTHESIS-PLANNER" relation="consumes-execution-plans" />
       <CrossLink from="M-TTS-COORDINATOR" to="M-MODEL-FAMILY" relation="delegates-family-semantics" />

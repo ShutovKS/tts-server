@@ -10,7 +10,7 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   BackendSelection - Selected backend with request and fallback metadata
+#   BackendSelection - Selected backend with request and selection metadata
 #   BackendRegistry - Backend selection and model spec resolution
 # END_MODULE_MAP
 #
@@ -20,9 +20,8 @@
 
 from __future__ import annotations
 
-import platform
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from core.backends.base import TTSBackend
 from core.errors import (
@@ -45,7 +44,7 @@ class BackendSelection:
 
 # START_CONTRACT: BackendRegistry
 #   PURPOSE: Select the active inference backend and resolve supported model specifications against it.
-#   INPUTS: { backends: Sequence[TTSBackend] - Registered backend implementations, requested_backend: str | None - Optional explicit backend override, autoselect: bool - Whether backend selection may fall back automatically, model_manifest_path: object - Optional manifest path override }
+#   INPUTS: { backends: Sequence[TTSBackend] - Registered backend implementations, requested_backend: str | None - Optional explicit backend override, autoselect: bool - Whether backend selection may auto-pick a ready backend, model_manifest_path: object - Optional manifest path override }
 #   OUTPUTS: { instance - Backend registry with a resolved backend selection }
 #   SIDE_EFFECTS: Loads the model manifest and selects an active backend during initialization
 #   LINKS: M-BACKENDS
@@ -122,7 +121,7 @@ class BackendRegistry:
 
     # START_CONTRACT: get_model_spec
     #   PURPOSE: Resolve a manifest model specification that is compatible with the selected backend.
-    #   INPUTS: { model_name: str | None - Requested model identifier, mode: str | None - Requested synthesis mode fallback }
+    #   INPUTS: { model_name: str | None - Requested model identifier, mode: str | None - Requested synthesis mode }
     #   OUTPUTS: { ModelSpec - Selected compatible model specification }
     #   SIDE_EFFECTS: none
     #   LINKS: M-BACKENDS
@@ -302,24 +301,24 @@ class BackendRegistry:
                 routing_mode = "selected_backend"
                 route_reason = "selected_backend_supports_model"
             else:
-                ranked_compatible = self._capability_resolver.rank_backends(
-                    backends=tuple(compatible), host=self._host_snapshot
-                )
-                accepted_compatible = next(
-                    (candidate for candidate in ranked_compatible if candidate.accepted),
-                    None,
-                )
-                chosen_candidate = accepted_compatible or ranked_compatible[0]
-                execution_backend = self._backends[chosen_candidate.backend_key]
-                routing_mode = "per_model_backend_fallback"
-                if not chosen_candidate.accepted:
-                    route_reason = (
-                        "no_ready_backend_for_model_using_best_effort_fallback"
-                    )
-                elif selected_backend_compatible:
+                if selected_backend_compatible:
+                    routing_mode = "unresolved"
                     route_reason = "selected_backend_unavailable_for_model_route"
                 else:
-                    route_reason = "selected_backend_incompatible_with_model"
+                    ranked_compatible = self._capability_resolver.rank_backends(
+                        backends=tuple(compatible), host=self._host_snapshot
+                    )
+                    accepted_compatible = next(
+                        (candidate for candidate in ranked_compatible if candidate.accepted),
+                        None,
+                    )
+                    if accepted_compatible is None:
+                        routing_mode = "unresolved"
+                        route_reason = "no_ready_backend_for_model"
+                    else:
+                        execution_backend = self._backends[accepted_compatible.backend_key]
+                        routing_mode = "per_model_backend_override"
+                        route_reason = "selected_backend_incompatible_with_model"
 
         return {
             "selected_backend": selected_backend.key,
@@ -349,6 +348,21 @@ class BackendRegistry:
                         "known_backends": sorted(self._backends),
                     },
                 )
+            diagnostics = backend.readiness_diagnostics().to_dict()
+            ready = bool(
+                diagnostics.get(
+                    "ready", backend.supports_platform() and backend.is_available()
+                )
+            )
+            if not ready:
+                raise BackendNotAvailableError(
+                    f"Configured backend is not ready: {self._requested_backend}",
+                    details={
+                        "backend": self._requested_backend,
+                        "known_backends": sorted(self._backends),
+                        "reason": diagnostics.get("reason") or "backend_not_ready",
+                    },
+                )
             return BackendSelection(
                 backend=backend,
                 requested_backend=self._requested_backend,
@@ -372,7 +386,6 @@ class BackendRegistry:
         candidates = self._capability_resolver.rank_backends(
             backends=tuple(self._backends.values()), host=self._host_snapshot
         )
-        ordered = [self._backends[candidate.backend_key] for candidate in candidates]
         for candidate in candidates:
             if candidate.accepted:
                 return BackendSelection(
@@ -382,43 +395,15 @@ class BackendRegistry:
                     selection_reason=candidate.reason,
                 )
         # END_BLOCK_AUTOSELECT_READY_BACKEND
-        # START_BLOCK_AUTOSELECT_PLATFORM_BACKEND
-        for candidate in candidates:
-            backend = self._backends[candidate.backend_key]
-            if backend.supports_platform():
-                return BackendSelection(
-                    backend=backend,
-                    requested_backend=None,
-                    auto_selected=True,
-                    selection_reason=candidate.reason,
-                )
-        # END_BLOCK_AUTOSELECT_PLATFORM_BACKEND
-        # START_BLOCK_FALLBACK_BACKEND_SELECTION
-        first = ordered[0]
-        return BackendSelection(
-            backend=first,
-            requested_backend=None,
-            auto_selected=True,
-            selection_reason="fallback_first_backend",
+        # START_BLOCK_REJECT_WITHOUT_READY_BACKEND
+        raise BackendNotAvailableError(
+            "No registered backend is ready for the current host",
+            details={
+                "known_backends": sorted(self._backends),
+                "host_platform": self._host_snapshot.platform_system,
+            },
         )
-        # END_BLOCK_FALLBACK_BACKEND_SELECTION
-
-    @staticmethod
-    def _prefer_platform_backend(
-        backends: Iterable[TTSBackend],
-    ) -> Iterable[TTSBackend]:
-        current = platform.system().lower()
-        if current == "darwin":
-            preferred = ["mlx", "torch"]
-        else:
-            preferred = ["torch", "mlx"]
-        ranked = sorted(
-            backends,
-            key=lambda backend: preferred.index(backend.key)
-            if backend.key in preferred
-            else len(preferred),
-        )
-        return ranked
+        # END_BLOCK_REJECT_WITHOUT_READY_BACKEND
 
     @property
     def host_snapshot(self):

@@ -96,7 +96,7 @@ class VoxCPMFamilyAdapter(ModelFamilyAdapter):
             )
 
         return FamilyPreparedExecution(
-            legacy_mode=plan.legacy_mode,
+            execution_mode=plan.execution_mode,
             generation_kwargs=generation_kwargs,
         )
 

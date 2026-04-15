@@ -1,5 +1,5 @@
 # FILE: server/api/errors.py
-# VERSION: 1.0.0
+# VERSION: 1.0.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Map domain errors to HTTP error responses with structured JSON bodies.
 #   SCOPE: Exception handlers for all CoreError subclasses
@@ -22,7 +22,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.0.1 - Restored build_error_details compatibility with default_reason call sites so mapped API errors keep returning structured payloads]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -369,7 +369,7 @@ def map_exception_to_descriptor(
 #   LINKS: M-SERVER, M-ERRORS
 # END_CONTRACT: build_generation_error_descriptor
 def build_generation_error_descriptor(exc: TTSGenerationError) -> ErrorDescriptor:
-    details = build_error_details(exc, default_reason=str(exc))
+    details = build_error_details(exc, default_message=str(exc))
     return ErrorDescriptor(
         status_code=500,
         code="generation_failed",
@@ -380,16 +380,22 @@ def build_generation_error_descriptor(exc: TTSGenerationError) -> ErrorDescripto
 
 # START_CONTRACT: build_error_details
 #   PURPOSE: Convert exception context into sanitized public error details.
-#   INPUTS: { exc: Exception - exception carrying optional public context, default_reason: str - fallback reason when context is absent }
+#   INPUTS: { exc: Exception - exception carrying optional public context, default_message: str | None - default message when context is absent, default_reason: str | None - compatibility alias for the fallback reason }
 #   OUTPUTS: { dict[str, object] - sanitized public error detail payload }
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER, M-ERRORS
 # END_CONTRACT: build_error_details
-def build_error_details(exc: Exception, *, default_reason: str) -> dict[str, object]:
+def build_error_details(
+    exc: Exception,
+    *,
+    default_message: str | None = None,
+    default_reason: str | None = None,
+) -> dict[str, object]:
     context = getattr(exc, "context", None)
     if context is not None and hasattr(context, "to_dict"):
         return sanitize_public_error_details(context.to_dict())
-    return sanitize_public_error_details({"reason": default_reason})
+    fallback_reason = default_reason or default_message or str(exc)
+    return sanitize_public_error_details({"reason": fallback_reason})
 
 
 # START_CONTRACT: build_retry_after_headers
