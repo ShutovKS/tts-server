@@ -62,7 +62,7 @@ docker compose -f docker-compose.server.yaml up --build
 
 - `GET /api/v1/models`
 
-Model discovery теперь отдаёт family metadata, supported capabilities, selected backend, per-model execution backend, missing artifacts и route explanations для mixed-family deployment. Для Qwen custom models здесь также может появляться optional route candidate `qwen_fast`, который в текущем MVP остаётся **custom-only** и уходит в fallback на `torch`, если fast-path prerequisites не выполнены.
+Model discovery теперь отдаёт family metadata, supported capabilities, selected backend, per-model execution backend, missing artifacts и route explanations для mixed-family deployment. Для Qwen custom models здесь также может появляться optional route candidate `qwen_fast`, который в текущем MVP остаётся **custom-only** и при невыполненных fast-path prerequisites остаётся rejected/unresolved route candidate.
 
 ### Синхронные TTS endpoint'ы
 
@@ -92,7 +92,7 @@ Async submit endpoint'ы принимают заголовок `Idempotency-Key`
 - При превышении таймаута inference возвращается `request_timeout` с HTTP `504`.
 - Unsupported model/family combinations теперь возвращают controlled error `model_capability_not_supported` с явными capability details.
 - `GET /health/ready` теперь включает host snapshot и mixed-backend routing summary, чтобы оператор видел, почему Piper может маршрутизироваться в ONNX даже при глобально выбранном MLX.
-- Ускоренный `qwen_fast` lane остаётся additive и optional; readiness/model payload'ы могут показывать его как отклонённого route candidate с явной причиной fallback, даже если фактический execution backend остаётся `mlx` или `torch`.
+- Ускоренный `qwen_fast` lane остаётся additive и optional; readiness/model payload'ы могут показывать его как отклонённого route candidate с явной причиной отклонения, а не как автоматическое переключение на другой backend.
 
 ## Конфигурация
 

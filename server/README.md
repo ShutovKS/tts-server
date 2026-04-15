@@ -62,7 +62,7 @@ The image exposes port `8000` and uses `python -m uvicorn server:app --host 0.0.
 
 - `GET /api/v1/models`
 
-Model discovery now exposes family metadata, supported capabilities, selected backend, per-model execution backend, missing artifacts, and route explanations for mixed-family deployments. For Qwen custom models this may include the optional `qwen_fast` route candidate, which is **custom-only** in the current MVP and falls back to `torch` when its fast-path prerequisites are not satisfied.
+Model discovery now exposes family metadata, supported capabilities, selected backend, per-model execution backend, missing artifacts, and route explanations for mixed-family deployments. For Qwen custom models this may include the optional `qwen_fast` route candidate, which is **custom-only** in the current MVP and remains unresolved when its fast-path prerequisites are not satisfied.
 
 ### Synchronous TTS endpoints
 
@@ -95,7 +95,31 @@ Async submission endpoints accept the `Idempotency-Key` header.
 - Inference timeouts return `request_timeout` with HTTP `504`.
 - Unsupported model/family combinations now return controlled `model_capability_not_supported` errors with explicit capability metadata.
 - `GET /health/ready` now includes host snapshot and mixed-backend routing summaries so operators can see why a Piper model may route to ONNX while MLX remains globally selected.
-- The accelerated `qwen_fast` lane is additive and optional; readiness and model payloads may show it as a rejected route candidate with an explicit fallback reason even when the active execution backend remains `mlx` or `torch`.
+- The accelerated `qwen_fast` lane is additive and optional; readiness and model payloads may show it as a rejected route candidate with an explicit rejection reason when the selected fast lane is unavailable.
+
+## Host-mode validation lane
+
+For V1 host validation, keep `python scripts/validate_runtime.py smoke-server` as the baseline HTTP orchestrator. That command is meant to sit on top of deterministic adapter checks rather than replace them: run `python -m pytest -m "unit or integration"` and the named HTTP integration cases for contract coverage, then use `smoke-server` for live `/health/live` and `/health/ready` startup proof, synchronous audio generation, async job submit/status/result verification, and scenario-aware backend assertions for the selected smoke target.
+
+`python -m pytest -m "unit or integration"` remains the canonical first step for this lane. If that check reports a deterministic-baseline failure, record it separately from host runtime evidence so the pytest surface and the smoke-server lane stay easy to distinguish.
+
+The host lane is target-aware by design. The existing smoke suite reuses one path for default Qwen custom validation plus `OmniVoice-Custom --expected-backend torch`, `VoxCPM2-Custom --expected-backend torch`, and `Piper-en_US-lessac-medium --expected-backend onnx`; those backend expectations should stay tied to the chosen smoke target instead of being treated as one global backend rule.
+
+When you capture host evidence, retain the `server_log_path` returned by `python scripts/validate_runtime.py smoke-server` and pair it with stable response/readiness fields such as `x-model-id`, `x-backend-id`, request ids, job ids, and readiness routing metadata. Skip host smoke only for documented prerequisite failures such as missing `ffmpeg`, unreachable local server, absent runtime-ready models, missing model folders, or missing optional runtime endpoints/dependencies for the selected target.
+
+## Docker-mode validation lane
+
+Docker is an additive V1 parity lane for the HTTP adapter, not a second copy of the host smoke flow. Keep parity at the scenario/assertion level: the compose deployment must prove healthy startup and HTTP discovery behavior, but it does not need to run the exact same command sequence as `smoke-server`.
+
+1. Start the checked-in compose scenario in detached mode: `docker compose -f docker-compose.server.yaml up --build -d server`.
+2. Probe the containerized adapter surface explicitly from inside the service and retain those JSON artifacts under `.sisyphus/evidence/`:
+   - `docker compose -f docker-compose.server.yaml exec -T server python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/live').read().decode())" > .sisyphus/evidence/server-docker-health-live.json`
+   - `docker compose -f docker-compose.server.yaml exec -T server python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready').read().decode())" > .sisyphus/evidence/server-docker-health-ready.json`
+   - `docker compose -f docker-compose.server.yaml exec -T server python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/models').read().decode())" > .sisyphus/evidence/server-docker-models.json`
+3. Retain raw Docker logs as the canonical container artifact: `docker compose -f docker-compose.server.yaml logs --no-color server > .sisyphus/evidence/server-docker-log.txt`.
+4. Tear down the lane explicitly with `docker compose -f docker-compose.server.yaml down --remove-orphans`.
+
+Skip the Docker HTTP lane only when Docker/Compose is unavailable, the image cannot build or start, the service never reaches a probeable HTTP state, or the compose-mounted local runtime assets are intentionally absent. Model-dependent sync/async speech smoke remains a host-lane concern in V1, so Docker parity should not be rejected just because it does not replay every host-only smoke branch.
 
 ## Configuration
 

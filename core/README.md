@@ -66,7 +66,7 @@ The resulting runtime exposes the shared services consumed by transport adapters
 ### Family and planning layer
 
 - [`SynthesisCoordinator`](services/tts_service.py) — internal coordinator over planning, family preparation, and runtime execution
-- [`SynthesisPlanner`](planning/planner.py) — normalized request planning bridge
+- [`SynthesisPlanner`](planning/planner.py) — registry-contract planner for normalized request resolution
 - [`Qwen3FamilyAdapter`](model_families/qwen3.py) — current Qwen3 family semantics
 - [`PiperFamilyAdapter`](model_families/piper.py) — Piper family semantics for local ONNX voices
 - [`HostProbe`](planning/host_probe.py) and [`CapabilityResolver`](planning/capability_resolver.py) — explainable backend selection surfaces
@@ -113,7 +113,7 @@ The manifest lives in [models/manifest.v1.json](models/manifest.v1.json). Local 
 The runtime currently supports these model families:
 
 - `Qwen3-TTS` via `mlx` and `torch`
-- `Qwen3-TTS` custom-only accelerated lane via `qwen_fast` with safe fallback to `torch`
+- `Qwen3-TTS` custom-only accelerated lane via `qwen_fast` with explicit route diagnostics when the fast lane is unavailable
 - `OmniVoice` via `torch`
 - `VoxCPM2` via `torch`
 - `Piper` via `onnx`

@@ -70,9 +70,23 @@ The compose file [../docker-compose.telegram-bot.yaml](../docker-compose.telegra
 
 The image includes `ffmpeg` and persists delivery metadata at `/app/.state/telegram_delivery_store.json`.
 
+This is the documented Telegram Docker lane for the module, but this README does not claim retained host proof for startup, Bot API reachability, or polling success on the current machine.
+
 ## Telegram token limitation
 
-On the current Windows host with Docker Desktop Linux containers, the Telegram compose deployment was verified beyond image build: the bot completed startup self-checks, passed Telegram API connectivity verification, and entered the healthy polling loop. Full external integration still requires a real Telegram bot token and the intended chat/user context for end-to-end command handling.
+On the current Windows host with Docker Desktop Linux containers, the Telegram compose lane remains documented and runnable, but the retained evidence set here does not prove startup self-checks, Telegram API connectivity, or entry into the healthy polling loop on this machine. Full external integration still requires a real Telegram bot token and the intended chat/user context for end-to-end command handling.
+
+## Docker-mode validation lane
+
+The Telegram Docker lane is intentionally split between behavioral API checks and container-runtime checks. Use the checked-in compose file to exercise startup self-checks, state-volume wiring, and the polling loop, and pair that with `python scripts/validate_runtime.py telegram-live ...` for Bot API behavior. Treat the lane as documented operator procedure unless you also retain run-specific logs and external validation evidence from the same execution.
+
+1. Export a real `QWEN_TTS_TELEGRAM_BOT_TOKEN` before launching the compose lane. Add `QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID` only when you want the advisory `sendMessage` / `getUpdates` subchecks.
+2. Start the checked-in compose scenario in detached mode: `docker compose -f docker-compose.telegram-bot.yaml up --build -d telegram-bot`.
+3. Run the behavioral Bot API check on the host side with `python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"`; add `--chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."` only when you have a dedicated validation chat.
+4. Retain raw compose logs as the polling artifact: `docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot > .sisyphus/evidence/telegram-docker-log.txt`. Prefer stable markers such as `[Poller][start][BLOCK_DISPATCH_UPDATES]` over prose-only snippets.
+5. Tear down explicitly with `docker compose -f docker-compose.telegram-bot.yaml down --remove-orphans`. Reserve `down -v` for intentional state resets because the named `/app/.state` volume is part of the deployment contract.
+
+Skip the Docker Telegram lane only when Docker is unavailable, the bot token is missing, or Telegram is unreachable. Missing validation-chat credentials should downgrade only the advisory `sendMessage` / `getUpdates` subchecks rather than failing the whole compose startup/polling procedure.
 
 ## Commands
 

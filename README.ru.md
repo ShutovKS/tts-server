@@ -68,7 +68,7 @@ pip install -r requirements.txt
 brew install ffmpeg
 ```
 
-### Linux или Windows
+### Linux
 
 ```bash
 python3.11 -m venv .venv311
@@ -103,7 +103,7 @@ pip install -r requirements.txt
 Это окружение рассчитано на:
 
 - стандартный Qwen Torch inference
-- optional `qwen_fast` fallback/route decisions в self-check
+- optional `qwen_fast` route diagnostics в self-check
 - Piper ONNX inference
 
 #### Отдельное окружение для OmniVoice
@@ -150,11 +150,11 @@ C:\Users\shutov.k.s\AppData\Local\Programs\sox
 
 ### Важная оговорка по Qwen Torch lane
 
-Немаковый Qwen lane зависит от официального Python-пакета `qwen-tts`, который используется в [`TorchBackend`](core/backends/torch_backend.py). Upstream-репозиторий Qwen3-TTS документирует `pip install -U qwen-tts` как стандартный путь установки и после этого использует `from qwen_tts import Qwen3TTSModel`. Поэтому для Linux/Windows у Qwen уже есть authoritative install path, но поддержку всё равно нужно считать частично подтверждённой или best effort, пока полный Torch lane не будет эмпирически прогнан на этих хостах.
+Немаковый Qwen lane зависит от официального Python-пакета `qwen-tts`, который используется в [`TorchBackend`](core/backends/torch_backend.py). Upstream-репозиторий Qwen3-TTS документирует `pip install -U qwen-tts` как стандартный путь установки и после этого использует `from qwen_tts import Qwen3TTSModel`. Поэтому и для Linux, и для Windows у стандартного Torch lane уже есть authoritative install path, но текущий support claim теперь зависит от платформы: для Linux поддержка остаётся частично подтверждённой, пока полный Torch lane не будет эмпирически прогнан на этом хосте, а Windows Torch Qwen support уже считается proven благодаря native host validation, зафиксированной в [docs/support-matrix.md](docs/support-matrix.md).
 
 ### Важная оговорка по ускоренному Qwen lane
 
-В репозитории также появился дополнительный backend `qwen_fast` для **custom-only** Qwen synthesis. Этот lane optional, не подменяет стандартный `torch` backend key и при отсутствии нужных runtime prerequisites автоматически уходит в безопасный fallback на стандартный Torch Qwen path.
+В репозитории также появился дополнительный backend `qwen_fast` для **custom-only** Qwen synthesis. Этот lane optional, не подменяет стандартный `torch` backend key и при отсутствии нужных runtime prerequisites остаётся в состоянии rejected/unresolved route вместо автоматического переключения на Torch execution path.
 
 Pinned README проекта faster-qwen3-tts документирует путь установки ускоренного runtime так:
 
@@ -260,7 +260,7 @@ python scripts/runtime_self_check.py
 python scripts/runtime_self_check.py --strict
 ```
 
-Если `qwen_fast` включён или рассматривается для маршрутизации, self-check теперь дополнительно показывает `backend_support`, route candidates и явные причины fallback/rejection, чтобы оператор видел, когда ускоренный custom-only lane был выбран, а когда нет.
+Если `qwen_fast` включён или рассматривается для маршрутизации, self-check теперь дополнительно показывает `backend_support`, route candidates и явные причины отклонения, чтобы оператор видел, когда ускоренный custom-only lane был выбран, а когда нет.
 
 Для OmniVoice и VoxCPM2 тот же self-check теперь показывает их как **Torch-routed family entries**. Они не добавляют новые backend keys; вместо этого они появляются как model-family элементы, у которых `execution_backend` должен разрешаться в `torch`, если локальные артефакты и optional Python packages доступны.
 
@@ -389,7 +389,7 @@ docker compose -f docker-compose.telegram-bot.yaml up --build
 Поддерживаемые backend keys теперь включают:
 
 - `mlx` — Qwen3 на Apple Silicon
-- `qwen_fast` — optional ускоренный Qwen custom-only lane с безопасным fallback на `torch`
+- `qwen_fast` — optional ускоренный Qwen custom-only lane с явной диагностикой готовности и маршрутизации
 - `torch` — Qwen3, OmniVoice и VoxCPM2 на Torch CPU/CUDA-совместимых runtime
 - `onnx` — Piper local voice inference через ONNX runtime
 

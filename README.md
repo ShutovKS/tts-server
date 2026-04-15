@@ -68,7 +68,7 @@ pip install -r requirements.txt
 brew install ffmpeg
 ```
 
-### Linux or Windows
+### Linux
 
 ```bash
 python3.11 -m venv .venv311
@@ -103,7 +103,7 @@ pip install -r requirements.txt
 That environment is intended for:
 
 - standard Qwen Torch inference
-- optional `qwen_fast` fallback decisions exposed by self-checks
+- optional `qwen_fast` route diagnostics exposed by self-checks
 - Piper ONNX inference
 
 #### Dedicated OmniVoice environment
@@ -150,11 +150,11 @@ If `sox --version` still fails, add that directory to your user `PATH` and open 
 
 ### Optional Qwen Torch lane note
 
-The non-macOS Qwen lane depends on the official `qwen-tts` Python package used by [`TorchBackend`](core/backends/torch_backend.py). The upstream Qwen3-TTS repository documents `pip install -U qwen-tts` as the standard installation path and exposes `from qwen_tts import Qwen3TTSModel` after installation. Linux/Windows Qwen support therefore has an authoritative package path, but should still be treated as partially proven or best effort here until the full Torch lane is empirically validated on those hosts.
+The non-macOS Qwen lane depends on the official `qwen-tts` Python package used by [`TorchBackend`](core/backends/torch_backend.py). The upstream Qwen3-TTS repository documents `pip install -U qwen-tts` as the standard installation path and exposes `from qwen_tts import Qwen3TTSModel` after installation. Linux and Windows therefore both have an authoritative package path for the standard Torch lane, but the current support claim is platform-specific: Linux remains partially proven until the full Torch lane is empirically validated there, while Windows Torch Qwen support is now treated as proven by the native host validation recorded in [docs/support-matrix.md](docs/support-matrix.md).
 
 ### Optional accelerated Qwen lane note
 
-The repository also includes an additive `qwen_fast` backend for **custom-only** Qwen synthesis. This lane is optional, remains separate from the standard `torch` backend key, and falls back to the standard Torch Qwen path when its runtime prerequisites are not satisfied.
+The repository also includes an additive `qwen_fast` backend for **custom-only** Qwen synthesis. This lane is optional, remains separate from the standard `torch` backend key, and surfaces an unresolved route when its runtime prerequisites are not satisfied.
 
 The pinned faster-qwen3-tts README documents the accelerated install path as:
 
@@ -260,7 +260,7 @@ Use strict mode in automation when you want a non-zero exit code for degraded ru
 python scripts/runtime_self_check.py --strict
 ```
 
-When `qwen_fast` is enabled or considered, the self-check output also exposes `backend_support`, route candidates, and explicit fallback reasons so operators can see when the accelerated custom-only lane was selected, bypassed, or rejected.
+When `qwen_fast` is enabled or considered, the self-check output also exposes `backend_support`, route candidates, and explicit rejection reasons so operators can see when the accelerated custom-only lane was selected, left unresolved, or rejected.
 
 For OmniVoice and VoxCPM2, the same self-check output now shows them as **Torch-routed family entries**. They do not introduce new backend keys; instead, they appear as model-family items whose `execution_backend` is expected to resolve to `torch` when their local artifacts and optional Python packages are present.
 
@@ -277,12 +277,24 @@ python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM
 ```
 
 - `host-matrix` validates the current host snapshot plus simulated `qwen_fast` optional-lane evidence.
-- `smoke-server` starts a local HTTP server, waits for health probes, runs the smoke suite, and stops the server automatically.
+- `smoke-server` starts a local HTTP server, waits for health probes, runs the smoke suite, and stops the server automatically. This remains the baseline host-mode HTTP orchestrator for live validation.
 - `smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx` validates the Piper HTTP path explicitly through `POST /v1/audio/speech` while asserting ONNX routing for that model.
 - `smoke-server --smoke-model-id OmniVoice-Custom --expected-backend torch` validates the OmniVoice HTTP path through the shared Torch family lane.
 - `smoke-server --smoke-model-id VoxCPM2-Custom --expected-backend torch` validates the VoxCPM2 HTTP path through the shared Torch family lane.
 - `telegram-live` verifies real Telegram Bot API reachability and can optionally send a validation message when you also pass `--chat-id`.
 - Add `--expect-update-chat-id` and optionally `--expect-update-text` when you want an opt-in dedicated-chat check that also confirms a newer matching inbound update is visible through `getUpdates` without launching the long-polling bot runtime.
+
+For the V1 HTTP adapter, read the host lane as layered evidence rather than as a smoke-only shortcut: `python -m pytest -m "unit or integration"` and named integration cases provide deterministic API contract coverage, then `python scripts/validate_runtime.py smoke-server` adds live startup/readiness, sync audio, async job verification, scenario-aware backend/model-route assertions, documented skip behavior, and retained `server_log_path` evidence.
+
+`python -m pytest -m "unit or integration"` remains the canonical first step. If a deterministic-baseline failure appears during that check, record it separately from runtime evidence so the adapter, smoke, Docker, Telegram, and CLI lanes stay easy to interpret.
+
+There is also an **optional local-only deep-validation lane** for operators who want stronger real-model evidence on a specific machine. In V1, that lane starts with `python scripts/validate_runtime.py host-matrix` and/or `python scripts/runtime_self_check.py`, then reuses the existing representative `smoke-server` targets for Qwen, OmniVoice, VoxCPM2, and Piper only when the corresponding local assets and runtime packs are installed. Treat outcomes explicitly as ready/passed, missing assets, corrupt or incomplete assets, unsupported hardware/backend, missing optional dependency packs, or intentionally skipped optional features. This lane is advisory and local-only; it is not a CI or release requirement.
+
+There is also an **optional advisory-only LLM-assisted evaluation lane** for teams that want semantic review of completed evidence packs. In V1, that lane must read only persisted repository-local artifacts already produced by the existing validation flows, such as retained `server_log_path` logs, `.sisyphus/evidence/server-docker-log.txt`, Docker health/model JSON artifacts, retained `telegram-live` summaries, `.sisyphus/evidence/telegram-docker-log.txt`, and `.sisyphus/evidence/cli-*.txt` transcripts. It must not read ephemeral terminal state or live process internals, it must not create a second evidence framework, and it remains strictly advisory: deterministic failures and structured-artifact failures stay failures even if an LLM summary sounds sympathetic or inconclusive.
+
+V1 Docker validation is intentionally narrower than host validation. Only the HTTP server and Telegram bot have Docker parity lanes, both using the checked-in compose files: `docker compose -f docker-compose.server.yaml up --build -d server` with explicit `/health/live`, `/health/ready`, and `/api/v1/models` probes retained under `.sisyphus/evidence/server-docker-health-live.json`, `.sisyphus/evidence/server-docker-health-ready.json`, and `.sisyphus/evidence/server-docker-models.json` plus `.sisyphus/evidence/server-docker-log.txt`; and `docker compose -f docker-compose.telegram-bot.yaml up --build -d telegram-bot` paired with `python scripts/validate_runtime.py telegram-live ...`, `.sisyphus/evidence/telegram-docker-log.txt`, and explicit `docker compose ... down --remove-orphans` teardown. CLI support claims remain host/transcript based and do not require Docker in V1.
+
+For the V1 CLI lane, keep automation intentionally narrow: `python -m cli` with scripted stdin `q\n` proves launchability and runtime wiring, while the complex interactive custom/design/clone/playback paths remain transcript-captured evidence stored under `.sisyphus/evidence/cli-launchability-transcript.txt`, `.sisyphus/evidence/cli-custom-voice-transcript.txt`, `.sisyphus/evidence/cli-design-session-transcript.txt`, `.sisyphus/evidence/cli-clone-manager-transcript.txt`, and `.sisyphus/evidence/cli-playback-transcript.txt`.
 
 ## Optional GRACE CLI install
 
@@ -331,6 +343,8 @@ docker compose -f docker-compose.server.yaml up --build
 
 The compose scenario builds from [server/Dockerfile](server/Dockerfile) with repository-root build context, mounts shared working directories, and exposes port `8000` by default.
 
+For V1 Docker validation, use the detached compose lane rather than treating this section as launch-only documentation: `docker compose -f docker-compose.server.yaml up --build -d server`, probe `/health/live`, `/health/ready`, and `/api/v1/models` into `.sisyphus/evidence/server-docker-health-live.json`, `.sisyphus/evidence/server-docker-health-ready.json`, and `.sisyphus/evidence/server-docker-models.json`, retain `docker compose -f docker-compose.server.yaml logs --no-color server > .sisyphus/evidence/server-docker-log.txt`, then stop the lane with `docker compose -f docker-compose.server.yaml down --remove-orphans`.
+
 See [server/README.md](server/README.md) for endpoints, async jobs, and configuration details.
 
 ## Running the Telegram bot
@@ -367,9 +381,13 @@ docker compose -f docker-compose.telegram-bot.yaml up --build
 
 The compose scenario builds from [telegram_bot/Dockerfile](telegram_bot/Dockerfile), mounts shared model/output directories, and persists delivery metadata in the named volume declared by [docker-compose.telegram-bot.yaml](docker-compose.telegram-bot.yaml).
 
+This is a documented Telegram Docker lane, but this README does not claim retained host proof for startup, Bot API reachability, or polling success on this machine.
+
+For V1 Docker validation, use the detached compose lane and pair it with the existing live API checker instead of inventing a second Bot API probe: `docker compose -f docker-compose.telegram-bot.yaml up --build -d telegram-bot`, run `python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"` (plus the optional `--chat-id` / `--expect-update-*` flags when you have a dedicated validation chat), retain `docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot > .sisyphus/evidence/telegram-docker-log.txt`, and finish with `docker compose -f docker-compose.telegram-bot.yaml down --remove-orphans`.
+
 ### Telegram token note
 
-On the current Windows host with Docker Desktop Linux containers, the compose deployment was verified through real bot startup, Telegram API connectivity, and entry into the healthy polling loop. Full end-to-end Telegram interaction still depends on a real and valid bot token and the intended chat/user context.
+On the current Windows host with Docker Desktop Linux containers, the Telegram compose lane remains documented and runnable, but the retained evidence set here does not prove startup, Telegram API connectivity, or the healthy polling loop on this machine. Full end-to-end Telegram interaction still depends on a real and valid bot token and the intended chat/user context.
 
 See [telegram_bot/README.md](telegram_bot/README.md) for command syntax, operational notes, and deployment details.
 
@@ -389,11 +407,15 @@ Shared settings are parsed by [`CoreSettings.from_env()`](core/config.py:112). C
 Supported backend keys now include:
 
 - `mlx` — Qwen3 on Apple Silicon
-- `qwen_fast` — optional accelerated Qwen custom-only lane with safe fallback to `torch`
+- `qwen_fast` — optional accelerated Qwen custom-only lane with explicit readiness and route diagnostics
 - `torch` — Qwen3, OmniVoice, and VoxCPM2 on Torch CPU/CUDA-compatible runtimes
 - `onnx` — Piper local voice inference through ONNX runtime
 
 Read the release-facing support matrix in [docs/support-matrix.md](docs/support-matrix.md) before making platform support claims.
+
+Treat [docs/support-matrix.md](docs/support-matrix.md) and [docs/verification-plan.xml](docs/verification-plan.xml) as paired release evidence docs. If a validation command, critical flow, critical scenario, or evidence level changes, update both files together so the support claim and its executable proof stay in sync.
+
+Future validation scenarios should extend that same evidence model. Keep new scenario onboarding tied to the existing support matrix and verification plan, and avoid adding a second registry, benchmarking lane, latency-certification lane, or subjective audio-quality certification path.
 
 Server-specific settings are documented in [server/README.md](server/README.md), and Telegram-specific settings are documented in [telegram_bot/README.md](telegram_bot/README.md).
 

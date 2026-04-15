@@ -66,7 +66,7 @@ runtime = build_runtime(settings)
 ### Family и planning layer
 
 - [`SynthesisCoordinator`](services/tts_service.py) — внутренний coordinator над planning, family preparation и runtime execution
-- [`SynthesisPlanner`](planning/planner.py) — bridge для normalized request planning
+- [`SynthesisPlanner`](planning/planner.py) — planner на registry contract для normalized request resolution
 - [`Qwen3FamilyAdapter`](model_families/qwen3.py) — текущая family semantics для Qwen3
 - [`PiperFamilyAdapter`](model_families/piper.py) — family semantics для Piper local ONNX voices
 - [`HostProbe`](planning/host_probe.py) и [`CapabilityResolver`](planning/capability_resolver.py) — surfaces для объяснимого выбора backend
@@ -113,7 +113,7 @@ Transport-specific настройки описаны в [../server/README.ru.md]
 Runtime сейчас поддерживает следующие model families:
 
 - `Qwen3-TTS` через `mlx` и `torch`
-- `Qwen3-TTS` custom-only accelerated lane через `qwen_fast` с безопасным fallback на `torch`
+- `Qwen3-TTS` custom-only accelerated lane через `qwen_fast` с явной диагностикой маршрута, когда fast lane недоступен
 - `OmniVoice` через `torch`
 - `VoxCPM2` через `torch`
 - `Piper` через `onnx`

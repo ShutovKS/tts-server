@@ -101,6 +101,15 @@ Useful variables include:
 - If the shared runtime selects `qwen_fast`, that accelerated lane applies only to Qwen custom synthesis and still falls back safely to `torch` when unavailable.
 - The current menu remains Qwen-oriented for custom/design/clone workflows; Piper support is visible through shared runtime metadata and HTTP health/model surfaces, but the interactive CLI does not yet provide a dedicated Piper-first menu.
 
+## V1 validation lane
+
+CLI validation is intentionally hybrid in V1.
+
+- The automated baseline is launchability only: run `python -m cli`, feed stdin `q`, and retain stdout/stderr at `../.sisyphus/evidence/cli-launchability-transcript.txt`.
+- Complex interactive paths stay transcript-based rather than fully automated: retain `../.sisyphus/evidence/cli-custom-voice-transcript.txt`, `../.sisyphus/evidence/cli-design-session-transcript.txt`, `../.sisyphus/evidence/cli-clone-manager-transcript.txt`, and `../.sisyphus/evidence/cli-playback-transcript.txt` for the corresponding manual sessions.
+- When storing those transcripts, include enough context to reconnect the run to the exercised flow: timestamp, `python -m cli` command shape, selected model or voice profile, and any generated output path under `../.outputs/`.
+- Docker is explicitly out of scope for the CLI in V1; do not reinterpret the server or Telegram compose lanes as CLI validation requirements.
+
 ## Related docs
 
 - [../README.md](../README.md) — repository quick start
