@@ -1,0 +1,414 @@
+# FILE: scripts/launch-windows.ps1
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Provide an interactive Windows PowerShell launcher that orchestrates profile-aware environment setup, optional model downloads, and adapter startup.
+#   SCOPE: Windows-only preflight checks, service/model prompts, launcher CLI orchestration, family-env bootstrap, model artifact validation, optional Hugging Face and Piper downloads, and final adapter execution.
+#   DEPENDS: M-LAUNCHER, M-PROFILE-RESOLVER, M-CONFIG
+#   LINKS: M-WINDOWS-LAUNCHER
+#   ROLE: SCRIPT
+#   MAP_MODE: LOCALS
+# END_MODULE_CONTRACT
+#
+# START_MODULE_MAP
+#   $SCRIPT:MODEL_OPTIONS - Curated model menu entries mapped to runtime family contours and local artifact folders.
+#   Get-ProjectRoot - Resolve the repository root relative to the script location.
+#   ConvertTo-PlainText - Convert a secure string to plaintext for transient process-local environment use.
+#   Read-TrimmedHostInput - Read one host prompt and normalize null or whitespace-padded input.
+#   Resolve-HttpProbeHost - Convert bind hosts like 0.0.0.0 or :: into a client-reachable loopback probe target.
+#   Select-MenuOption - Prompt the user to select one numbered option from a curated menu.
+#   Invoke-LauncherJson - Execute the profile-aware Python launcher and parse its JSON payload.
+#   Assert-WindowsPreflight - Validate that the script runs on Windows PowerShell with Python 3.11 and ffmpeg available.
+#   Test-ModelArtifacts - Validate a model folder or Hugging Face snapshot layout against required artifact groups.
+#   Ensure-FamilyEnvironment - Create and verify the dedicated family environment through launcher create-env/check-env flows.
+#   Ensure-ModelAvailability - Validate local model artifacts and optionally download missing assets through family-aware strategies.
+#   Configure-ServiceEnvironment - Apply transient QWEN_TTS_* and Telegram settings for the selected launch contour.
+#   Wait-HttpHealthCheck - Probe the configured HTTP server until /health/live responds or timeout elapses.
+#   Start-SelectedService - Launch the selected adapter through the profile-aware launcher exec command.
+#   Main - Run the interactive launcher flow end-to-end.
+# END_MODULE_MAP
+#
+# START_CHANGE_SUMMARY
+#   LAST_CHANGE: [v1.0.0 - Added Windows-only interactive launcher that reuses the profile-aware Python launcher for env setup and service execution while supporting optional model downloads]
+# END_CHANGE_SUMMARY
+
+Set-StrictMode -Version 3.0
+$ErrorActionPreference = 'Stop'
+
+$SCRIPT:MODEL_OPTIONS = @(
+    [pscustomobject]@{ Key = 'qwen-custom-17b'; Label = 'Qwen Custom 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-design-17b'; Label = 'Qwen Design 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-clone-17b'; Label = 'Qwen Clone 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-Base-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-custom-06b'; Label = 'Qwen Custom 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-design-06b'; Label = 'Qwen Design 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-clone-06b'; Label = 'Qwen Clone 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-Base-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'omnivoice'; Label = 'OmniVoice'; Family = 'omnivoice'; Folder = 'OmniVoice'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('tokenizer_config.json', 'tokenizer.json'), @('audio_tokenizer/config.json'), @('audio_tokenizer/model.safetensors'), @('audio_tokenizer/preprocessor_config.json')) },
+    [pscustomobject]@{ Key = 'piper-lessac'; Label = 'Piper en_US lessac medium'; Family = 'piper'; Folder = 'Piper-en_US-lessac-medium'; DownloadStrategy = 'piper'; PiperVoice = 'en_US-lessac-medium'; ArtifactGroups = @(@('model.onnx'), @('model.onnx.json')) }
+)
+
+function Get-ProjectRoot {
+    return (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+}
+
+function ConvertTo-PlainText {
+    param([Parameter(Mandatory = $true)][Security.SecureString]$SecureValue)
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    }
+    finally {
+        if ($pointer -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+        }
+    }
+}
+
+function Read-TrimmedHostInput {
+    param([Parameter(Mandatory = $true)][string]$Prompt)
+    $value = Read-Host $Prompt
+    if ($null -eq $value) {
+        return ''
+    }
+    return $value.Trim()
+}
+
+function Resolve-HttpProbeHost {
+    param([Parameter(Mandatory = $true)][string]$BindHost)
+
+    $normalized = $BindHost.Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($normalized) -or $normalized -eq '0.0.0.0' -or $normalized -eq '::' -or $normalized -eq '[::]') {
+        return '127.0.0.1'
+    }
+    return $BindHost.Trim()
+}
+
+function Select-MenuOption {
+    param(
+        [Parameter(Mandatory = $true)][string]$Prompt,
+        [Parameter(Mandatory = $true)][object[]]$Options,
+        [string]$DisplayProperty = 'Label'
+    )
+
+    Write-Host ''
+    Write-Host $Prompt -ForegroundColor Cyan
+    for ($index = 0; $index -lt $Options.Count; $index++) {
+        Write-Host ('[{0}] {1}' -f ($index + 1), $Options[$index].$DisplayProperty)
+    }
+    while ($true) {
+        $raw = Read-TrimmedHostInput -Prompt 'Enter option number'
+        $choice = 0
+        if ([int]::TryParse($raw, [ref]$choice) -and $choice -ge 1 -and $choice -le $Options.Count) {
+            return $Options[$choice - 1]
+        }
+        Write-Warning 'Enter a number from the menu.'
+    }
+}
+
+function Invoke-LauncherJson {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectRoot,
+        [Parameter(Mandatory = $true)][string[]]$LauncherArgs
+    )
+
+    $commandOutput = & py -3.11 -m launcher --project-root $ProjectRoot @LauncherArgs 2>&1 | Out-String
+    $exitCode = $LASTEXITCODE
+    if ([string]::IsNullOrWhiteSpace($commandOutput)) {
+        throw "Launcher command returned no JSON output: $($LauncherArgs -join ' ')"
+    }
+    try {
+        $payload = $commandOutput | ConvertFrom-Json
+    }
+    catch {
+        throw "Failed to parse launcher JSON output for '$($LauncherArgs -join ' ')':`n$commandOutput"
+    }
+    return [pscustomobject]@{ ExitCode = $exitCode; Payload = $payload; RawOutput = $commandOutput }
+}
+
+function Assert-WindowsPreflight {
+    param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+    $isWindowsHost = $env:OS -eq 'Windows_NT'
+    if (-not $isWindowsHost) { throw "This launcher supports Windows PowerShell only." }
+    if (-not (Get-Command py -ErrorAction SilentlyContinue)) { throw "The 'py' launcher was not found. Install Python 3.11+ with the Windows py launcher." }
+    & py -3.11 --version | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Python 3.11 was not found through 'py -3.11'." }
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw "ffmpeg was not found in PATH. Install ffmpeg and retry." }
+    if (-not (Test-Path (Join-Path $ProjectRoot 'launcher'))) { throw "Launcher package was not found under project root: $ProjectRoot" }
+}
+
+function Get-ValidationRoots {
+    param([Parameter(Mandatory = $true)][string]$ModelRoot)
+    $roots = New-Object System.Collections.Generic.List[string]
+    if (-not (Test-Path $ModelRoot)) { return @() }
+    $roots.Add((Resolve-Path $ModelRoot).Path)
+    $snapshotsPath = Join-Path $ModelRoot 'snapshots'
+    if (Test-Path $snapshotsPath) {
+        Get-ChildItem -Path $snapshotsPath -Directory | Sort-Object Name | ForEach-Object { $roots.Add($_.FullName) }
+    }
+    return $roots.ToArray()
+}
+
+function Test-ArtifactGroup {
+    param([Parameter(Mandatory = $true)][string]$RootPath, [Parameter(Mandatory = $true)][string[]]$Candidates)
+    foreach ($candidate in $Candidates) {
+        if (Test-Path (Join-Path $RootPath $candidate)) { return $true }
+    }
+    return $false
+}
+
+function Test-ModelArtifacts {
+    param([Parameter(Mandatory = $true)][object]$Model, [Parameter(Mandatory = $true)][string]$ModelsDir)
+    $modelRoot = Join-Path $ModelsDir $Model.Folder
+    $roots = Get-ValidationRoots -ModelRoot $modelRoot
+    foreach ($root in $roots) {
+        $allGroupsSatisfied = $true
+        foreach ($group in $Model.ArtifactGroups) {
+            if (-not (Test-ArtifactGroup -RootPath $root -Candidates $group)) {
+                $allGroupsSatisfied = $false
+                break
+            }
+        }
+        if ($allGroupsSatisfied) {
+            return [pscustomobject]@{ Available = $true; ResolvedPath = $root; ExpectedPath = $modelRoot }
+        }
+    }
+    return [pscustomobject]@{ Available = $false; ResolvedPath = $null; ExpectedPath = $modelRoot }
+}
+
+function Ensure-FamilyEnvironment {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectRoot,
+        [Parameter(Mandatory = $true)][string]$Family,
+        [Parameter(Mandatory = $true)][string]$Module
+    )
+
+    $createResult = Invoke-LauncherJson -ProjectRoot $ProjectRoot -LauncherArgs @('create-env', '--family', $Family, '--module', $Module, '--apply')
+    if ($createResult.ExitCode -ne 0) { throw "Failed to prepare the family environment for '$Family':`n$($createResult.RawOutput)" }
+    $checkResult = Invoke-LauncherJson -ProjectRoot $ProjectRoot -LauncherArgs @('check-env', '--family', $Family, '--module', $Module)
+    if ($checkResult.ExitCode -ne 0) { throw "Environment check for '$Family' failed: `n$($checkResult.RawOutput)" }
+    $importPayload = $checkResult.Payload.check_env.import_check
+    if ($null -eq $importPayload -or $importPayload.returncode -ne 0) { throw "Runtime import check for '$Family' failed: `n$($checkResult.RawOutput)" }
+    foreach ($entry in $importPayload.stdout.PSObject.Properties) {
+        if (-not [bool]$entry.Value) { throw "Environment '$Family' is missing required runtime import: $($entry.Name)" }
+    }
+    return [string]$checkResult.Payload.check_env.expected_python_path
+}
+
+function Read-TransientToken {
+    param([Parameter(Mandatory = $true)][string]$Prompt)
+    return (ConvertTo-PlainText -SecureValue (Read-Host -Prompt $Prompt -AsSecureString))
+}
+
+function Invoke-HuggingFaceDownload {
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonPath,
+        [Parameter(Mandatory = $true)][string]$RepoId,
+        [Parameter(Mandatory = $true)][string]$TargetDir,
+        [string]$Token
+    )
+
+    $downloadCode = @'
+from huggingface_hub import snapshot_download
+import os
+import sys
+
+snapshot_download(
+    repo_id=sys.argv[1],
+    local_dir=sys.argv[2],
+    token=os.environ.get("HF_TOKEN") or None,
+)
+'@
+    $previousToken = $env:HF_TOKEN
+    try {
+        if ($Token) { $env:HF_TOKEN = $Token } else { Remove-Item Env:HF_TOKEN -ErrorAction SilentlyContinue }
+        & $PythonPath -c $downloadCode $RepoId $TargetDir
+        if ($LASTEXITCODE -ne 0) { throw "snapshot_download завершился с кодом $LASTEXITCODE" }
+    }
+    finally {
+        if ($null -eq $previousToken) { Remove-Item Env:HF_TOKEN -ErrorAction SilentlyContinue } else { $env:HF_TOKEN = $previousToken }
+    }
+}
+
+function Invoke-PiperDownload {
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonPath,
+        [Parameter(Mandatory = $true)][object]$Model,
+        [Parameter(Mandatory = $true)][string]$ModelsDir
+    )
+
+    $targetDir = Join-Path $ModelsDir $Model.Folder
+    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+    & $PythonPath -m piper.download_voices $Model.PiperVoice --download-dir $targetDir
+    if ($LASTEXITCODE -ne 0) { throw "Failed to download Piper voice '$($Model.PiperVoice)'." }
+    $sourceModel = Join-Path $targetDir ($Model.PiperVoice + '.onnx')
+    $sourceConfig = Join-Path $targetDir ($Model.PiperVoice + '.onnx.json')
+    if (Test-Path $sourceModel) { Move-Item $sourceModel (Join-Path $targetDir 'model.onnx') -Force }
+    if (Test-Path $sourceConfig) { Move-Item $sourceConfig (Join-Path $targetDir 'model.onnx.json') -Force }
+}
+
+function Ensure-ModelAvailability {
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonPath,
+        [Parameter(Mandatory = $true)][object]$Model,
+        [Parameter(Mandatory = $true)][string]$ModelsDir
+    )
+
+    $validation = Test-ModelArtifacts -Model $Model -ModelsDir $ModelsDir
+    if ($validation.Available) {
+        Write-Host "Model found: $($validation.ResolvedPath)" -ForegroundColor Green
+        return $validation.ResolvedPath
+    }
+
+    Write-Warning "Model '$($Model.Label)' is missing or incomplete. Expected path: $($validation.ExpectedPath)"
+    $confirmation = Read-TrimmedHostInput -Prompt 'Download the model now? [y/N]'
+    if ($confirmation.Trim().ToLower() -notin @('y', 'yes')) { throw 'Launch cancelled: model is not prepared locally.' }
+
+    if ($Model.DownloadStrategy -eq 'piper') {
+        Invoke-PiperDownload -PythonPath $PythonPath -Model $Model -ModelsDir $ModelsDir
+    }
+    elseif ($Model.DownloadStrategy -eq 'huggingface') {
+        $repoId = Read-TrimmedHostInput -Prompt 'Enter the Hugging Face repo ID for this model'
+        if ([string]::IsNullOrWhiteSpace($repoId)) { throw 'A Hugging Face repo ID is required for this download.' }
+        $needsToken = Read-TrimmedHostInput -Prompt 'Use a temporary HF token for this download? [y/N]'
+        $token = $null
+        if ($needsToken.Trim().ToLower() -in @('y', 'yes')) { $token = Read-TransientToken -Prompt 'Enter HF token (it will not be saved)' }
+        $targetDir = Join-Path $ModelsDir $Model.Folder
+        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+        Invoke-HuggingFaceDownload -PythonPath $PythonPath -RepoId $repoId -TargetDir $targetDir -Token $token
+    }
+    else {
+        throw "Unknown download strategy: $($Model.DownloadStrategy)"
+    }
+
+    $afterDownload = Test-ModelArtifacts -Model $Model -ModelsDir $ModelsDir
+    if (-not $afterDownload.Available) { throw "Download finished, but required artifacts for '$($Model.Label)' are still missing." }
+    Write-Host "Model is ready: $($afterDownload.ResolvedPath)" -ForegroundColor Green
+    return $afterDownload.ResolvedPath
+}
+
+function Configure-ServiceEnvironment {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectRoot,
+        [Parameter(Mandatory = $true)][object]$InspectPayload,
+        [Parameter(Mandatory = $true)][object]$Service
+    )
+
+    $env:QWEN_TTS_MODELS_DIR = Join-Path $ProjectRoot '.models'
+    $env:QWEN_TTS_OUTPUTS_DIR = Join-Path $ProjectRoot '.outputs'
+    $env:QWEN_TTS_VOICES_DIR = Join-Path $ProjectRoot '.voices'
+    $env:QWEN_TTS_UPLOAD_STAGING_DIR = Join-Path $ProjectRoot '.uploads'
+    if ($InspectPayload.selected_backend) {
+        $env:QWEN_TTS_BACKEND = [string]$InspectPayload.selected_backend
+        $env:QWEN_TTS_BACKEND_AUTOSELECT = 'false'
+    }
+    $env:QWEN_TTS_REQUEST_TIMEOUT_SECONDS = '300'
+
+    if ($Service.Key -eq 'server') {
+        $bindHost = Read-TrimmedHostInput -Prompt 'Host for HTTP server [0.0.0.0]'
+        $port = Read-TrimmedHostInput -Prompt 'Port for HTTP server [8000]'
+        $env:QWEN_TTS_HOST = if ([string]::IsNullOrWhiteSpace($bindHost)) { '0.0.0.0' } else { $bindHost }
+        $env:QWEN_TTS_PORT = if ([string]::IsNullOrWhiteSpace($port)) { '8000' } else { $port }
+        $env:QWEN_TTS_LOG_LEVEL = 'info'
+    }
+    elseif ($Service.Key -eq 'telegram') {
+        if ([string]::IsNullOrWhiteSpace($env:QWEN_TTS_TELEGRAM_BOT_TOKEN)) { $env:QWEN_TTS_TELEGRAM_BOT_TOKEN = Read-TransientToken -Prompt 'Enter Telegram bot token (it will not be saved)' }
+        if ([string]::IsNullOrWhiteSpace($env:QWEN_TTS_TELEGRAM_BOT_TOKEN)) { throw 'QWEN_TTS_TELEGRAM_BOT_TOKEN is required for Telegram launch.' }
+        $allowedIds = Read-TrimmedHostInput -Prompt 'Allowed user IDs (comma-separated, optional)'
+        if (-not [string]::IsNullOrWhiteSpace($allowedIds)) { $env:QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS = $allowedIds }
+        $adminIds = Read-TrimmedHostInput -Prompt 'Admin user IDs (comma-separated, optional)'
+        if (-not [string]::IsNullOrWhiteSpace($adminIds)) { $env:QWEN_TTS_TELEGRAM_ADMIN_USER_IDS = $adminIds }
+        $env:QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED = 'true'
+        $env:QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE = '20'
+        $env:QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH = Join-Path $ProjectRoot '.state/telegram_delivery_store.json'
+        $env:QWEN_TTS_TELEGRAM_LOG_LEVEL = 'info'
+    }
+    else {
+        $env:QWEN_TTS_AUTO_PLAY_CLI = 'true'
+    }
+}
+
+function Wait-HttpHealthCheck {
+    param(
+        [Parameter(Mandatory = $true)][string]$BindHost,
+        [Parameter(Mandatory = $true)][string]$BindPort,
+        [int]$TimeoutSeconds = 30
+    )
+
+    $probeHost = Resolve-HttpProbeHost -BindHost $BindHost
+    $healthUrl = "http://{0}:{1}/health/live" -f $probeHost, $BindPort
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $response = Invoke-WebRequest -UseBasicParsing -Uri $healthUrl -TimeoutSec 3
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+                Write-Host ("HTTP server is live: {0}" -f $healthUrl) -ForegroundColor Green
+                return $true
+            }
+        }
+        catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+
+    Write-Warning ("HTTP server did not report ready at {0} within {1} seconds." -f $healthUrl, $TimeoutSeconds)
+    return $false
+}
+
+function Start-SelectedService {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectRoot,
+        [Parameter(Mandatory = $true)][string]$Family,
+        [Parameter(Mandatory = $true)][string]$Module,
+        [Parameter(Mandatory = $true)][object]$Service
+    )
+
+    $dryRun = Invoke-LauncherJson -ProjectRoot $ProjectRoot -LauncherArgs @('exec', '--family', $Family, '--module', $Module, '--dry-run')
+    Write-Host ''
+    Write-Host ("Launching: {0}" -f ($dryRun.Payload.exec.command -join ' ')) -ForegroundColor Yellow
+
+    if ($Service.Key -eq 'server') {
+        $process = Start-Process -FilePath 'py' -ArgumentList @('-3.11', '-m', 'launcher', '--project-root', $ProjectRoot, 'exec', '--family', $Family, '--module', $Module) -WorkingDirectory $ProjectRoot -PassThru
+        Write-Host ("Server process started with PID {0}." -f $process.Id) -ForegroundColor Cyan
+        Wait-HttpHealthCheck -BindHost $env:QWEN_TTS_HOST -BindPort $env:QWEN_TTS_PORT | Out-Null
+        return
+    }
+
+    & py -3.11 -m launcher --project-root $ProjectRoot exec --family $Family --module $Module
+    if ($LASTEXITCODE -ne 0) { throw "Service exited with code $LASTEXITCODE" }
+}
+
+function Main {
+    $projectRoot = Get-ProjectRoot
+    Assert-WindowsPreflight -ProjectRoot $projectRoot
+
+    $serviceOptions = @(
+        [pscustomobject]@{ Key = 'server'; Label = 'HTTP Server' },
+        [pscustomobject]@{ Key = 'cli'; Label = 'CLI' },
+        [pscustomobject]@{ Key = 'telegram'; Label = 'Telegram Bot' }
+    )
+
+    Write-Host 'Interactive Windows launcher for tts-server' -ForegroundColor Green
+    $service = Select-MenuOption -Prompt 'Select service to launch' -Options $serviceOptions
+    $model = Select-MenuOption -Prompt 'Select model/family to prepare' -Options $SCRIPT:MODEL_OPTIONS
+
+    $familyPython = Ensure-FamilyEnvironment -ProjectRoot $projectRoot -Family $model.Family -Module $service.Key
+    $inspectResult = Invoke-LauncherJson -ProjectRoot $projectRoot -LauncherArgs @('inspect', '--family', $model.Family, '--module', $service.Key)
+    if ($inspectResult.ExitCode -ne 0) { throw "Failed to resolve launch profile: `n$($inspectResult.RawOutput)" }
+    Write-Host ''
+    Write-Host ('Selected family: {0}' -f $model.Family) -ForegroundColor Cyan
+    Write-Host ('Selected model folder: {0}' -f $model.Folder) -ForegroundColor Cyan
+    Write-Host ('Host contour: {0} / backend: {1}' -f $inspectResult.Payload.host.platform_system, $inspectResult.Payload.selected_backend) -ForegroundColor Cyan
+    if (-not $inspectResult.Payload.compatible) { throw "Selected profile is incompatible with this host even after environment setup: $([string]::Join(', ', $inspectResult.Payload.reasons))" }
+
+    $modelsDir = Join-Path $projectRoot '.models'
+    New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
+    Ensure-ModelAvailability -PythonPath $familyPython -Model $model -ModelsDir $modelsDir | Out-Null
+    Configure-ServiceEnvironment -ProjectRoot $projectRoot -InspectPayload $inspectResult.Payload -Service $service
+    Start-SelectedService -ProjectRoot $projectRoot -Family $model.Family -Module $service.Key -Service $service
+}
+
+try {
+    Main
+}
+catch {
+    Write-Error $_
+    exit 1
+}
