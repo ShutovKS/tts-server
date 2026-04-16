@@ -1,0 +1,33 @@
+{
+  "server": {
+    "label": "HTTP Server",
+    "entrypoint": "python -m server",
+    "transport": "http",
+    "docker_supported": true,
+    "pack_refs": {
+      "module": ["server"]
+    },
+    "env_prefixes": ["QWEN_TTS_"]
+  },
+  "cli": {
+    "label": "CLI",
+    "entrypoint": "python -m cli",
+    "transport": "local_cli",
+    "docker_supported": false,
+    "pack_refs": {
+      "module": ["cli"]
+    },
+    "supported_families": ["qwen", "piper", "omnivoice"],
+    "env_prefixes": ["QWEN_TTS_"]
+  },
+  "telegram": {
+    "label": "Telegram Bot",
+    "entrypoint": "python -m telegram_bot",
+    "transport": "telegram",
+    "docker_supported": true,
+    "pack_refs": {
+      "module": ["telegram"]
+    },
+    "env_prefixes": ["QWEN_TTS_", "QWEN_TTS_TELEGRAM_"]
+  }
+}

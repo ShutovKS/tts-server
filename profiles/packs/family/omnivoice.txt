@@ -1,4 +1,6 @@
--r requirements-base-omnivoice.txt
+huggingface_hub==1.8.0
+torch>=2.6
+torchaudio>=2.6
 
 # Upstream OmniVoice currently expects a newer transformers stack than qwen-tts.
 # Install this pack in a dedicated runtime environment rather than alongside Qwen.

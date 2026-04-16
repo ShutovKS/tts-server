@@ -1,0 +1,13 @@
+huggingface_hub==1.8.0; platform_system == "Darwin"
+huggingface_hub==0.36.2; platform_system != "Darwin"
+transformers==5.4.0; platform_system == "Darwin"
+transformers==4.57.3; platform_system != "Darwin"
+torch>=2.6; platform_system != "Darwin"
+torchaudio>=2.6; platform_system != "Darwin"
+mlx==0.31.1; platform_system == "Darwin"
+mlx-audio==0.4.1; platform_system == "Darwin"
+mlx-lm==0.31.1; platform_system == "Darwin"
+mlx-metal==0.31.1; platform_system == "Darwin"
+
+# Standard Qwen torch lane
+qwen-tts==0.1.1; platform_system != "Darwin"

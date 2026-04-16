@@ -1,9 +1,9 @@
 # FILE: core/services/model_registry.py
-# VERSION: 1.0.0
+# VERSION: 1.3.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Discover, validate, preload, and serve model handles through the selected backend.
-#   SCOPE: ModelRegistry class with get_model, list_models, readiness_report, preload management
-#   DEPENDS: M-BACKENDS, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS
+#   SCOPE: ModelRegistry facade for model spec resolution, per-model inspection, readiness reporting, backend-backed loading, and preload orchestration
+#   DEPENDS: M-ARTIFACT-REGISTRY, M-BACKENDS, M-ERRORS, M-METRICS, M-MODEL-CATALOG, M-MODELS, M-OBSERVABILITY, M-PROFILE-RESOLVER, M-RUNTIME-MODEL-REGISTRY
 #   LINKS: M-MODEL-REGISTRY
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.3.0 - Delegated model path and identifier lookup helpers to catalog/artifact split surfaces so ModelRegistry stays thinner as a facade]
+#   LAST_CHANGE: [v1.3.1 - Refreshed GRACE module dependencies and documented the per-model inspection surface]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -165,10 +165,18 @@ class ModelRegistry:
     def resolve_model_path(self, folder_name: str):
         return self.artifacts.resolve_model_path(folder_name)
 
+    # START_CONTRACT: inspect_model
+    #   PURPOSE: Build a per-model inspection record that merges routing, artifact, cache, and family-profile state.
+    #   INPUTS: { spec: ModelSpec - Model specification to inspect }
+    #   OUTPUTS: { dict[str, Any] - Structured inspection payload used by model listing and readiness reports }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-MODEL-REGISTRY, M-ARTIFACT-REGISTRY, M-RUNTIME-MODEL-REGISTRY
+    # END_CONTRACT: inspect_model
     def inspect_model(self, spec: ModelSpec) -> dict[str, Any]:
         route = self.backend_route_for_spec(spec)
         execution_backend_key = route["execution_backend"]
         descriptor = self.catalog.get_descriptor(spec.model_id)
+        family_profile = self._resolve_family_profile(descriptor.family_key)
         try:
             self.backend_for_spec(spec)
         except BackendCapabilityError:
@@ -196,6 +204,7 @@ class ModelRegistry:
                     "mode": spec.mode,
                     "folder": spec.folder,
                     "backend": execution_backend_key,
+                    "profile": family_profile,
                     "configured": True,
                     "available": False,
                     "cached": False,
@@ -245,9 +254,25 @@ class ModelRegistry:
                     "mode": spec.mode,
                     "folder": spec.folder,
                     "backend": execution_backend_key,
+                    "profile": family_profile,
                 }
             )
         return item
+
+    def _resolve_family_profile(self, family_key: str) -> dict[str, Any] | None:
+        from profiles.resolver import ProfileResolver
+
+        profile_key = {
+            "qwen3_tts": "qwen",
+            "piper": "piper",
+            "omnivoice": "omnivoice",
+        }.get(family_key)
+        if profile_key is None:
+            return None
+        try:
+            return ProfileResolver().get_family_profile(profile_key).to_dict()
+        except ValueError:
+            return None
 
     # START_CONTRACT: readiness_report
     #   PURPOSE: Build a full readiness report for configured models, backend selection, cache state, and preload status.
@@ -318,6 +343,10 @@ class ModelRegistry:
                 "degraded_routes": degraded_routes,
             },
             "family_summary": family_summary,
+            "family_profiles": {
+                family_key: self._resolve_family_profile(family_key)
+                for family_key in sorted(family_summary)
+            },
             "metrics": self._build_metrics_summary(),
             "preload": self.preload_report(),
             "available_backends": self.backend_registry.list_backends(),

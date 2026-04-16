@@ -1,0 +1,1 @@
+# Apple Silicon execution contour marker.

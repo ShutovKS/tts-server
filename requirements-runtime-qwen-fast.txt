@@ -1,7 +1,0 @@
--r requirements-base.txt
--r requirements-runtime-qwen.txt
-
-# Optional accelerated Qwen lane for supported Linux/Windows CUDA hosts.
-faster-qwen3-tts
-
-# Optional CUDA acceleration packages such as flash-attn should still be installed per host.

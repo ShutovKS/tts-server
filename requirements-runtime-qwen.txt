@@ -1,7 +1,0 @@
-transformers==5.4.0; platform_system == "Darwin"
-transformers==4.57.3; platform_system != "Darwin"
-
-# Standard Qwen torch lane
-qwen-tts==0.1.1; platform_system != "Darwin"
-
-# Optional accelerated Qwen lane remains separate because it is CUDA-host specific.

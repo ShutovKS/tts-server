@@ -1,0 +1,3 @@
+faster-qwen3-tts
+
+# Optional CUDA acceleration packages such as flash-attn should still be installed per host.

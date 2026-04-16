@@ -1,11 +1,13 @@
--r requirements-base.txt
--r requirements-runtime-qwen.txt
--r requirements-runtime-piper.txt
+-r profiles/packs/base/common.txt
+-r profiles/packs/module/server.txt
+-r profiles/packs/module/telegram.txt
+-r profiles/packs/family/qwen.txt
+-r profiles/packs/family/piper.txt
 
 # Default operator install keeps the stable Qwen + Piper lanes in one environment.
-# Install OmniVoice and VoxCPM2 in dedicated runtime environments because their upstream
+# The repository now composes family/platform/module packs under profiles/packs/.
+# Install OmniVoice in a dedicated runtime environment because its upstream
 # dependency stacks may require transformer/library versions that diverge from qwen-tts.
 # Optional add-on packs:
-#   pip install -r requirements-runtime-omnivoice.txt
-#   pip install -r requirements-runtime-voxcpm.txt
-#   pip install -r requirements-runtime-qwen-fast.txt
+#   pip install -r profiles/packs/family/omnivoice.txt
+#   pip install -r profiles/packs/family/qwen-fast-addon.txt

@@ -237,20 +237,6 @@
       </scenarios>
     </V-M-OMNIVOICE-FAMILY>
 
-    <V-M-VOXCPM-FAMILY MODULE="M-VOXCPM-FAMILY" PRIORITY="high">
-      <test-files>
-        <file>tests/unit/core/test_model_families.py</file>
-        <file>tests/unit/core/test_synthesis_planner.py</file>
-        <file>tests/unit/core/test_tts_service.py</file>
-      </test-files>
-      <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_model_families.py tests/unit/core/test_synthesis_planner.py tests/unit/core/test_tts_service.py -m unit</check-1>
-      </module-checks>
-      <scenarios>
-        <scenario-1 kind="success">VoxCPM family plans preserve custom, design, and clone capability mapping without transport-specific branching.</scenario-1>
-      </scenarios>
-    </V-M-VOXCPM-FAMILY>
-
     <V-M-BACKENDS MODULE="M-BACKENDS" PRIORITY="high">
       <test-files>
         <file>tests/unit/core/test_backend_registry.py</file>
@@ -441,11 +427,14 @@
         <file>tests/unit/core/test_config_and_bootstrap.py</file>
         <file>tests/architecture/test_import_boundaries.py</file>
         <file>tests/unit/scripts/test_validate_runtime.py</file>
+        <file>tests/unit/scripts/test_runtime_profiles.py</file>
+        <file>tests/unit/scripts/test_family_env_guidance.py</file>
       </test-files>
       <module-checks>
         <check-1>python -m pytest tests/unit/core/test_config_and_bootstrap.py tests/architecture/test_import_boundaries.py -m "unit or architecture"</check-1>
         <check-2>python scripts/runtime_self_check.py</check-2>
         <check-3>python scripts/validate_runtime.py host-matrix</check-3>
+        <check-4>python -m pytest tests/unit/scripts/test_runtime_profiles.py tests/unit/scripts/test_family_env_guidance.py -m unit</check-4>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">build_runtime passes manifest path and preload configuration into backend and registry wiring.</scenario-1>
@@ -456,6 +445,7 @@
         <scenario-6 kind="success">Operator self-check exposes qwen_fast enablement, test-mode overrides, route candidates, and fallback reasons when the accelerated lane is configured.</scenario-6>
         <scenario-7 kind="success">Host-matrix validation automates baseline and simulated qwen_fast lane evidence so support claims stay synchronized with runtime diagnostics.</scenario-7>
         <scenario-8 kind="success">Windows Docker Desktop validation can reuse the same runtime wiring with Linux containers after the container trust store includes the required corporate proxy root certificate.</scenario-8>
+        <scenario-9 kind="success">Operator self-check exposes family, module, and dedicated isolated-environment guidance through the shared profiles package surface without import-boundary drift.</scenario-9>
       </scenarios>
     </V-M-BOOTSTRAP>
 
@@ -575,10 +565,91 @@
       <scenarios>
         <scenario-1 kind="success">CLI runtime composes only core runtime services and the package entrypoint remains a thin wrapper.</scenario-1>
         <scenario-2 kind="success">KeyboardInterrupt exits the CLI cleanly without surfacing spurious runtime errors.</scenario-2>
-        <scenario-3 kind="success">CLI documentation accurately states that the interactive menu remains Qwen-oriented while shared runtime metadata surfaces mixed-family support.</scenario-3>
-        <scenario-4 kind="success">Automated CLI launchability evidence is retained as a transcript in `.sisyphus/evidence/cli-launchability-transcript.txt` after `python -m cli` receives scripted exit input.</scenario-4>
+        <scenario-3 kind="success">CLI launchability exposes the multi-family selection menu and bounded exit path through `python -m cli` without surfacing startup failures.</scenario-3>
+        <scenario-4 kind="success">OmniVoice design flows route through model metadata identifiers so capability-specific design synthesis stays family-aware.</scenario-4>
+        <scenario-5 kind="success">Automated CLI launchability evidence is retained as a transcript in `.sisyphus/evidence/cli-launchability-transcript.txt` after `python -m cli` receives scripted exit input.</scenario-5>
       </scenarios>
     </V-M-CLI>
+
+    <V-M-PROFILE-SCHEMA MODULE="M-PROFILE-SCHEMA" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/scripts/test_runtime_profiles.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_runtime_profiles.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">HostProfile, FamilyProfile, ModuleProfile, and ResolvedLaunchProfile serialize stable host, family, module, compatibility, backend, and metadata payloads for launcher consumers.</scenario-1>
+      </scenarios>
+    </V-M-PROFILE-SCHEMA>
+
+    <V-M-PROFILE-RESOLVER MODULE="M-PROFILE-RESOLVER" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/scripts/test_runtime_profiles.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_runtime_profiles.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">ProfileResolver resolves family and module metadata into host-aware launch profiles with compatibility results, dependency-pack references, and expected interpreter paths.</scenario-1>
+        <scenario-2 kind="success">ProfileResolver can probe an isolated family environment and treat it as sufficient runtime evidence when host-level torch imports are unavailable.</scenario-2>
+        <scenario-3 kind="success">ProfileResolver compatibility results retain explicit incompatibility reasons when resolution marks a host contour or family dependency set as unsupported.</scenario-3>
+      </scenarios>
+      <coverage-notes>
+        <note-1>Resolver coverage in this plan is limited to `tests/unit/scripts/test_runtime_profiles.py`; the scenarios above describe profile construction, isolated-environment probing, and compatibility payload details evidenced in that suite.</note-1>
+      </coverage-notes>
+    </V-M-PROFILE-RESOLVER>
+
+    <V-M-PROFILES MODULE="M-PROFILES" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/scripts/test_runtime_profiles.py</file>
+        <file>tests/unit/scripts/test_family_env_guidance.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_runtime_profiles.py tests/unit/scripts/test_family_env_guidance.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The public profiles package exports FamilyProfile, HostProfile, ModuleProfile, ProfileResolver, and ResolvedLaunchProfile for launcher and self-check tooling.</scenario-1>
+        <scenario-2 kind="success">Dedicated family environment guidance for optional families remains exposed through the shared profile payload and package import boundary.</scenario-2>
+      </scenarios>
+    </V-M-PROFILES>
+
+    <V-M-LAUNCHER MODULE="M-LAUNCHER" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/scripts/test_runtime_profiles.py</file>
+        <file>tests/unit/scripts/test_launcher_plan_run.py</file>
+        <file>tests/unit/scripts/test_launcher_exec.py</file>
+        <file>tests/unit/scripts/test_launcher_doctor.py</file>
+        <file>tests/unit/scripts/test_launcher_bootstrap_env.py</file>
+        <file>tests/unit/scripts/test_launcher_check_env.py</file>
+        <file>tests/unit/scripts/test_launcher_create_env.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_runtime_profiles.py tests/unit/scripts/test_launcher_plan_run.py tests/unit/scripts/test_launcher_exec.py tests/unit/scripts/test_launcher_doctor.py tests/unit/scripts/test_launcher_bootstrap_env.py tests/unit/scripts/test_launcher_check_env.py tests/unit/scripts/test_launcher_create_env.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Launcher plan-run coverage, together with shared runtime profile assertions, preserves resolved family/module launch plans with dependency-pack previews and expected interpreter paths.</scenario-1>
+        <scenario-2 kind="success">Launcher doctor, bootstrap-env, check-env, and create-env commands expose deterministic isolated-environment guidance and current implementation command previews for supported family contours.</scenario-2>
+        <scenario-3 kind="failure">Launcher exec reports missing isolated interpreters as structured JSON instead of opaque process failures.</scenario-3>
+        <scenario-4 kind="success">Create-env preview output retains the current implementation command strings, including Windows-oriented pip-safe path formatting and compiled requirements references for the selected family pack.</scenario-4>
+      </scenarios>
+      <coverage-notes>
+        <note-1>Launcher coverage in this plan is limited to the listed unit suites; wording here is restricted to plan-run, exec, doctor, bootstrap-env, check-env, and create-env behaviors directly evidenced by those tests.</note-1>
+      </coverage-notes>
+    </V-M-LAUNCHER>
+    <V-M-WINDOWS-LAUNCHER MODULE="M-WINDOWS-LAUNCHER" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/scripts/test_windows_launcher_script.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_windows_launcher_script.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The Windows launcher script remains a thin orchestrator over the profile-aware Python launcher by reusing create-env, check-env, and exec flows instead of duplicating runtime resolution logic.</scenario-1>
+        <scenario-2 kind="success">The Windows launcher retains bounded family-aware download strategies: Hugging Face snapshot download for Qwen and OmniVoice plus the documented Piper downloader path for Piper voices.</scenario-2>
+        <scenario-3 kind="success">The Windows launcher keeps transient secret handling bounded to process-local HF and Telegram token prompts instead of persisting credentials to repository files.</scenario-3>
+      </scenarios>
+    </V-M-WINDOWS-LAUNCHER>
   </ModuleVerification>
 
   <PhaseGates>
@@ -741,6 +812,7 @@
   <AutomationNotes>
     <note>Telegram Docker remains a documented compose lane, but the retained evidence set in this session only proves the server Docker path. Keep Telegram Docker wording as runnable and documented unless a specific run also retains its own logs and external validation artifacts.</note>
     <note>`telegram-live` is a real Telegram Bot API reachability check, not Docker parity proof by itself.</note>
+    <note>Launcher/profile verification wording is synchronized to the landed unit-test wave: V-M-PROFILE-*, V-M-LAUNCHER, and V-M-WINDOWS-LAUNCHER describe only behaviors evidenced by the listed launcher/profile unit suites.</note>
   </AutomationNotes>
 
   <FailurePackets>
