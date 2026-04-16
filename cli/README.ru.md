@@ -9,7 +9,7 @@ English version: [README.md](README.md)
 CLI удобен, когда нужно:
 
 - быстро проверить локальный synthesis flow
-- вручную пройти сценарии custom voice, voice design и voice cloning
+- вручную пройти family-aware сценарии custom voice, voice design и voice cloning
 - посмотреть доступность локальных моделей без запуска HTTP-сервера или Telegram-бота
 
 ## Точки входа
@@ -45,9 +45,17 @@ runtime = build_cli_runtime(get_cli_settings())
 
 ## Поддерживаемые сценарии
 
-### Custom voice
+### Выбор семейства
 
-[`run_custom_session()`](runtime.py:164) проводит пользователя через:
+CLI теперь начинает с family-first меню и показывает только действия, которые реально поддерживает выбранное семейство:
+
+- `Qwen3-TTS` — Custom Voice, Voice Design, Voice Clone
+- `Piper` — Preset Speaker TTS
+- `OmniVoice` — Custom Voice, Voice Design, Voice Clone
+
+### Preset speaker synthesis
+
+[`run_custom_session()`](runtime.py:454) проводит пользователя через:
 
 1. выбор спикера
 2. выбор эмоции или instruct
@@ -55,17 +63,30 @@ runtime = build_cli_runtime(get_cli_settings())
 4. ввод текста
 5. сохранение и при необходимости воспроизведение результата
 
+Для `Piper` этот же session используется как упрощённый preset-speaker flow: CLI выбирает runtime-ready Piper model, пропускает Qwen-style emotion prompts и сразу делает synthesis через ONNX lane.
+
 ### Voice design
 
-[`run_design_session()`](runtime.py:217) принимает текстовое описание голоса, после чего позволяет многократно синтезировать текст с этим голосовым профилем.
+[`run_design_session()`](runtime.py:518) принимает prompt для voice design, после чего позволяет многократно синтезировать текст с этим голосовым профилем.
+
+Этот пункт показывается только для семейств с capability `voice_description_tts` (`Qwen3-TTS`, `OmniVoice`).
+
+Для `OmniVoice` текущий runtime ожидает не свободное prose-описание, а structured style tokens. Практические примеры:
+
+- `female`
+- `female, whisper`
+- `male, british accent`
+- `young adult, moderate pitch`
 
 ### Voice cloning
 
-[`run_clone_manager()`](runtime.py:247) поддерживает:
+[`run_clone_manager()`](runtime.py:542) поддерживает:
 
 - выбор сохранённых voice profiles из [../.voices](../.voices)
 - добавление нового voice profile из reference audio
 - быстрый разовый clone flow
+
+Этот пункт показывается только для семейств с capability `reference_voice_clone` (`Qwen3-TTS`, `OmniVoice`).
 
 ## Общие директории
 
@@ -98,7 +119,8 @@ CLI использует ту же схему хранения, что и ост
 - Воспроизведение аудио зависит от системных инструментов, которые вызывает [`maybe_play_audio()`](runtime.py:53); в Windows CLI теперь предпочитает нативное открытие файла через системную ассоциацию вместо хрупкого вызова `cmd /c start`.
 - Из-за интерактивного интерфейса CLI лучше подходит для ручной проверки, а не для автоматизации.
 - Если shared runtime выбирает `qwen_fast`, этот ускоренный lane применяется только к Qwen custom synthesis и при недоступности безопасно уходит в fallback на `torch`.
-- Текущее меню всё ещё остаётся Qwen-oriented для сценариев custom/design/clone; Piper уже виден через shared runtime metadata и HTTP health/model surfaces, но отдельного Piper-first menu в CLI пока нет.
+- `Piper` в CLI намеренно ограничен preset-speaker synthesis, потому что его family adapter поддерживает только capability `preset_speaker_tts`.
+- `OmniVoice` переиспользует общий custom/design/clone interaction model, но его доступность по-прежнему зависит от runtime-ready OmniVoice family environment.
 
 ## Связанные документы
 

@@ -10,6 +10,7 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
+#   is_wav_reference_compatible - Check whether a WAV reference already matches the runtime clone format contract
 #   convert_audio_to_wav_if_needed - Audio format normalization via ffmpeg
 #   persist_output - Save generated audio to outputs directory
 #   read_generated_wav - Read first WAV file from output directory
@@ -51,6 +52,26 @@ def temporary_output_dir(prefix: str = "qwen3_tts_") -> Iterator[Path]:
         yield Path(temp_dir)
 
 
+# START_CONTRACT: is_wav_reference_compatible
+#   PURPOSE: Check whether a WAV reference already matches the runtime clone-input contract.
+#   INPUTS: { input_path: Path - Source WAV file to inspect, settings: CoreSettings - Runtime settings providing target sample rate }
+#   OUTPUTS: { bool - True when the WAV already matches mono PCM16 at the configured sample rate }
+#   SIDE_EFFECTS: none
+#   LINKS: M-INFRASTRUCTURE
+# END_CONTRACT: is_wav_reference_compatible
+def is_wav_reference_compatible(input_path: Path, settings: CoreSettings) -> bool:
+    try:
+        with wave.open(str(input_path), "rb") as wav_file:
+            return (
+                wav_file.getnchannels() == 1
+                and wav_file.getframerate() == settings.sample_rate
+                and wav_file.getsampwidth() == 2
+                and wav_file.getcomptype() == "NONE"
+            )
+    except wave.Error:
+        return False
+
+
 # START_CONTRACT: convert_audio_to_wav_if_needed
 #   PURPOSE: Validate a reference audio file and convert it to mono WAV when required.
 #   INPUTS: { input_path: Path - Source reference audio file, settings: CoreSettings - Runtime settings providing target sample rate }
@@ -65,13 +86,10 @@ def convert_audio_to_wav_if_needed(
     if not input_path.exists():
         raise AudioConversionError(f"Reference audio file does not exist: {input_path}")
 
-    if input_path.suffix.lower() == ".wav":
-        try:
-            with wave.open(str(input_path), "rb") as wav_file:
-                if wav_file.getnchannels() > 0:
-                    return input_path, False
-        except wave.Error:
-            pass
+    if input_path.suffix.lower() == ".wav" and is_wav_reference_compatible(
+        input_path, settings
+    ):
+        return input_path, False
     # END_BLOCK_CHECK_FORMAT
 
     temp_wav = input_path.parent / f"{input_path.stem}_converted.wav"

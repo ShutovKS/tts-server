@@ -1,9 +1,9 @@
 # FILE: cli/runtime.py
-# VERSION: 1.1.0
+# VERSION: 1.1.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Define CLI runtime container with core runtime and CLI-specific state.
-#   SCOPE: CLIRuntime dataclass
-#   DEPENDS: M-BOOTSTRAP
+#   SCOPE: Interactive CLI runtime orchestration, family/model selection helpers, exported model lookup, and CLI entrypoint
+#   DEPENDS: M-BOOTSTRAP, M-CONFIG, M-CONTRACTS, M-INFRASTRUCTURE, M-MODELS
 #   LINKS: M-CLI
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Hardened Windows CLI audio playback by preferring os.startfile over fragile cmd/start shell invocation]
+#   LAST_CHANGE: [v1.1.1 - Refreshed GRACE module scope, dependencies, and export map to match the current CLI runtime surface]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ import subprocess
 import sys
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from cli.bootstrap import build_cli_runtime
 from cli.runtime_config import CliSettings
@@ -47,6 +47,11 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 CLI_MODELS = {spec.key: spec for spec in MODEL_SPECS.values()}
+CLI_FAMILY_LABELS = {
+    "qwen": "Qwen3-TTS",
+    "piper": "Piper",
+    "omnivoice": "OmniVoice",
+}
 
 
 # START_CONTRACT: CliRuntime
@@ -63,6 +68,7 @@ class CliRuntime:
         self.registry = runtime.core.registry
         self.service = runtime.core.application
         self.backend_registry = runtime.core.backend_registry
+        self._family_menu_order = ("qwen", "piper", "omnivoice")
 
     # START_CONTRACT: flush_input
     #   PURPOSE: Clear pending terminal input to avoid accidental buffered responses.
@@ -88,6 +94,140 @@ class CliRuntime:
     # END_CONTRACT: clean_memory
     def clean_memory(self) -> None:
         gc.collect()
+
+    @staticmethod
+    def _normalize_family(family: str) -> str:
+        normalized = family.strip().lower()
+        if normalized in {"qwen3-tts", "qwen3_tts", "qwen3tts"}:
+            return "qwen"
+        return normalized
+
+    def _available_model_specs(self) -> list:
+        specs = []
+        for spec in CLI_MODELS.values():
+            model_path = self.settings.models_dir / spec.folder
+            if model_path.exists():
+                specs.append(spec)
+        return specs
+
+    def _family_specs(self, family_key: str) -> list:
+        normalized_family = self._normalize_family(family_key)
+        return [
+            spec
+            for spec in self._available_model_specs()
+            if self._normalize_family(spec.family) == normalized_family
+        ]
+
+    def _family_specs_for_capability(self, family_key: str, capability: str) -> list:
+        return [
+            spec
+            for spec in self._family_specs(family_key)
+            if capability in spec.supported_capabilities
+        ]
+
+    def _family_label(self, family_key: str) -> str:
+        return CLI_FAMILY_LABELS.get(family_key, family_key.title())
+
+    def _family_actions(self, family_key: str) -> list[tuple[str, str, str]]:
+        action_catalog = [
+            ("preset_speaker_tts", "Preset Speaker TTS", "custom"),
+            ("voice_description_tts", "Voice Design", "design"),
+            ("reference_voice_clone", "Voice Clone", "clone"),
+        ]
+        actions: list[tuple[str, str, str]] = []
+        for capability, label, mode in action_catalog:
+            if self._family_specs_for_capability(family_key, capability):
+                actions.append((capability, label, mode))
+        return actions
+
+    def _pick_family(self) -> Optional[str]:
+        available_families = [
+            family_key
+            for family_key in self._family_menu_order
+            if self._family_specs(family_key)
+        ]
+        if not available_families:
+            print("No runtime-ready CLI families found in the local models directory.")
+            return None
+
+        print("\n" + "=" * 40)
+        print(" Multi-Family TTS CLI")
+        print("=" * 40)
+        for index, family_key in enumerate(available_families, start=1):
+            label = self._family_label(family_key)
+            capabilities = ", ".join(label for _, label, _ in self._family_actions(family_key))
+            print(f"  {index}. {label} — {capabilities}")
+        print("\n  q. Exit")
+
+        choice = input("\nSelect family: ").strip().lower()
+        if choice == "q":
+            raise SystemExit()
+        try:
+            selected_index = int(choice) - 1
+        except ValueError:
+            print("Invalid selection.")
+            self.flush_input()
+            return None
+        if selected_index < 0 or selected_index >= len(available_families):
+            print("Invalid selection.")
+            self.flush_input()
+            return None
+        return available_families[selected_index]
+
+    def _pick_spec_from_list(self, specs: Iterable, *, prompt: str) -> Optional[str]:
+        spec_list = list(specs)
+        if not spec_list:
+            print("No runtime-ready models available for this flow.")
+            return None
+        if len(spec_list) == 1:
+            spec = spec_list[0]
+            print(f"Using model: {spec.public_name} [{spec.folder}]")
+            return spec.key
+
+        print("\nAvailable Models:")
+        for index, spec in enumerate(spec_list, start=1):
+            print(f"  {index}. {spec.public_name} [{spec.folder}]")
+        raw_choice = input(prompt).strip().lower()
+        if raw_choice in {"q", "back", "b"}:
+            return None
+        try:
+            selected_index = int(raw_choice) - 1
+        except ValueError:
+            print("Invalid selection.")
+            return None
+        if selected_index < 0 or selected_index >= len(spec_list):
+            print("Invalid selection.")
+            return None
+        return spec_list[selected_index].key
+
+    def _pick_family_action(self, family_key: str) -> Optional[tuple[str, str, str]]:
+        actions = self._family_actions(family_key)
+        if not actions:
+            print("No supported CLI actions are available for this family.")
+            return None
+
+        print("\n" + "-" * 40)
+        print(f" {self._family_label(family_key)}")
+        print("-" * 40)
+        for index, (_, label, _) in enumerate(actions, start=1):
+            print(f"  {index}. {label}")
+        print("\n  b. Back")
+        print("  q. Exit")
+
+        choice = input("\nSelect action: ").strip().lower()
+        if choice == "q":
+            raise SystemExit()
+        if choice in {"b", "back"}:
+            return None
+        try:
+            selected_index = int(choice) - 1
+        except ValueError:
+            print("Invalid selection.")
+            return None
+        if selected_index < 0 or selected_index >= len(actions):
+            print("Invalid selection.")
+            return None
+        return actions[selected_index]
 
     # START_CONTRACT: clean_path
     #   PURPOSE: Normalize user-supplied file paths captured from terminal input.
@@ -163,6 +303,18 @@ class CliRuntime:
             print(f"Saved: {relative_path}")
         self.maybe_play_audio(saved_path)
 
+    @staticmethod
+    def _render_exception_text(exc: Exception) -> str:
+        rendered = str(exc)
+        try:
+            rendered.encode(sys.stdout.encoding or "utf-8", errors="strict")
+            return rendered
+        except Exception:
+            return rendered.encode("ascii", errors="replace").decode("ascii")
+
+    def _prompt_language(self) -> str:
+        return input("Language (default auto): ").strip().lower() or "auto"
+
     # START_CONTRACT: print_runtime_banner
     #   PURPOSE: Show the active backend and selection rationale for the CLI session.
     #   INPUTS: {}
@@ -218,6 +370,56 @@ class CliRuntime:
             return []
         voices = [path.stem for path in self.settings.voices_dir.glob("*.wav")]
         return sorted(voices)
+
+    def _prompt_speed(self) -> float:
+        print("\nSpeed:")
+        print("  1. Normal (1.0x)")
+        print("  2. Fast (1.3x)")
+        print("  3. Slow (0.8x)")
+        speed_choice = input("Choice (1-3): ").strip()
+        if speed_choice == "2":
+            return 1.3
+        if speed_choice == "3":
+            return 0.8
+        return 1.0
+
+    def _prompt_speaker(self, *, family_key: str) -> str:
+        if family_key == "piper":
+            return "default"
+        if family_key == "omnivoice":
+            return "female"
+        speaker = "Vivian"
+        all_speakers = [name for names in SPEAKER_MAP.values() for name in names]
+        print("Available Speakers: " + ", ".join(all_speakers))
+        user_choice = input("\nSelect Speaker (Name): ").strip()
+        if user_choice in all_speakers:
+            speaker = user_choice
+        print(f"Using: {speaker}")
+        return speaker
+
+    def _prompt_instruct(self, *, family_key: str, capability: str) -> str:
+        if family_key == "omnivoice" and capability == "voice_description_tts":
+            print("\nOmniVoice design style hints (examples):")
+            print("  - female")
+            print("  - female, whisper")
+            print("  - male, british accent")
+            print("  - young adult, moderate pitch")
+            return input("Design style tokens: ").strip()
+        if capability == "voice_description_tts":
+            return input("Describe the voice: ").strip()
+        if family_key == "piper":
+            return ""
+        if family_key == "omnivoice":
+            print("\nOmniVoice style hints (examples):")
+            print("  - female")
+            print("  - male, british accent")
+            print("  - whisper")
+            print("  - young adult, moderate pitch")
+            return input("Voice style (default female): ").strip() or "female"
+        print("\nEmotion Examples:")
+        for example in EMOTION_EXAMPLES:
+            print(f"  - {example}")
+        return input("Emotion Instruction: ").strip() or "Normal tone"
 
     # START_CONTRACT: enroll_new_voice
     #   PURPOSE: Register a new saved voice profile from a user-provided reference recording.
@@ -276,37 +478,19 @@ class CliRuntime:
     # END_CONTRACT: run_custom_session
     def run_custom_session(self, model_key: str) -> None:
         spec = CLI_MODELS[model_key]
-        if self.registry.resolve_model_path(spec.folder) is None:
+        if not (self.settings.models_dir / spec.folder).exists():
             print("Error: Model not found.")
             return
 
         print(f"\n--- {spec.public_name} ---")
-        speaker = "Vivian"
-        all_speakers = [name for names in SPEAKER_MAP.values() for name in names]
-        print("Available Speakers: " + ", ".join(all_speakers))
-
-        user_choice = input("\nSelect Speaker (Name): ").strip()
-        if user_choice in all_speakers:
-            speaker = user_choice
-        print(f"Using: {speaker}")
-
-        print("\nEmotion Examples:")
-        for example in EMOTION_EXAMPLES:
-            print(f"  - {example}")
-        base_instruct = input("Emotion Instruction: ").strip() or "Normal tone"
-
-        print("\nSpeed:")
-        print("  1. Normal (1.0x)")
-        print("  2. Fast (1.3x)")
-        print("  3. Slow (0.8x)")
-        speed_choice = input("Choice (1-3): ").strip()
-        speed = 1.0
-        if speed_choice == "2":
-            speed = 1.3
-        elif speed_choice == "3":
-            speed = 0.8
-
-        language = input("Language (default auto): ").strip().lower() or "auto"
+        family_key = self._normalize_family(spec.family)
+        speaker = self._prompt_speaker(family_key=family_key)
+        base_instruct = self._prompt_instruct(
+            family_key=family_key,
+            capability="preset_speaker_tts",
+        )
+        speed = self._prompt_speed()
+        language = self._prompt_language()
 
         while True:
             text = self.get_safe_input()
@@ -317,7 +501,7 @@ class CliRuntime:
                 result = self.service.synthesize_custom(
                     CustomVoiceCommand(
                         text=text,
-                        model=spec.folder,
+                        model=spec.metadata_id,
                         save_output=True,
                         language=language,
                         speaker=speaker,
@@ -327,7 +511,7 @@ class CliRuntime:
                 )
                 self.display_saved_output(result.saved_path, result.backend)
             except Exception as exc:
-                print(f"Error: {exc}")
+                print(f"Error: {self._render_exception_text(exc)}")
         self.clean_memory()
 
     # START_CONTRACT: run_design_session
@@ -339,16 +523,19 @@ class CliRuntime:
     # END_CONTRACT: run_design_session
     def run_design_session(self, model_key: str) -> None:
         spec = CLI_MODELS[model_key]
-        if self.registry.resolve_model_path(spec.folder) is None:
+        if not (self.settings.models_dir / spec.folder).exists():
             print("Error: Model not found.")
             return
 
         print(f"\n--- {spec.public_name} ---")
-        instruct = input("Describe the voice: ").strip()
+        instruct = self._prompt_instruct(
+            family_key=self._normalize_family(spec.family),
+            capability="voice_description_tts",
+        )
         if not instruct:
             return
 
-        language = input("Language (default auto): ").strip().lower() or "auto"
+        language = self._prompt_language()
 
         while True:
             text = self.get_safe_input()
@@ -359,7 +546,7 @@ class CliRuntime:
                 result = self.service.synthesize_design(
                     VoiceDesignCommand(
                         text=text,
-                        model=spec.folder,
+                        model=spec.metadata_id,
                         save_output=True,
                         language=language,
                         voice_description=instruct,
@@ -367,7 +554,7 @@ class CliRuntime:
                 )
                 self.display_saved_output(result.saved_path, result.backend)
             except Exception as exc:
-                print(f"Error: {exc}")
+                print(f"Error: {self._render_exception_text(exc)}")
         self.clean_memory()
 
     # START_CONTRACT: run_clone_manager
@@ -392,14 +579,14 @@ class CliRuntime:
             return
 
         spec = CLI_MODELS[model_key]
-        if self.registry.resolve_model_path(spec.folder) is None:
+        if not (self.settings.models_dir / spec.folder).exists():
             print("Error: Model not found.")
             return
 
         ref_audio: Optional[Path] = None
         ref_text: Optional[str] = None
         converted = False
-        language = input("Language (default auto): ").strip().lower() or "auto"
+        language = self._prompt_language()
 
         if sub_choice == "1":
             saved = self.get_saved_voices()
@@ -433,7 +620,7 @@ class CliRuntime:
             except Exception as exc:
                 print(f"Error: {exc}")
                 return
-            ref_text = input("   Transcript (Optional): ").strip() or "."
+            ref_text = input("   Transcript (Optional): ").strip() or None
         else:
             return
 
@@ -448,7 +635,7 @@ class CliRuntime:
                 result = self.service.synthesize_clone(
                     VoiceCloneCommand(
                         text=text,
-                        model=spec.folder,
+                        model=spec.metadata_id,
                         save_output=True,
                         language=language,
                         ref_audio_path=ref_audio,
@@ -457,10 +644,38 @@ class CliRuntime:
                 )
                 self.display_saved_output(result.saved_path, result.backend)
             except Exception as exc:
-                print(f"Error: {exc}")
+                print(f"Error: {self._render_exception_text(exc)}")
         if sub_choice == "3" and converted and ref_audio and ref_audio.exists():
             ref_audio.unlink(missing_ok=True)
         self.clean_memory()
+
+    def run_piper_session(self) -> None:
+        model_key = self._pick_spec_from_list(
+            self._family_specs_for_capability("piper", "preset_speaker_tts"),
+            prompt="Select Piper model (or 'q' to cancel): ",
+        )
+        if model_key is None:
+            return
+        self.run_custom_session(model_key)
+
+    def run_family_action(self, family_key: str, capability: str, mode: str) -> None:
+        if family_key == "piper":
+            self.run_piper_session()
+            return
+
+        model_key = self._pick_spec_from_list(
+            self._family_specs_for_capability(family_key, capability),
+            prompt="Select model (or 'q' to cancel): ",
+        )
+        if model_key is None:
+            return
+
+        if mode == "custom":
+            self.run_custom_session(model_key)
+        elif mode == "design":
+            self.run_design_session(model_key)
+        elif mode == "clone":
+            self.run_clone_manager(model_key)
 
     # START_CONTRACT: main_menu
     #   PURPOSE: Present the top-level CLI menu and dispatch the chosen workflow.
@@ -470,41 +685,14 @@ class CliRuntime:
     #   LINKS: M-CLI
     # END_CONTRACT: main_menu
     def main_menu(self) -> None:
-        print("\n" + "=" * 40)
-        print(" Qwen3-TTS Manager")
-        print("=" * 40)
-
-        print("\n  Pro Models (1.7B - Best Quality)")
-        print("  ---------------------------------")
-        print("  1. Custom Voice")
-        print("  2. Voice Design")
-        print("  3. Voice Cloning")
-
-        print("\n  Lite Models (0.6B - Faster)")
-        print("  ---------------------------")
-        print("  4. Custom Voice")
-        print("  5. Voice Design")
-        print("  6. Voice Cloning")
-
-        print("\n  q. Exit")
-
-        choice = input("\nSelect: ").strip().lower()
-
-        if choice == "q":
-            raise SystemExit()
-
-        if choice not in CLI_MODELS:
-            print("Invalid selection.")
-            self.flush_input()
+        family_key = self._pick_family()
+        if family_key is None:
             return
-
-        mode = CLI_MODELS[choice].mode
-        if mode == "custom":
-            self.run_custom_session(choice)
-        elif mode == "design":
-            self.run_design_session(choice)
-        elif mode == "clone":
-            self.run_clone_manager(choice)
+        selection = self._pick_family_action(family_key)
+        if selection is None:
+            return
+        capability, _, mode = selection
+        self.run_family_action(family_key, capability, mode)
 
     # START_CONTRACT: run
     #   PURPOSE: Start the CLI session and keep serving the main menu until exit.
