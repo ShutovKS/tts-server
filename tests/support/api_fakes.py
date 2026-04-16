@@ -50,6 +50,7 @@ from core.errors import (
     TTSGenerationError,
 )
 from core.models.catalog import MODEL_SPECS
+from profiles import ProfileResolver
 from core.services.model_registry import ModelRegistry
 from server.bootstrap import ServerSettings
 
@@ -57,6 +58,9 @@ from server.bootstrap import ServerSettings
 class DummyRegistry(ModelRegistry):
     def __init__(self, settings: ServerSettings):
         self.settings = settings
+        resolver = ProfileResolver(Path(__file__).resolve().parents[2])
+        self._qwen_profile = resolver.get_family_profile("qwen").to_dict()
+        self._piper_profile = resolver.get_family_profile("piper").to_dict()
 
     @property
     def backend(self) -> TTSBackend:
@@ -76,6 +80,7 @@ class DummyRegistry(ModelRegistry):
                 "family_key": "qwen3_tts",
                 "capabilities_supported": ["preset_speaker_tts"],
                 "backend_support": ["mlx", "qwen_fast", "torch"],
+                "profile": self._qwen_profile,
                 "folder": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
                 "available": True,
                 "loadable": True,
@@ -142,6 +147,7 @@ class DummyRegistry(ModelRegistry):
                 "family_key": "qwen3_tts",
                 "capabilities_supported": ["reference_voice_clone"],
                 "backend_support": ["mlx", "torch"],
+                "profile": self._qwen_profile,
                 "folder": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
                 "available": True,
                 "loadable": True,
@@ -182,6 +188,7 @@ class DummyRegistry(ModelRegistry):
                 "family": "Piper",
                 "family_key": "piper",
                 "capabilities_supported": ["preset_speaker_tts"],
+                "profile": self._piper_profile,
                 "backend_support": ["onnx"],
                 "folder": "Piper-en_US-lessac-medium",
                 "available": False,
@@ -300,6 +307,10 @@ class DummyRegistry(ModelRegistry):
                     "available_models": 0,
                     "runtime_ready_models": 0,
                 },
+            },
+            "family_profiles": {
+                "qwen3_tts": self._qwen_profile,
+                "piper": self._piper_profile,
             },
             "cache_diagnostics": {
                 "cached_model_count": 1,
@@ -432,6 +443,7 @@ class DummyRegistry(ModelRegistry):
                     "mode": "custom",
                     "family": "Qwen3-TTS",
                     "family_key": "qwen3_tts",
+                    "profile": self._qwen_profile,
                     "capabilities_supported": ["preset_speaker_tts"],
                     "backend_support": ["mlx", "qwen_fast", "torch"],
                     "folder": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
@@ -515,6 +527,7 @@ class DummyRegistry(ModelRegistry):
                     "mode": "clone",
                     "family": "Qwen3-TTS",
                     "family_key": "qwen3_tts",
+                    "profile": self._qwen_profile,
                     "capabilities_supported": ["reference_voice_clone"],
                     "backend_support": ["mlx", "torch"],
                     "folder": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
@@ -598,6 +611,7 @@ class DummyRegistry(ModelRegistry):
                     "mode": "custom",
                     "family": "Piper",
                     "family_key": "piper",
+                    "profile": self._piper_profile,
                     "capabilities_supported": ["preset_speaker_tts"],
                     "folder": "Piper-en_US-lessac-medium",
                     "backend": "onnx",

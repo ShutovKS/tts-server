@@ -15,6 +15,7 @@
 #   test_readiness_report_exposes_backend_configuration - Verifies readiness payload reports configured and selected backends
 #   test_models_endpoint_exposes_backend_and_capabilities - Verifies model listing exposes backend and capability metadata
 #   test_models_endpoint_exposes_route_candidates_for_clone_mode - Verifies clone-capable models expose mixed-backend routing diagnostics
+#   test_clone_readiness_excludes_qwen_fast_from_available_backends - Verifies clone readiness surfaces qwen_fast only as a rejected custom-only candidate, never as the selected execution route
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
@@ -23,6 +24,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -42,7 +44,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         models_dir=tmp_path / ".models",
         outputs_dir=tmp_path / ".outputs",
         voices_dir=tmp_path / ".voices",
-        backend="torch",
+        upload_staging_dir=tmp_path / ".uploads",
+        backend=None,
         backend_autoselect=True,
         enable_streaming=True,
         default_save_output=False,
@@ -51,9 +54,32 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("server.api.routes_health.check_ffmpeg_available", lambda: True)
 
     app = create_app(settings)
+    object.__setattr__(app.state.settings, "backend", "torch")
     app.state.registry = DummyRegistry(settings)
     app.state.tts_service = DummyTTSService(settings)
     app.state.application = DummyTTSService(settings)
+    object.__setattr__(
+        app.state.job_execution.manager.executor,
+        "application_service",
+        app.state.application,
+    )
+    app.state.metrics = SimpleNamespace(
+        readiness_summary=lambda: {
+            "execution": {
+                "submitted": 0,
+                "started": 0,
+                "completed": 0,
+                "failed": 0,
+                "timeout": 0,
+                "cancelled": 0,
+                "queue_depth": {"current": 0, "peak": 0},
+            },
+            "models": {
+                "cache": {"hit": {"mlx": 1}, "miss": {"mlx": 1}},
+                "load": {"failures": {}, "duration_ms": {}},
+            },
+        }
+    )
 
     with TestClient(app) as test_client:
         yield test_client
@@ -180,3 +206,32 @@ def test_models_endpoint_exposes_route_candidates_for_clone_mode(client: TestCli
     assert clone_model["route"]["candidates"] == []
     assert clone_model["capabilities"]["supports_clone"] is True
     assert clone_model["runtime_ready"] is True
+
+
+def test_clone_readiness_excludes_qwen_fast_from_available_backends(client: TestClient):
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    payload = response.json()
+    clone_model = next(
+        item
+        for item in payload["checks"]["models"]["items"]
+        if item["id"] == "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+    )
+
+    assert clone_model["mode"] == "clone"
+    assert clone_model["execution_backend"] == "mlx"
+    assert clone_model["route"]["routing_mode"] == "selected_backend"
+    assert clone_model["route"]["route_reason"] == "selected_backend_supports_model"
+    assert clone_model["route"]["candidates"][0]["key"] == "qwen_fast"
+    assert clone_model["route"]["candidates"][0]["supports_mode"] is False
+    assert (
+        clone_model["route"]["candidates"][0]["route_reason"]
+        == "model_backend_affinity_mismatch"
+    )
+    assert clone_model["route"]["candidates"][0]["diagnostics"]["backend"] == "qwen_fast"
+    assert any(
+        backend["key"] == "qwen_fast"
+        and backend["diagnostics"]["reason"] == "platform_unsupported"
+        for backend in payload["checks"]["models"]["available_backends"]
+    )

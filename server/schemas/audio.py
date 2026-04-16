@@ -1,8 +1,8 @@
 # FILE: server/schemas/audio.py
-# VERSION: 1.0.0
+# VERSION: 1.0.2
 # START_MODULE_CONTRACT
 #   PURPOSE: Define Pydantic schemas for audio-related API request/response payloads.
-#   SCOPE: Request validation schemas for TTS endpoints
+#   SCOPE: Text normalization helpers plus request, async job, model discovery, and health response schemas for audio APIs
 #   DEPENDS: none
 #   LINKS: M-SERVER
 #   ROLE: TYPES
@@ -25,7 +25,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Expanded model discovery payloads with family, routing, and readiness metadata]
+#   LAST_CHANGE: [v1.0.2 - Refreshed GRACE module scope to cover request, job, discovery, and health schema surfaces]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -267,7 +267,7 @@ class TTSSuccessMetadata(BaseModel):
 
 # START_CONTRACT: ModelInfo
 #   PURPOSE: Define the schema for a model discovery record returned by the API.
-#   INPUTS: { key: str - registry key, id: str - public model id, name: str - display name, mode: str - supported synthesis mode, family: str | None - resolved model family label, family_key: str | None - normalized family identifier, capabilities_supported: list[str] - normalized supported synthesis capabilities, backend_support: list[str] - backends declared for the model in the manifest, folder: str - model folder name, available: bool - local availability flag, loadable: bool | None - artifact validation flag, runtime_ready: bool | None - runtime readiness flag, backend: str | None - execution backend id, selected_backend: str | None - globally selected backend id, execution_backend: str | None - effective per-model backend route, capabilities: dict[str, object] - backend capability metadata, route: dict[str, object] - backend route explanation, missing_artifacts: list[str] - missing artifact names, required_artifacts: list[str] - required artifact names }
+#   INPUTS: { key: str - registry key, id: str - public model id, name: str - display name, mode: str - supported synthesis mode, family: str | None - resolved model family label, family_key: str | None - normalized family identifier, profile: dict[str, object] | None - resolved family runtime profile metadata, capabilities_supported: list[str] - normalized supported synthesis capabilities, backend_support: list[str] - backends declared for the model in the manifest, folder: str - model folder name, available: bool - local availability flag, loadable: bool | None - artifact validation flag, runtime_ready: bool | None - runtime readiness flag, backend: str | None - execution backend id, selected_backend: str | None - globally selected backend id, execution_backend: str | None - effective per-model backend route, capabilities: dict[str, object] - backend capability metadata, route: dict[str, object] - backend route explanation, missing_artifacts: list[str] - missing artifact names, required_artifacts: list[str] - required artifact names }
 #   OUTPUTS: { ModelInfo - validated model discovery payload item }
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER
@@ -279,6 +279,7 @@ class ModelInfo(BaseModel):
     mode: str
     family: Optional[str] = None
     family_key: Optional[str] = None
+    profile: Optional[dict[str, object]] = None
     capabilities_supported: list[str] = Field(default_factory=list)
     backend_support: list[str] = Field(default_factory=list)
     folder: str
