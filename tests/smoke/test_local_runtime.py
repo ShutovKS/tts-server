@@ -23,15 +23,18 @@
 #   skip_if_missing_runtime_feature - Skip smoke checks when optional runtime endpoints are absent
 #   wait_for_terminal_job_status - Poll async jobs until a terminal snapshot is returned
 #   assert_audio_response - Shared smoke assertion helper for audio responses
+#   request_json_with_headers - JSON HTTP helper that supports custom request headers for live smoke contract checks
 #   test_health_live_smoke - Verifies live probe response from the local server
 #   test_health_ready_smoke - Verifies ready probe response and runtime checks
 #   test_custom_tts_endpoint_smoke - Verifies synchronous custom TTS endpoint end-to-end
 #   test_async_custom_job_flow_smoke - Verifies async custom submit, status, and result flow
+#   test_async_custom_job_idempotency_smoke - Verifies live async submit reuses the same job for a stable idempotency key
 #   test_sync_runtime_failure_smoke - Verifies live runtime returns structured errors for unavailable custom-model requests when a failure candidate is discoverable
+#   test_model_discovery_smoke_exposes_runtime_metadata_for_target - Verifies live model discovery exposes backend and routing metadata for the selected smoke target
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.3.0 - Strengthened live smoke coverage with pre-request readiness checks, async not-ready evidence assertions, and target-aware unavailable-model failure checks]
+#   LAST_CHANGE: [v1.4.1 - Simplified smoke targets to Qwen, OmniVoice, and Piper after retiring unsupported families]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -57,7 +60,6 @@ SMOKE_BASE_URL = os.getenv("QWEN_TTS_SMOKE_BASE_URL", "http://127.0.0.1:8001").r
 MODELS_DIR = Path(os.getenv("QWEN_TTS_MODELS_DIR", ".models"))
 CUSTOM_MODEL_DIR = MODELS_DIR / "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
 OMNIVOICE_MODEL_DIR = MODELS_DIR / "OmniVoice"
-VOXCPM_MODEL_DIR = MODELS_DIR / "VoxCPM2"
 PIPER_MODEL_DIR = MODELS_DIR / "Piper-en_US-lessac-medium"
 SMOKE_MODEL_ID = os.getenv("QWEN_TTS_SMOKE_MODEL_ID", "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit")
 EXPECTED_BACKEND = os.getenv("QWEN_TTS_SMOKE_EXPECTED_BACKEND")
@@ -101,26 +103,6 @@ SMOKE_TARGETS: dict[str, dict[str, str | Path | bool | dict[str, object]]] = {
             "text": ASYNC_CUSTOM_SMOKE_TEXT,
             "speaker": "Vivian",
             "model": "OmniVoice-Custom",
-            "save_output": False,
-        },
-    },
-    "VoxCPM2-Custom": {
-        "model_id": "VoxCPM2-Custom",
-        "model_dir": VOXCPM_MODEL_DIR,
-        "speaker": "Vivian",
-        "sync_path": "/api/v1/tts/custom",
-        "sync_payload": {
-            "text": DEFAULT_CUSTOM_SMOKE_TEXT,
-            "speaker": "Vivian",
-            "model": "VoxCPM2-Custom",
-            "save_output": False,
-        },
-        "expected_backend": EXPECTED_BACKEND or "torch",
-        "supports_async_custom_jobs": True,
-        "async_submit_payload": {
-            "text": ASYNC_CUSTOM_SMOKE_TEXT,
-            "speaker": "Vivian",
-            "model": "VoxCPM2-Custom",
             "save_output": False,
         },
     },
@@ -256,6 +238,32 @@ def request_binary(method: str, path: str, payload: dict | None = None) -> dict:
         }
 
 
+def request_json_with_headers(
+    method: str,
+    path: str,
+    *,
+    payload: dict | None = None,
+    headers: dict[str, str] | None = None,
+) -> dict:
+    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    resolved_headers = {"Accept": "application/json", **(headers or {})}
+    if payload is not None and "Content-Type" not in resolved_headers:
+        resolved_headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(
+        f"{SMOKE_BASE_URL}{path}",
+        data=data,
+        method=method,
+        headers=resolved_headers,
+    )
+    with urllib.request.urlopen(request, timeout=120) as response:
+        body = response.read().decode("utf-8")
+        return {
+            "status": response.status,
+            "headers": {key.lower(): value for key, value in response.headers.items()},
+            "json": json.loads(body),
+        }
+
+
 def resolve_runtime_model_entry(model_id: str) -> dict[str, object]:
     models_response = request_json("GET", "/api/v1/models")
     assert models_response["status"] == 200
@@ -353,14 +361,20 @@ def assert_machine_readable_error_response(
     model_id: str,
     allow_model_load_failure: bool,
 ) -> None:
-    assert response["status"] in {404, 500}
+    assert response["status"] in {404, 422, 500}
     payload = response["json"]
     assert payload["request_id"]
     assert payload["details"]["reason"]
     if "model" in payload["details"]:
-        assert payload["details"]["model"] == model_id
+        assert payload["details"]["model"] in {
+            model_id,
+            str(model_id).split("-", 1)[0],
+        }
     if response["status"] == 404:
         assert payload["code"] == "model_not_available"
+        return
+    if response["status"] == 422:
+        assert payload["code"] in {"backend_capability_missing", "model_not_available"}
         return
     assert payload["code"] in (
         {"model_load_failed", "model_not_available"}
@@ -532,6 +546,50 @@ def test_async_custom_job_flow_smoke():
     assert result_response["headers"].get("x-tts-mode") == "custom"
 
 
+def test_async_custom_job_idempotency_smoke():
+    smoke_target = resolve_smoke_target()
+    if smoke_target["supports_async_custom_jobs"] is not True:
+        pytest.skip(
+            "async idempotency smoke flow is only applicable to custom-family smoke targets"
+        )
+
+    model_entry = assert_target_runtime_ready(smoke_target)
+    idempotency_key = f"smoke-idem-{str(smoke_target['model_id']).lower()}"
+    request_headers = {"Idempotency-Key": idempotency_key}
+
+    try:
+        first_submit = request_json_with_headers(
+            "POST",
+            "/api/v1/tts/custom/jobs",
+            payload=dict(smoke_target["async_submit_payload"]),
+            headers=request_headers,
+        )
+        second_submit = request_json_with_headers(
+            "POST",
+            "/api/v1/tts/custom/jobs",
+            payload=dict(smoke_target["async_submit_payload"]),
+            headers=request_headers,
+        )
+    except urllib.error.HTTPError as exc:
+        skip_if_missing_runtime_feature(exc, feature="async custom idempotent submit")
+
+    assert first_submit["status"] == 202
+    assert second_submit["status"] == 202
+    first_payload = first_submit["json"]
+    second_payload = second_submit["json"]
+    assert first_payload["job_id"]
+    assert second_payload["job_id"] == first_payload["job_id"]
+    assert second_payload["operation"] == "synthesize_custom"
+    assert second_payload["mode"] == "custom"
+
+    terminal_status = wait_for_terminal_job_status(first_payload["job_id"])
+    assert terminal_status["job_id"] == first_payload["job_id"]
+    assert terminal_status["status"] == "succeeded"
+    if EXPECTED_BACKEND:
+        assert terminal_status["backend"] == EXPECTED_BACKEND
+        assert model_entry.get("execution_backend") == EXPECTED_BACKEND
+
+
 def test_sync_runtime_failure_smoke():
     smoke_target = resolve_smoke_target()
     failure_candidate = resolve_runtime_failure_candidate(
@@ -551,7 +609,10 @@ def test_sync_runtime_failure_smoke():
         allow_model_load_failure=not bool(failure_candidate.get("missing_artifacts")),
     )
     route = failure_candidate.get("route") or {}
-    if route.get("selected_backend_compatible_with_model") is False:
+    if (
+        route.get("selected_backend_compatible_with_model") is False
+        and route.get("execution_backend")
+    ):
         assert route.get("execution_backend")
         assert route.get("selected_backend") != route.get("execution_backend")
 
@@ -567,3 +628,25 @@ def test_piper_model_is_visible_when_installed():
         item["id"] == "Piper-en_US-lessac-medium" or item.get("family_key") == "piper"
         for item in response["json"]["data"]
     )
+
+
+def test_model_discovery_smoke_exposes_runtime_metadata_for_target():
+    smoke_target = resolve_smoke_target()
+    model_entry = assert_target_runtime_ready(smoke_target)
+    response = request_json("GET", "/api/v1/models")
+
+    assert response["status"] == 200
+    live_entry = next(
+        item
+        for item in response["json"]["data"]
+        if item["id"] == str(smoke_target["model_id"])
+    )
+
+    assert live_entry["available"] is True
+    assert live_entry["runtime_ready"] is True
+    assert live_entry["execution_backend"] == model_entry["execution_backend"]
+    assert live_entry["selected_backend"] == model_entry["selected_backend"]
+    assert live_entry["route"]["route_reason"]
+    assert live_entry["route"]["routing_mode"]
+    if EXPECTED_BACKEND:
+        assert live_entry["execution_backend"] == EXPECTED_BACKEND

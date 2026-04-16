@@ -85,6 +85,7 @@ from server.api.responses import (
     public_artifact_name,
     resolve_save_output,
 )
+from core.infrastructure.audio_io import convert_audio_to_wav_if_needed
 from server.schemas.audio import (
     CustomTTSRequest,
     DesignTTSRequest,
@@ -1077,7 +1078,12 @@ def register_tts_routes(app: FastAPI, logger) -> None:
             # START_BLOCK_EXECUTE_CLONE_SYNTHESIS
             temp_path = build_clone_staged_path(request, ref_audio, prefix="upload")
             temp_path.write_bytes(upload_bytes)
+            normalized_ref_audio = temp_path
+            normalized_was_converted = False
             try:
+                normalized_ref_audio, normalized_was_converted = convert_audio_to_wav_if_needed(
+                    temp_path, request.app.state.settings
+                )
                 result = await run_inference_with_timeout(
                     request=request,
                     operation_name="synthesize_clone",
@@ -1087,12 +1093,14 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                             model=model,
                             save_output=resolved_save_output,
                             language=normalized_language,
-                            ref_audio_path=temp_path,
+                            ref_audio_path=normalized_ref_audio,
                             ref_text=ref_text,
                         )
                     ),
                 )
             finally:
+                if normalized_was_converted and normalized_ref_audio.exists():
+                    normalized_ref_audio.unlink(missing_ok=True)
                 temp_path.unlink(missing_ok=True)
             # END_BLOCK_EXECUTE_CLONE_SYNTHESIS
             # START_BLOCK_BUILD_CLONE_RESPONSE

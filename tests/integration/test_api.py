@@ -177,6 +177,25 @@ def test_models_endpoint(client: TestClient):
     payload = response.json()
     assert len(payload["data"]) == 3
     assert payload["data"][0]["available"] is True
+    qwen_model = next(
+        item for item in payload["data"] if item["id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    )
+    piper_model = next(
+        item for item in payload["data"] if item["id"] == "Piper-en_US-lessac-medium"
+    )
+    assert qwen_model["profile"]["key"] == "qwen"
+    assert qwen_model["profile"]["pack_refs"]["family"] == ["qwen"]
+    assert piper_model["profile"]["key"] == "piper"
+    assert piper_model["profile"]["isolated_env_name"] == "piper"
+
+
+def test_ready_endpoint_exposes_family_profile_metadata(client: TestClient):
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["checks"]["models"]["family_profiles"]["qwen3_tts"]["key"] == "qwen"
+    assert payload["checks"]["models"]["family_profiles"]["piper"]["key"] == "piper"
 
 
 def test_design_tts_rejects_model_without_design_capability(client: TestClient):

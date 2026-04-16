@@ -96,6 +96,7 @@ Async submission endpoints accept the `Idempotency-Key` header.
 - Unsupported model/family combinations now return controlled `model_capability_not_supported` errors with explicit capability metadata.
 - `GET /health/ready` now includes host snapshot and mixed-backend routing summaries so operators can see why a Piper model may route to ONNX while MLX remains globally selected.
 - The accelerated `qwen_fast` lane is additive and optional; readiness and model payloads may show it as a rejected route candidate with an explicit rejection reason when the selected fast lane is unavailable.
+- Qwen clone requests are sensitive to reference-audio quality and transcript alignment. Provide `ref_text` only when it exactly matches the spoken content of the uploaded reference audio. The server rejects implausibly short clone outputs instead of returning a misleading near-empty WAV.
 
 ## Host-mode validation lane
 
@@ -103,7 +104,7 @@ For V1 host validation, keep `python scripts/validate_runtime.py smoke-server` a
 
 `python -m pytest -m "unit or integration"` remains the canonical first step for this lane. If that check reports a deterministic-baseline failure, record it separately from host runtime evidence so the pytest surface and the smoke-server lane stay easy to distinguish.
 
-The host lane is target-aware by design. The existing smoke suite reuses one path for default Qwen custom validation plus `OmniVoice-Custom --expected-backend torch`, `VoxCPM2-Custom --expected-backend torch`, and `Piper-en_US-lessac-medium --expected-backend onnx`; those backend expectations should stay tied to the chosen smoke target instead of being treated as one global backend rule.
+The host lane is target-aware by design. The existing smoke suite reuses one path for default Qwen custom validation plus `OmniVoice-Custom --expected-backend torch` and `Piper-en_US-lessac-medium --expected-backend onnx`; those backend expectations should stay tied to the chosen smoke target instead of being treated as one global backend rule.
 
 When you capture host evidence, retain the `server_log_path` returned by `python scripts/validate_runtime.py smoke-server` and pair it with stable response/readiness fields such as `x-model-id`, `x-backend-id`, request ids, job ids, and readiness routing metadata. Skip host smoke only for documented prerequisite failures such as missing `ffmpeg`, unreachable local server, absent runtime-ready models, missing model folders, or missing optional runtime endpoints/dependencies for the selected target.
 
