@@ -9,7 +9,7 @@
 Use it when you want to:
 
 - test local synthesis quickly
-- run custom voice, voice design, or voice cloning flows manually
+- run family-aware custom voice, voice design, or voice cloning flows manually
 - inspect local model availability without starting the HTTP server or Telegram bot
 
 ## Entry points
@@ -45,9 +45,17 @@ runtime = build_cli_runtime(get_cli_settings())
 
 ## Supported workflows
 
-### Custom voice
+### Family selection
 
-[`run_custom_session()`](runtime.py:164) guides the user through:
+The CLI now opens with a family-first menu and only shows actions supported by the selected family:
+
+- `Qwen3-TTS` — Custom Voice, Voice Design, Voice Clone
+- `Piper` — Preset Speaker TTS
+- `OmniVoice` — Custom Voice, Voice Design, Voice Clone
+
+### Preset speaker synthesis
+
+[`run_custom_session()`](runtime.py:454) guides the user through:
 
 1. selecting a speaker
 2. selecting emotion or instruction
@@ -56,17 +64,32 @@ runtime = build_cli_runtime(get_cli_settings())
 5. entering synthesis text
 5. saving and optionally playing the result
 
+For `Piper`, the same session is used as a simplified preset-speaker flow: the CLI selects a runtime-ready Piper model, skips Qwen-style emotion prompts, and synthesizes text directly through the ONNX runtime lane.
+
 ### Voice design
 
-[`run_design_session()`](runtime.py:217) collects a natural-language voice description, prompts for language with default `auto`, and then repeatedly synthesizes text with that designed voice profile.
+[`run_design_session()`](runtime.py:518) collects a voice-design prompt, prompts for language with default `auto`, and then repeatedly synthesizes text with that designed voice profile.
+
+This action is shown only for families whose models expose `voice_description_tts` capability (`Qwen3-TTS`, `OmniVoice`).
+
+For `OmniVoice`, the current runtime expects structured style tokens rather than a free-form prose description. Practical examples:
+
+- `female`
+- `female, whisper`
+- `male, british accent`
+- `young adult, moderate pitch`
 
 ### Voice cloning
 
-[`run_clone_manager()`](runtime.py:247) supports:
+[`run_clone_manager()`](runtime.py:542) supports:
 
 - selecting saved voice profiles from [../.voices](../.voices)
 - enrolling a new voice profile from reference audio
 - running a quick one-off clone flow with language prompt defaulting to `auto`
+
+This action is shown only for families whose models expose `reference_voice_clone` capability (`Qwen3-TTS`, `OmniVoice`).
+
+For Qwen clone, treat the optional transcript as an exact transcript of the reference audio, not a rough hint. If the transcript is unknown, leave it empty rather than entering placeholder text.
 
 ## Shared directories
 
@@ -99,13 +122,14 @@ Useful variables include:
 - Audio playback depends on OS tools invoked by [`maybe_play_audio()`](runtime.py:53); on Windows the CLI now prefers the native file association launcher instead of shelling through `cmd /c start`.
 - Because the interface is interactive, it is best suited for manual testing rather than automation.
 - If the shared runtime selects `qwen_fast`, that accelerated lane applies only to Qwen custom synthesis and still falls back safely to `torch` when unavailable.
-- The current menu remains Qwen-oriented for custom/design/clone workflows; Piper support is visible through shared runtime metadata and HTTP health/model surfaces, but the interactive CLI does not yet provide a dedicated Piper-first menu.
+- `Piper` is intentionally limited to preset-speaker synthesis in the CLI because its family adapter exposes only `preset_speaker_tts` capability.
+- `OmniVoice` reuses the shared custom/design/clone interaction model, but its availability still depends on a runtime-ready OmniVoice family environment.
 
 ## V1 validation lane
 
 CLI validation is intentionally hybrid in V1.
 
-- The automated baseline is launchability only: run `python -m cli`, feed stdin `q`, and retain stdout/stderr at `../.sisyphus/evidence/cli-launchability-transcript.txt`.
+- The automated baseline is launchability only: run `python -m cli`, select a family, then feed stdin `q`, and retain stdout/stderr at `../.sisyphus/evidence/cli-launchability-transcript.txt`.
 - Complex interactive paths stay transcript-based rather than fully automated: retain `../.sisyphus/evidence/cli-custom-voice-transcript.txt`, `../.sisyphus/evidence/cli-design-session-transcript.txt`, `../.sisyphus/evidence/cli-clone-manager-transcript.txt`, and `../.sisyphus/evidence/cli-playback-transcript.txt` for the corresponding manual sessions.
 - When storing those transcripts, include enough context to reconnect the run to the exercised flow: timestamp, `python -m cli` command shape, selected model or voice profile, and any generated output path under `../.outputs/`.
 - Docker is explicitly out of scope for the CLI in V1; do not reinterpret the server or Telegram compose lanes as CLI validation requirements.

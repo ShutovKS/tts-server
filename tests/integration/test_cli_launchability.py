@@ -77,8 +77,11 @@ def test_cli_launchability_writes_transcript_and_exits_cleanly():
 
     assert "Backend:" in transcript
     assert "Selection:" in transcript
-    assert "Qwen3-TTS Manager" in transcript
-    assert "Select:" in transcript
+    assert "Multi-Family TTS CLI" in transcript
+    assert "Select family:" in transcript
+    assert "Qwen3-TTS" in transcript
+    assert "Piper" in transcript
+    assert "OmniVoice" in transcript
     assert "q. Exit" in transcript
     assert "Exiting..." not in transcript
 
