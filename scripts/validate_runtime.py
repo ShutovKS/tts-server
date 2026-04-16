@@ -15,7 +15,6 @@
 #   DEFAULT_SERVER_PORT - Default bind port for automated local smoke runs
 #   CUSTOM_SMOKE_MODEL_ID - Default Qwen custom model used by server smoke validation
 #   OMNIVOICE_SMOKE_MODEL_ID - OmniVoice custom model used by torch-backed smoke validation
-#   VOXCPM_SMOKE_MODEL_ID - VoxCPM2 custom model used by torch-backed smoke validation
 #   SERVER_DOCKER_COMPOSE_FILE - Checked-in compose scenario used for server Docker parity validation
 #   TELEGRAM_DOCKER_COMPOSE_FILE - Checked-in compose scenario used for Telegram Docker parity validation
 #   resolve_smoke_model_folder - Resolve the local model directory name for a smoke model entry
@@ -84,7 +83,6 @@ DEFAULT_SERVER_HOST = "127.0.0.1"
 DEFAULT_SERVER_PORT = 0
 CUSTOM_SMOKE_MODEL_ID = "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
 OMNIVOICE_SMOKE_MODEL_ID = "OmniVoice-Custom"
-VOXCPM_SMOKE_MODEL_ID = "VoxCPM2-Custom"
 PIPER_SMOKE_MODEL_ID = "Piper-en_US-lessac-medium"
 SERVER_DOCKER_COMPOSE_FILE = PROJECT_ROOT / "docker-compose.server.yaml"
 TELEGRAM_DOCKER_COMPOSE_FILE = PROJECT_ROOT / "docker-compose.telegram-bot.yaml"
@@ -103,13 +101,11 @@ TELEGRAM_DOCKER_REQUIRED_LOG_MARKERS = (
 SUPPORTED_SMOKE_MODEL_IDS = (
     CUSTOM_SMOKE_MODEL_ID,
     OMNIVOICE_SMOKE_MODEL_ID,
-    VOXCPM_SMOKE_MODEL_ID,
     PIPER_SMOKE_MODEL_ID,
 )
 REPRESENTATIVE_TARGET_TO_MODEL_ID = {
     "qwen": CUSTOM_SMOKE_MODEL_ID,
     "omnivoice": OMNIVOICE_SMOKE_MODEL_ID,
-    "voxcpm2": VOXCPM_SMOKE_MODEL_ID,
     "piper": PIPER_SMOKE_MODEL_ID,
 }
 REPRESENTATIVE_TARGETS = tuple(REPRESENTATIVE_TARGET_TO_MODEL_ID)

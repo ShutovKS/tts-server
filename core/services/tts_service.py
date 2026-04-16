@@ -49,7 +49,6 @@ from core.model_families import (
     OmniVoiceFamilyAdapter,
     PiperFamilyAdapter,
     Qwen3FamilyAdapter,
-    VoxCPMFamilyAdapter,
 )
 from core.models.catalog import ModelSpec
 from core.observability import Timer, get_logger, log_event, operation_scope
@@ -371,7 +370,6 @@ class TTSService:
             "qwen3_tts": Qwen3FamilyAdapter(),
             "omnivoice": OmniVoiceFamilyAdapter(),
             "piper": PiperFamilyAdapter(),
-            "voxcpm": VoxCPMFamilyAdapter(),
         }
         self.coordinator = SynthesisCoordinator(
             registry=registry,

@@ -1,9 +1,9 @@
 # FILE: core/backends/torch_backend.py
-# VERSION: 1.0.0
+# VERSION: 1.1.4
 # START_MODULE_CONTRACT
 #   PURPOSE: Implement TTS inference using PyTorch framework.
-#   SCOPE: TorchBackend class with direct execute contract, model loading, caching, and family-aware execution helpers
-#   DEPENDS: M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS
+#   SCOPE: TorchBackend execution, model-path resolution, runtime loading, inspection, diagnostics, preload management, and family-aware generation helpers
+#   DEPENDS: M-BACKENDS, M-ERRORS, M-METRICS, M-MODELS
 #   LINKS: M-BACKENDS
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -14,7 +14,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.3 - Normalized OmniVoice generation outputs and resolved sample rate from the nested audio-tokenizer config]
+#   LAST_CHANGE: [v1.1.4 - Refreshed GRACE module dependencies and added contracts for the backend entry and initialization surfaces]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ import platform
 from pathlib import Path
 from threading import Lock
 from typing import Any
+
+import numpy as np
 
 from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
@@ -43,8 +45,7 @@ Qwen3TTSModel = None
 QWEN_TTS_IMPORT_ERROR = None
 OmniVoiceModel = None
 OMNIVOICE_IMPORT_ERROR = None
-VoxCPMModel = None
-VOXCPM_IMPORT_ERROR = None
+_MIN_CLONE_AUDIO_SECONDS = 1.0
 
 
 def _load_qwen_tts_model_cls():
@@ -91,26 +92,6 @@ def _load_omnivoice_model_cls():
     return OmniVoiceModel
 
 
-def _load_voxcpm_model_cls():
-    global VoxCPMModel, VOXCPM_IMPORT_ERROR
-    if VoxCPMModel is not None:
-        return VoxCPMModel
-    if VOXCPM_IMPORT_ERROR is not None:
-        return None
-    try:
-        module = importlib.import_module("voxcpm")
-    except Exception as exc:  # pragma: no cover
-        VOXCPM_IMPORT_ERROR = exc
-        return None
-    model_cls = getattr(module, "VoxCPM", None)
-    if model_cls is None:
-        VOXCPM_IMPORT_ERROR = ImportError("voxcpm does not expose VoxCPM")
-        return None
-    VoxCPMModel = model_cls
-    VOXCPM_IMPORT_ERROR = None
-    return VoxCPMModel
-
-
 # START_CONTRACT: TorchBackend
 #   PURPOSE: Provide the PyTorch implementation of the shared TTS backend contract.
 #   INPUTS: { models_dir: Path - Root directory containing Torch model folders, metrics: OperationalMetricsRegistry | None - Optional metrics facade for cache and load observations }
@@ -122,6 +103,13 @@ class TorchBackend(TTSBackend):
     key = "torch"
     label = "PyTorch + Transformers"
 
+    # START_CONTRACT: execute
+    #   PURPOSE: Dispatch a prepared execution request into the matching Torch synthesis flow.
+    #   INPUTS: { request: ExecutionRequest - Prepared execution request with loaded model handle and generation kwargs }
+    #   OUTPUTS: { None - Writes generated audio into the provided output directory }
+    #   SIDE_EFFECTS: Performs Torch inference and writes output artifacts to disk
+    #   LINKS: M-BACKENDS
+    # END_CONTRACT: execute
     def execute(self, request: ExecutionRequest) -> None:
         payload = dict(request.generation_kwargs)
         if request.execution_mode == "custom":
@@ -160,6 +148,13 @@ class TorchBackend(TTSBackend):
             details={"backend": self.key, "mode": request.execution_mode, "model": request.handle.spec.api_name},
         )
 
+    # START_CONTRACT: __init__
+    #   PURPOSE: Initialize a process-local Torch backend with model root, cache state, and metrics collection.
+    #   INPUTS: { models_dir: Path - Root directory containing backend-loadable model folders, metrics: OperationalMetricsRegistry | None - Optional metrics facade for cache and load observations }
+    #   OUTPUTS: { TorchBackend - Torch backend instance ready for readiness checks and model loading }
+    #   SIDE_EFFECTS: Allocates in-memory cache and synchronization primitives for backend use
+    #   LINKS: M-BACKENDS
+    # END_CONTRACT: __init__
     def __init__(
         self, models_dir: Path, *, metrics: OperationalMetricsRegistry | None = None
     ):
@@ -201,7 +196,6 @@ class TorchBackend(TTSBackend):
             for loader in (
                 _load_qwen_tts_model_cls,
                 _load_omnivoice_model_cls,
-                _load_voxcpm_model_cls,
             )
         )
 
@@ -267,7 +261,6 @@ class TorchBackend(TTSBackend):
                     "family": spec.family_key,
                 },
             )
-
         with self._lock:
             runtime_model = self._cache.get(spec.folder)
             if runtime_model is None:
@@ -337,7 +330,9 @@ class TorchBackend(TTSBackend):
             }
         )
         runtime_ready = bool(
-            available and artifact_check["loadable"] and self.is_available()
+            available
+            and artifact_check["loadable"]
+            and self.is_available()
         )
         cached = spec.folder in self._cache
         return {
@@ -365,6 +360,7 @@ class TorchBackend(TTSBackend):
             "missing_artifacts": artifact_check["missing_artifacts"],
             "required_artifacts": artifact_check["required_artifacts"],
             "capabilities": self.capabilities().to_dict(),
+            "runtime_blockers": [],
         }
 
     # START_CONTRACT: readiness_diagnostics
@@ -392,7 +388,6 @@ class TorchBackend(TTSBackend):
                 "torch_available": torch is not None,
                 "qwen_tts_available": _load_qwen_tts_model_cls() is not None,
                 "omnivoice_available": _load_omnivoice_model_cls() is not None,
-                "voxcpm_available": _load_voxcpm_model_cls() is not None,
                 "torch_error": None
                 if TORCH_IMPORT_ERROR is None
                 else str(TORCH_IMPORT_ERROR),
@@ -402,9 +397,6 @@ class TorchBackend(TTSBackend):
                 "omnivoice_error": None
                 if OMNIVOICE_IMPORT_ERROR is None
                 else str(OMNIVOICE_IMPORT_ERROR),
-                "voxcpm_error": None
-                if VOXCPM_IMPORT_ERROR is None
-                else str(VOXCPM_IMPORT_ERROR),
                 "device_map": self._resolve_device_map_name(),
                 "dtype": self._resolve_dtype_name(),
             },
@@ -581,6 +573,14 @@ class TorchBackend(TTSBackend):
             ref_audio=prepared_ref_audio,
             ref_text=ref_text,
         )
+        self._assert_clone_audio_duration(
+            wavs,
+            sr,
+            text=text,
+            family=handle.spec.family_key,
+            ref_audio_path=ref_audio_path,
+            ref_text=ref_text,
+        )
         # END_BLOCK_RUN_CLONE_INFERENCE
         self._persist_first_wav(output_dir, wavs, sr)
 
@@ -589,7 +589,6 @@ class TorchBackend(TTSBackend):
         mapping = {
             "qwen3_tts": _load_qwen_tts_model_cls,
             "omnivoice": _load_omnivoice_model_cls,
-            "voxcpm": _load_voxcpm_model_cls,
         }
         loader = mapping.get(spec.family_key)
         if loader is None:
@@ -601,7 +600,6 @@ class TorchBackend(TTSBackend):
         mapping = {
             "qwen3_tts": QWEN_TTS_IMPORT_ERROR,
             "omnivoice": OMNIVOICE_IMPORT_ERROR,
-            "voxcpm": VOXCPM_IMPORT_ERROR,
         }
         return mapping.get(spec.family_key)
 
@@ -610,14 +608,11 @@ class TorchBackend(TTSBackend):
         mapping = {
             "qwen3_tts": "qwen_tts.Qwen3TTSModel",
             "omnivoice": "omnivoice.OmniVoice",
-            "voxcpm": "voxcpm.VoxCPM",
         }
         return mapping.get(spec.family_key, "torch_runtime")
 
     @staticmethod
     def _extra_load_kwargs_for_spec(spec: ModelSpec) -> dict[str, Any]:
-        if spec.family_key == "voxcpm":
-            return {"optimize": False, "load_denoiser": False}
         return {}
 
     def _load_kwargs_for_spec(self, spec: ModelSpec) -> dict[str, Any]:
@@ -658,12 +653,6 @@ class TorchBackend(TTSBackend):
             if normalized_instruct is not None:
                 kwargs["instruct"] = normalized_instruct
             return self._run_omnivoice_generation(runtime_model=runtime_model, **kwargs)
-        if family == "voxcpm":
-            styled_text = self._inject_voxcpm_style(text=text, instruct=instruct)
-            return self._run_voxcpm_generation(
-                runtime_model=runtime_model,
-                text=styled_text,
-            )
         raise TTSGenerationError(
             "Torch backend does not support custom synthesis for the requested family",
             details={"backend": self.key, "family": family, "mode": "custom"},
@@ -693,11 +682,6 @@ class TorchBackend(TTSBackend):
             if normalized_instruct is not None:
                 kwargs["instruct"] = normalized_instruct
             return self._run_omnivoice_generation(runtime_model=runtime_model, **kwargs)
-        if family == "voxcpm":
-            return self._run_voxcpm_generation(
-                runtime_model=runtime_model,
-                text=self._inject_voxcpm_style(text=text, instruct=voice_description),
-            )
         raise TTSGenerationError(
             "Torch backend does not support voice design for the requested family",
             details={"backend": self.key, "family": family, "mode": "design"},
@@ -731,30 +715,10 @@ class TorchBackend(TTSBackend):
             if ref_text is not None:
                 kwargs["ref_text"] = ref_text
             return self._run_omnivoice_generation(runtime_model=runtime_model, **kwargs)
-        if family == "voxcpm":
-            kwargs = {
-                "text": text,
-                "reference_wav_path": ref_audio,
-            }
-            return self._run_voxcpm_generation(runtime_model=runtime_model, **kwargs)
         raise TTSGenerationError(
             "Torch backend does not support voice cloning for the requested family",
             details={"backend": self.key, "family": family, "mode": "clone"},
         )
-
-    def _run_voxcpm_generation(
-        self,
-        *,
-        runtime_model: Any,
-        text: str,
-        reference_wav_path: str | None = None,
-    ) -> tuple[list[Any], int]:
-        wav = runtime_model.generate(
-            text=text,
-            reference_wav_path=reference_wav_path,
-        )
-        sample_rate = self._resolve_voxcpm_sample_rate(runtime_model)
-        return [wav], sample_rate
 
     def _run_omnivoice_generation(
         self,
@@ -780,27 +744,6 @@ class TorchBackend(TTSBackend):
                 },
             )
         return int(sample_rate)
-
-    def _resolve_voxcpm_sample_rate(self, runtime_model: Any) -> int:
-        tts_model = getattr(runtime_model, "tts_model", None)
-        sample_rate = getattr(tts_model, "sample_rate", None)
-        if sample_rate is None:
-            raise TTSGenerationError(
-                "VoxCPM runtime did not expose a sample rate",
-                details={
-                    "backend": self.key,
-                    "family": "voxcpm",
-                    "failure_kind": "missing_sample_rate",
-                },
-            )
-        return int(sample_rate)
-
-    @staticmethod
-    def _inject_voxcpm_style(*, text: str, instruct: str) -> str:
-        normalized = instruct.strip()
-        if not normalized:
-            return text
-        return f"({normalized}) {text}"
 
     @staticmethod
     def _resolve_omnivoice_language(language: str) -> str | None:
@@ -856,6 +799,38 @@ class TorchBackend(TTSBackend):
                     "output_path": str(target),
                 },
             ) from exc
+
+    def _assert_clone_audio_duration(
+        self,
+        wavs: list[Any],
+        sample_rate: int,
+        *,
+        text: str,
+        family: str,
+        ref_audio_path: Path,
+        ref_text: str | None,
+    ) -> None:
+        if not wavs:
+            return
+        first_wav = np.asarray(wavs[0])
+        frame_count = 0 if first_wav.ndim == 0 else int(first_wav.shape[0])
+        duration_seconds = frame_count / float(sample_rate) if sample_rate > 0 else 0.0
+        if duration_seconds >= _MIN_CLONE_AUDIO_SECONDS:
+            return
+        raise TTSGenerationError(
+            "Voice clone synthesis produced implausibly short audio",
+            details={
+                "backend": self.key,
+                "family": family,
+                "failure_kind": "clone_audio_too_short",
+                "duration_seconds": round(duration_seconds, 3),
+                "minimum_expected_seconds": _MIN_CLONE_AUDIO_SECONDS,
+                "text_length": len(text),
+                "ref_audio_path": str(ref_audio_path),
+                "ref_text_provided": ref_text is not None,
+                "hint": "Use a clean spoken reference clip and provide ref_text only when it exactly matches the reference audio transcript.",
+            },
+        )
 
     @staticmethod
     def _resolve_device_map() -> str:

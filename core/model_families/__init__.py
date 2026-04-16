@@ -21,7 +21,6 @@ from core.model_families.base import FamilyPreparedExecution, ModelFamilyAdapter
 from core.model_families.omnivoice import OmniVoiceFamilyAdapter
 from core.model_families.piper import PiperFamilyAdapter
 from core.model_families.qwen3 import EMOTION_EXAMPLES, Qwen3FamilyAdapter, SPEAKER_MAP
-from core.model_families.voxcpm import VoxCPMFamilyAdapter
 
 __all__ = [
     "EMOTION_EXAMPLES",
@@ -31,5 +30,4 @@ __all__ = [
     "PiperFamilyAdapter",
     "Qwen3FamilyAdapter",
     "SPEAKER_MAP",
-    "VoxCPMFamilyAdapter",
 ]
