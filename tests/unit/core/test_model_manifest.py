@@ -74,7 +74,6 @@ def test_default_model_manifest_preserves_existing_public_identifiers():
     assert MODEL_SPECS["4"].rollout.default_preference == 50
     assert MODEL_SPECS["1"].backend_affinity == ("mlx", "qwen_fast", "torch")
     assert "omnivoice-custom-1" in manifest.models
-    assert "voxcpm-custom-1" in manifest.models
 
 
 def test_load_model_manifest_rejects_unknown_version(tmp_path: Path):
@@ -237,18 +236,6 @@ def test_omnivoice_manifest_entries_expose_expected_family_metadata():
 
     assert custom.family == "OmniVoice"
     assert custom.family_key == "omnivoice"
-    assert custom.backend_affinity == ("torch",)
-    assert design.supported_capabilities == ("voice_description_tts",)
-    assert clone.supported_capabilities == ("reference_voice_clone",)
-
-
-def test_voxcpm_manifest_entries_expose_expected_family_metadata():
-    custom = MODEL_SPECS["voxcpm-custom-1"]
-    design = MODEL_SPECS["voxcpm-design-1"]
-    clone = MODEL_SPECS["voxcpm-clone-1"]
-
-    assert custom.family == "VoxCPM"
-    assert custom.family_key == "voxcpm"
     assert custom.backend_affinity == ("torch",)
     assert design.supported_capabilities == ("voice_description_tts",)
     assert clone.supported_capabilities == ("reference_voice_clone",)

@@ -2,7 +2,7 @@
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for non-Qwen model family adapters added to the planner/runtime pipeline.
-#   SCOPE: OmniVoice and VoxCPM family capability matching and execution payload preparation
+#   SCOPE: OmniVoice family capability matching and execution payload preparation
 #   DEPENDS: M-MODEL-FAMILY, M-EXECUTION-PLAN
 #   LINKS: V-M-MODEL-FAMILY
 #   ROLE: TEST
@@ -12,16 +12,13 @@
 # START_MODULE_MAP
 #   build_plan - Helper that assembles execution plans for family adapter tests
 #   test_omnivoice_family_adapter_prepares_voice_design_execution - Verifies OmniVoice design payload preparation
-#   test_voxcpm_family_adapter_prepares_clone_execution - Verifies VoxCPM clone payload preparation
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added OmniVoice and VoxCPM family adapter unit coverage]
+#   LAST_CHANGE: [v1.1.1 - Focused family adapter coverage on the supported OmniVoice surface]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
@@ -29,10 +26,9 @@ from core.contracts.synthesis import (
     ExecutionPlan,
     PresetSpeakerPayload,
     SynthesisRequest,
-    VoiceClonePayload,
     VoiceDesignPayload,
 )
-from core.model_families import OmniVoiceFamilyAdapter, VoxCPMFamilyAdapter
+from core.model_families import OmniVoiceFamilyAdapter
 from core.models.catalog import MODEL_SPECS
 
 
@@ -75,26 +71,4 @@ def test_omnivoice_family_adapter_prepares_voice_design_execution():
         "language": "en",
         "family": "omnivoice",
         "instruct": "Calm documentary narrator",
-    }
-
-
-def test_voxcpm_family_adapter_prepares_clone_execution(tmp_path: Path):
-    adapter = VoxCPMFamilyAdapter()
-    reference = tmp_path / "reference.wav"
-    reference.write_bytes(b"wav")
-    plan = build_plan(
-        model_key="voxcpm-clone-1",
-        payload=VoiceClonePayload(ref_audio_path=reference, ref_text="Prompt transcript"),
-        capability="reference_voice_clone",
-        execution_mode="clone",
-    )
-
-    prepared = adapter.prepare_execution(plan)
-
-    assert prepared.execution_mode == "clone"
-    assert prepared.generation_kwargs == {
-        "language": "en",
-        "family": "voxcpm",
-        "ref_audio": str(reference),
-        "ref_text": "Prompt transcript",
     }

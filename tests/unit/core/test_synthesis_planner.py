@@ -246,21 +246,3 @@ def test_synthesis_planner_resolves_omnivoice_family_key_from_manifest():
 
     assert plan.family_key == "omnivoice"
     assert plan.family_label == "OmniVoice"
-
-
-def test_synthesis_planner_resolves_voxcpm_family_key_from_manifest(tmp_path: Path):
-    registry = PlannerRegistryStub()
-    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
-    ref_audio_path = tmp_path / "reference.wav"
-    ref_audio_path.write_bytes(b"wav")
-
-    plan = planner.plan_command(
-        VoiceCloneCommand(
-            text="Clone this",
-            model="voxcpm-clone-1",
-            ref_audio_path=ref_audio_path,
-        )
-    )
-
-    assert plan.family_key == "voxcpm"
-    assert plan.family_label == "VoxCPM"
