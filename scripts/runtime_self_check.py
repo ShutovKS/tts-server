@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 # FILE: scripts/runtime_self_check.py
-# VERSION: 1.2.0
+# VERSION: 1.2.2
 # START_MODULE_CONTRACT
-#   PURPOSE: Provide an operator-facing self-check utility for validating runtime dependencies, model assets, and readiness metadata.
-#   SCOPE: CLI entry point for shared runtime self-check reporting, asset validation, representative optional-model gating, and support evidence snapshots
-#   DEPENDS: M-BOOTSTRAP, M-CONFIG, M-MODEL-REGISTRY
+#   PURPOSE: Provide an operator-facing self-check utility for validating runtime dependencies, model assets, readiness metadata, and profile resolution snapshots.
+#   SCOPE: CLI entry point for shared runtime self-check reporting, asset validation, representative optional-model gating, profile resolver snapshots, and support evidence capture
+#   DEPENDS: M-BOOTSTRAP, M-CONFIG, M-MODEL-REGISTRY, M-PROFILES
 #   LINKS: M-BOOTSTRAP
 #   ROLE: SCRIPT
 #   MAP_MODE: LOCALS
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
+#   PROJECT_ROOT - Repository root inserted into sys.path for script-local imports
+#   REPRESENTATIVE_MODEL_TARGETS - Representative model targets used for bounded optional real-model checks
+#   _overlaid_environment - Temporarily overlay environment variables while building self-check payloads
 #   parse_args - Parse CLI arguments for self-check execution
 #   build_asset_report - Build filesystem and runtime validation results for declared model assets
+#   _classify_representative_target - Classify a representative target into ready, skipped, or failed machine-readable status
 #   build_representative_model_report - Build bounded representative-model readiness/gating details for optional real-model validation
 #   build_self_check_payload_with_diagnostics - Build the self-check payload while capturing bootstrap/runtime noise as structured diagnostics
 #   build_self_check_payload - Build the full runtime self-check payload for a given environment snapshot
@@ -20,7 +24,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.0 - Added representative optional-model gating details for bounded real-model validation through the shared harness]
+#   LAST_CHANGE: [v1.2.2 - Aligned runtime self-check dependency contract to the public profiles package boundary used by the script import surface]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -43,6 +47,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.bootstrap import build_runtime  # noqa: E402
 from core.config import CoreSettings, parse_core_settings_from_env  # noqa: E402
+from profiles import ProfileResolver  # noqa: E402
 
 
 REPRESENTATIVE_MODEL_TARGETS: tuple[dict[str, str], ...] = (
@@ -59,12 +64,6 @@ REPRESENTATIVE_MODEL_TARGETS: tuple[dict[str, str], ...] = (
         "expected_backend": "torch",
     },
     {
-        "target": "voxcpm2",
-        "model_id": "VoxCPM2-Custom",
-        "family_key": "voxcpm",
-        "expected_backend": "torch",
-    },
-    {
         "target": "piper",
         "model_id": "Piper-en_US-lessac-medium",
         "family_key": "piper",
@@ -72,6 +71,13 @@ REPRESENTATIVE_MODEL_TARGETS: tuple[dict[str, str], ...] = (
     },
 )
 
+# START_CONTRACT: _overlaid_environment
+#   PURPOSE: Temporarily overlay environment variables while preserving and restoring prior process state.
+#   INPUTS: { environ: Mapping[str, str] | None - optional environment overrides to apply for the duration of the context }
+#   OUTPUTS: { contextmanager - context that restores the original environment on exit }
+#   SIDE_EFFECTS: Mutates os.environ for the lifetime of the context
+#   LINKS: M-BOOTSTRAP, M-CONFIG
+# END_CONTRACT: _overlaid_environment
 
 @contextmanager
 def _overlaid_environment(environ: Mapping[str, str] | None):
@@ -157,6 +163,13 @@ def build_asset_report(readiness_report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# START_CONTRACT: _classify_representative_target
+#   PURPOSE: Classify a representative model target into machine-readable readiness or skip/failure reasons.
+#   INPUTS: { item: dict[str, Any] | None - readiness item for the representative model target, if present }
+#   OUTPUTS: { dict[str, Any] - machine-readable representative target classification }
+#   SIDE_EFFECTS: none
+#   LINKS: M-MODEL-REGISTRY
+# END_CONTRACT: _classify_representative_target
 def _classify_representative_target(item: dict[str, Any] | None) -> dict[str, Any]:
     if item is None:
         return {
@@ -173,6 +186,7 @@ def _classify_representative_target(item: dict[str, Any] | None) -> dict[str, An
     available = item.get("available") is True
     loadable = item.get("loadable") is True
     runtime_ready = item.get("runtime_ready") is True
+    runtime_blockers = list(item.get("runtime_blockers") or [])
 
     if runtime_ready:
         return {
@@ -296,6 +310,7 @@ def build_representative_model_report(readiness_report: dict[str, Any]) -> dict[
                     "available": item.get("available"),
                     "loadable": item.get("loadable"),
                     "runtime_ready": item.get("runtime_ready"),
+                    "runtime_blockers": list(item.get("runtime_blockers") or []),
                     "missing_artifacts": list(item.get("missing_artifacts") or []),
                     "required_artifacts": list(item.get("required_artifacts") or []),
                     "route_reason": (item.get("route") or {}).get("route_reason"),
@@ -322,6 +337,7 @@ def build_self_check_payload_with_diagnostics(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
+    # START_BLOCK_CAPTURE_RUNTIME_DIAGNOSTICS
     with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
         payload = build_self_check_payload(environ)
 
@@ -338,6 +354,7 @@ def build_self_check_payload_with_diagnostics(
                     "message": message,
                 }
             )
+    # END_BLOCK_CAPTURE_RUNTIME_DIAGNOSTICS
     return payload, diagnostics
 
 
@@ -353,9 +370,19 @@ def build_self_check_payload(
 ) -> dict[str, Any]:
     env = os.environ if environ is None else environ
     with _overlaid_environment(environ):
+        # START_BLOCK_BUILD_RUNTIME_AND_PROFILE_SNAPSHOTS
         settings = CoreSettings(**parse_core_settings_from_env(environ))
         runtime = build_runtime(settings)
         readiness = runtime.registry.readiness_report()
+        resolver = ProfileResolver(PROJECT_ROOT)
+        family_profiles = [profile.to_dict() for profile in resolver.list_family_profiles()]
+        module_profiles = [profile.to_dict() for profile in resolver.list_module_profiles()]
+        resolved_profiles = [
+            resolver.resolve(family=family_profile.key, module=module_profile.key).to_dict()
+            for family_profile in resolver.list_family_profiles()
+            for module_profile in resolver.list_module_profiles()
+        ]
+        # END_BLOCK_BUILD_RUNTIME_AND_PROFILE_SNAPSHOTS
     return {
         "status": "ok" if readiness["registry_ready"] else "degraded",
         "settings": {
@@ -374,6 +401,23 @@ def build_self_check_payload(
         "readiness": readiness,
         "assets": build_asset_report(readiness),
         "representative_models": build_representative_model_report(readiness),
+        "profiles": {
+            "families": family_profiles,
+            "modules": module_profiles,
+            "resolved_launch_profiles": resolved_profiles,
+            "dedicated_family_envs": [
+                {
+                    "family": profile["key"],
+                    "isolated_env_name": profile["isolated_env_name"],
+                    "pack_refs": {
+                        key: list(values)
+                        for key, values in dict(profile.get("pack_refs", {})).items()
+                    },
+                }
+                for profile in family_profiles
+                if profile["key"] in {"omnivoice"}
+            ],
+        },
     }
 
 

@@ -35,13 +35,11 @@ from core.application import (
     RateLimiter,
     TTSApplicationService,
 )
-from core.backends import (
-    BackendRegistry,
-    MLXBackend,
-    ONNXBackend,
-    QwenFastBackend,
-    TorchBackend,
-)
+from core.backends.mlx_backend import MLXBackend
+from core.backends.onnx_backend import ONNXBackend
+from core.backends.qwen_fast_backend import QwenFastBackend
+from core.backends.registry import BackendRegistry
+from core.backends.torch_backend import TorchBackend
 from core.config import CoreSettings
 from core.infrastructure import (
     InferenceGuard,

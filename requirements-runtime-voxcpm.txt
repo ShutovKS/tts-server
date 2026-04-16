@@ -1,5 +1,0 @@
--r requirements-base.txt
-
-# VoxCPM2 runtime pack. Keep isolated when you need strict control over large optional stacks.
-voxcpm==2.0.2
-modelscope>=1.22.0

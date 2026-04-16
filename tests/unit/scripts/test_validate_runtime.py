@@ -61,6 +61,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -431,64 +432,6 @@ def test_run_representative_model_validation_skips_optional_dependency_target(
     assert summary["status"] == "advisory"
     assert summary["targets"][0]["reason"] == "optional_dependency_pack_missing"
     assert any(advisory["reason"] == "optional_dependency_pack_missing" for advisory in summary["advisories"])
-
-
-def test_run_representative_model_validation_fails_for_corrupt_or_incomplete_target(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-):
-    env = _make_smoke_env(tmp_path)
-    args = _make_representative_args(target="voxcpm2")
-    payload = make_validation_self_check_payload(
-        items=[
-            make_validation_model_entry(
-                model_id=REPRESENTATIVE_TARGET_TO_MODEL_ID["voxcpm2"],
-                folder="VoxCPM2",
-                execution_backend="torch",
-                runtime_ready=False,
-                available=True,
-                loadable=False,
-                selected_backend="torch",
-                route_reason="runtime_not_ready",
-            )
-        ],
-        selected_backend="torch",
-    )
-    payload["representative_models"] = {
-        "targets": [
-            {
-                "target": "voxcpm2",
-                "model_id": REPRESENTATIVE_TARGET_TO_MODEL_ID["voxcpm2"],
-                "status": "failed",
-                "reason": "model_artifacts_corrupt_or_incomplete",
-                "message": "Representative model assets exist but the runtime did not classify them as loadable.",
-                "expected_backend": "torch",
-                "selected_backend": "torch",
-                "execution_backend": "torch",
-                "available": True,
-                "loadable": False,
-                "runtime_ready": False,
-                "missing_artifacts": [],
-                "required_artifacts": [],
-                "route_reason": "runtime_not_ready",
-            }
-        ],
-        "ready_targets": [],
-        "skipped_targets": [],
-        "failed_targets": [REPRESENTATIVE_TARGET_TO_MODEL_ID["voxcpm2"]],
-    }
-
-    monkeypatch.setattr(
-        "scripts.validate_runtime.build_self_check_payload",
-        lambda _env: payload,
-    )
-
-    summary = run_representative_model_validation(args, env)
-
-    assert summary["status"] == "error"
-    assert summary["outcome"] == "failed"
-    assert summary["reason"] == "representative_model_validation_failed"
-    assert summary["targets"][0]["reason"] == "model_artifacts_corrupt_or_incomplete"
 
 
 def test_run_representative_model_validation_reuses_smoke_server_for_ready_target(
@@ -1182,8 +1125,7 @@ def test_find_matching_update_filters_by_chat_and_text():
     )
 
 
-@pytest.mark.asyncio
-async def test_run_telegram_live_validation_returns_connectivity_summary_without_update_polling(
+def test_run_telegram_live_validation_returns_connectivity_summary_without_update_polling(
     monkeypatch: pytest.MonkeyPatch,
 ):
     client = MagicMock()
@@ -1213,7 +1155,7 @@ async def test_run_telegram_live_validation_returns_connectivity_summary_without
         update_timeout_seconds=30,
     )
 
-    summary = await run_telegram_live_validation(args, {})
+    summary = asyncio.run(run_telegram_live_validation(args, {}))
 
     assert summary["status"] == "ok"
     assert summary["command"] == "telegram-live"
@@ -1228,8 +1170,7 @@ async def test_run_telegram_live_validation_returns_connectivity_summary_without
     client.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_run_telegram_live_validation_sends_message_when_chat_id_provided(
+def test_run_telegram_live_validation_sends_message_when_chat_id_provided(
     monkeypatch: pytest.MonkeyPatch,
 ):
     client = MagicMock()
@@ -1259,7 +1200,7 @@ async def test_run_telegram_live_validation_sends_message_when_chat_id_provided(
         update_timeout_seconds=30,
     )
 
-    summary = await run_telegram_live_validation(args, {})
+    summary = asyncio.run(run_telegram_live_validation(args, {}))
 
     assert summary["message_sent"] is True
     assert summary["message_id"] == 777
@@ -1269,8 +1210,7 @@ async def test_run_telegram_live_validation_sends_message_when_chat_id_provided(
     client.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_run_telegram_live_validation_checks_matching_inbound_update(
+def test_run_telegram_live_validation_checks_matching_inbound_update(
     monkeypatch: pytest.MonkeyPatch,
 ):
     client = MagicMock()
@@ -1314,7 +1254,7 @@ async def test_run_telegram_live_validation_checks_matching_inbound_update(
         update_timeout_seconds=15,
     )
 
-    summary = await run_telegram_live_validation(args, {})
+    summary = asyncio.run(run_telegram_live_validation(args, {}))
 
     assert summary["update_checked"] is True
     assert summary["update_check_status"] == "matched"
@@ -1338,8 +1278,7 @@ async def test_run_telegram_live_validation_checks_matching_inbound_update(
     client.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_run_telegram_live_validation_returns_advisory_when_update_chat_context_missing(
+def test_run_telegram_live_validation_returns_advisory_when_update_chat_context_missing(
     monkeypatch: pytest.MonkeyPatch,
 ):
     client = MagicMock()
@@ -1369,7 +1308,7 @@ async def test_run_telegram_live_validation_returns_advisory_when_update_chat_co
         update_timeout_seconds=5,
     )
 
-    summary = await run_telegram_live_validation(args, {})
+    summary = asyncio.run(run_telegram_live_validation(args, {}))
 
     assert summary["status"] == "ok"
     assert summary["update_checked"] is False
@@ -1382,8 +1321,7 @@ async def test_run_telegram_live_validation_returns_advisory_when_update_chat_co
     client.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_run_telegram_live_validation_returns_advisory_when_matching_update_text_mismatches(
+def test_run_telegram_live_validation_returns_advisory_when_matching_update_text_mismatches(
     monkeypatch: pytest.MonkeyPatch,
 ):
     client = MagicMock()
@@ -1419,7 +1357,7 @@ async def test_run_telegram_live_validation_returns_advisory_when_matching_updat
     )
 
     with pytest.raises(RuntimeError) as exc_info:
-        await run_telegram_live_validation(args, {})
+        asyncio.run(run_telegram_live_validation(args, {}))
 
     error = exc_info.value
     assert error.reason == "telegram_matching_update_text_mismatch"
@@ -1431,8 +1369,7 @@ async def test_run_telegram_live_validation_returns_advisory_when_matching_updat
     client.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_run_telegram_live_validation_returns_advisory_when_matching_update_not_found(
+def test_run_telegram_live_validation_returns_advisory_when_matching_update_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ):
     client = MagicMock()
@@ -1463,7 +1400,7 @@ async def test_run_telegram_live_validation_returns_advisory_when_matching_updat
     )
 
     with pytest.raises(RuntimeError) as exc_info:
-        await run_telegram_live_validation(args, {})
+        asyncio.run(run_telegram_live_validation(args, {}))
 
     error = exc_info.value
     assert error.reason == "telegram_matching_update_not_found"
@@ -1477,8 +1414,7 @@ async def test_run_telegram_live_validation_returns_advisory_when_matching_updat
     client.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_run_telegram_docker_validation_returns_startup_api_and_teardown_evidence(
+def test_run_telegram_docker_validation_returns_startup_api_and_teardown_evidence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
@@ -1532,7 +1468,7 @@ async def test_run_telegram_docker_validation_returns_startup_api_and_teardown_e
         _fake_run_telegram_live_validation,
     )
 
-    summary = await run_telegram_docker_validation(args, env)
+    summary = asyncio.run(run_telegram_docker_validation(args, env))
 
     assert summary["status"] == "ok"
     assert summary["command"] == "docker-telegram"
@@ -1545,8 +1481,7 @@ async def test_run_telegram_docker_validation_returns_startup_api_and_teardown_e
     assert summary["advisories"][0]["reason"] == "telegram_validation_chat_id_missing"
 
 
-@pytest.mark.asyncio
-async def test_run_telegram_docker_validation_returns_skipped_summary_when_token_missing(
+def test_run_telegram_docker_validation_returns_skipped_summary_when_token_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
@@ -1561,7 +1496,7 @@ async def test_run_telegram_docker_validation_returns_skipped_summary_when_token
     (tmp_path / "docker-compose.telegram-bot.yaml").write_text("services: {}", encoding="utf-8")
 
     with pytest.raises(RuntimeError) as exc_info:
-        await run_telegram_docker_validation(args, env)
+        asyncio.run(run_telegram_docker_validation(args, env))
 
     error = exc_info.value
     assert error.reason == "telegram_bot_token_missing"
@@ -1569,8 +1504,7 @@ async def test_run_telegram_docker_validation_returns_skipped_summary_when_token
     assert error.stage == "preflight"
 
 
-@pytest.mark.asyncio
-async def test_run_telegram_docker_validation_propagates_advisory_api_outcomes_with_startup_proof(
+def test_run_telegram_docker_validation_propagates_advisory_api_outcomes_with_startup_proof(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
@@ -1623,7 +1557,7 @@ async def test_run_telegram_docker_validation_propagates_advisory_api_outcomes_w
     )
 
     with pytest.raises(RuntimeError) as exc_info:
-        await run_telegram_docker_validation(args, env)
+        asyncio.run(run_telegram_docker_validation(args, env))
 
     error = exc_info.value
     assert error.reason == "telegram_matching_update_not_found"

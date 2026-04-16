@@ -1,0 +1,58 @@
+{
+  "qwen": {
+    "label": "Qwen3-TTS",
+    "pack_refs": {
+      "base": ["common"],
+      "family": ["qwen"]
+    },
+    "isolated_env_name": "qwen",
+    "supported_capabilities": [
+      "preset_speaker_tts",
+      "voice_description_tts",
+      "reference_voice_clone"
+    ],
+    "allowed_backends": ["mlx", "qwen_fast", "torch"],
+    "required_artifacts": [
+      "config.json",
+      "model.safetensors|model.safetensors.index.json",
+      "preprocessor_config.json",
+      "tokenizer_config.json|vocab.json"
+    ],
+    "benchmark_command": "python scripts/validate_runtime.py representative-models --target qwen",
+    "self_check_command": "python scripts/runtime_self_check.py"
+  },
+  "piper": {
+    "label": "Piper",
+    "pack_refs": {
+      "base": ["common"],
+      "family": ["piper"]
+    },
+    "isolated_env_name": "piper",
+    "supported_capabilities": ["preset_speaker_tts"],
+    "allowed_backends": ["onnx"],
+    "required_artifacts": ["model.onnx", "model.onnx.json"],
+    "benchmark_command": "python scripts/validate_runtime.py representative-models --target piper",
+    "self_check_command": "python scripts/runtime_self_check.py"
+  },
+  "omnivoice": {
+    "label": "OmniVoice",
+    "pack_refs": {
+      "base": ["common"],
+      "family": ["omnivoice"]
+    },
+    "isolated_env_name": "omnivoice",
+    "supported_capabilities": [
+      "preset_speaker_tts",
+      "voice_description_tts",
+      "reference_voice_clone"
+    ],
+    "allowed_backends": ["torch"],
+    "required_artifacts": [
+      "config.json",
+      "model.safetensors|model.safetensors.index.json",
+      "tokenizer_config.json|tokenizer.json"
+    ],
+    "benchmark_command": "python scripts/validate_runtime.py representative-models --target omnivoice",
+    "self_check_command": "python scripts/runtime_self_check.py"
+  }
+}

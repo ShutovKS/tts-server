@@ -24,7 +24,6 @@ Legacy root-level Docker assets such as the removed `Dockerfile` and `compose.ya
 
 - Local Qwen3 TTS inference with shared runtime from [core/](core/README.md)
 - Local OmniVoice inference through the shared Torch family-adapter lane
-- Local VoxCPM2 inference through the shared Torch family-adapter lane
 - Local Piper voice inference through ONNX runtime using the supported `piper-tts` Python API
 - OpenAI-style speech endpoint `POST /v1/audio/speech`
 - Extended HTTP endpoints for custom voice, voice design, and voice cloning
@@ -41,22 +40,25 @@ Legacy root-level Docker assets such as the removed `Dockerfile` and `compose.ya
 - `ffmpeg` available in `PATH`
 - Local model directories available in [`.models/`](.models)
 - On macOS Apple Silicon: MLX-compatible environment and MLX-ready Qwen artifacts, or ONNX-compatible environment for Piper voices
-- On Linux or Windows: environment compatible with PyTorch/Transformers for Qwen, OmniVoice, and VoxCPM2, or ONNX runtime for Piper voices
+- On Linux or Windows: environment compatible with PyTorch/Transformers for Qwen and OmniVoice, or ONNX runtime for Piper voices
 
 ## Installation
 
 ### Dependency sets
 
-- `requirements.txt` — default local operator install for the stable shared environment: base runtime + standard Qwen + Piper
+- `requirements.txt` — default local operator install for the stable shared environment composed from `profiles/packs/`
 - `requirements-ci.txt` — lighter CI/test dependency set for repository verification without heavyweight optional runtimes
-- `requirements-base.txt` — shared foundation used by the runtime packs below
-- `requirements-runtime-qwen.txt` — standard Qwen Torch lane for the shared default environment
-- `requirements-runtime-piper.txt` — Piper ONNX lane for the shared default environment
-- `requirements-runtime-qwen-fast.txt` — optional accelerated Qwen lane for supported CUDA hosts
-- `requirements-runtime-omnivoice.txt` — dedicated OmniVoice runtime pack for a separate environment
-- `requirements-runtime-voxcpm.txt` — dedicated VoxCPM2 runtime pack for a separate environment
+- `profiles/packs/base/common.txt` — shared foundation for family/module/platform compilation
+- `profiles/packs/module/server.txt` — server adapter dependencies
+- `profiles/packs/module/telegram.txt` — Telegram adapter dependencies
+- `profiles/packs/family/qwen.txt` — standard Qwen Torch lane for the shared default environment
+- `profiles/packs/family/piper.txt` — Piper ONNX lane for the shared default environment
+- `profiles/packs/family/qwen-fast-addon.txt` — optional accelerated Qwen lane for supported CUDA hosts
+- `profiles/packs/family/omnivoice.txt` — dedicated OmniVoice family pack for a separate environment
 
-The important operational change is that OmniVoice and VoxCPM2 are not part of the default shared install anymore. They remain supported by the runtime, but should be installed in dedicated environments when you want live execution because their upstream dependency stacks may diverge from the stable Qwen environment.
+The important operational change is that OmniVoice is not part of the default shared install anymore. It remains supported by the runtime, but should be installed in a dedicated environment when you want live execution because its upstream dependency stack may diverge from the stable Qwen environment.
+
+The repository is now also moving toward a profile-driven launch model where each model family is treated as its own isolated runtime contour. In practice that means Qwen, Piper, and OmniVoice are expected to converge on distinct family environments rather than one implicit shared Python environment with optional package drift.
 
 ### macOS Apple Silicon
 
@@ -89,6 +91,23 @@ choco install ffmpeg -y
 
 If PowerShell blocks activation scripts, run `Set-ExecutionPolicy -Scope Process Bypass` in the current shell first.
 
+### Interactive Windows launcher
+
+For a guided Windows-only launch flow, use the interactive PowerShell orchestrator:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\launch-windows.ps1
+```
+
+The script reuses the profile-aware `launcher` package to resolve the selected service and family, creates or reuses `.envs/<family>`, checks whether the chosen model exists under `.models/`, optionally downloads missing assets, and then starts the selected adapter.
+
+Important notes:
+
+- Qwen and OmniVoice downloads use a Hugging Face snapshot flow and prompt for a repo ID only when the local model folder is missing or incomplete.
+- HF tokens are requested only when needed and are kept in the current process only; the launcher does not persist them.
+- Piper downloads use the documented `piper.download_voices` flow and normalize the resulting filenames into `model.onnx` and `model.onnx.json`.
+- Telegram launch still requires a real bot token; the script can prompt for it transiently during the current run.
+
 ### Recommended environment layouts
 
 #### Default shared runtime environment
@@ -112,19 +131,10 @@ Use a separate environment when you want to run OmniVoice locally:
 
 ```bash
 python -m pip install --upgrade pip
-pip install -r requirements-runtime-omnivoice.txt
+pip install -r profiles/packs/family/omnivoice.txt
 ```
 
 On the current Windows host, OmniVoice currently imports against a newer `transformers` surface than the shared Qwen environment, so isolating it in its own venv is the safe operator path.
-
-#### Dedicated VoxCPM2 environment
-
-Use a separate environment when you want strict control over the VoxCPM2 runtime stack:
-
-```bash
-python -m pip install --upgrade pip
-pip install -r requirements-runtime-voxcpm.txt
-```
 
 #### Optional accelerated Qwen environment
 
@@ -132,7 +142,7 @@ For a CUDA-only accelerated Qwen lane, layer the fast pack onto a supported host
 
 ```bash
 python -m pip install --upgrade pip
-pip install -r requirements-runtime-qwen-fast.txt
+pip install -r profiles/packs/family/qwen-fast-addon.txt
 ```
 
 ### Windows host prerequisites
@@ -172,9 +182,14 @@ The repository now includes a supported Piper lane through `piper-tts` + `onnxru
 
 OmniVoice is integrated as a **Torch-backed model family** rather than as a separate backend key. The upstream project documents a Python package path built around `pip install omnivoice` and `from omnivoice import OmniVoice`. In this repository, treat OmniVoice as an operator-managed optional dependency that shares the existing `torch` backend selection lane, but install it in a **dedicated environment** when you want live execution on Linux/Windows hosts.
 
-### VoxCPM2-specific note
+Under the new profile architecture direction, the intended operator contour is effectively:
 
-VoxCPM2 is also integrated as a **Torch-backed model family** rather than as a separate backend key. The upstream project documents `pip install voxcpm` and a Python API centered on `from voxcpm import VoxCPM`. In this repository, keep VoxCPM2 on the `torch` lane and treat its package/runtime prerequisites as optional operator-managed dependencies, preferably in a dedicated environment when you want a predictable operator stack.
+```text
+family=omnivoice
+pack_refs.base=[common]
+pack_refs.family=[omnivoice]
+isolated_env_name=omnivoice
+```
 
 ## Models
 
@@ -189,7 +204,6 @@ Typical directories include:
 - `Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit`
 - `Qwen3-TTS-12Hz-0.6B-Base-8bit`
 - `OmniVoice`
-- `VoxCPM2`
 - `Piper-en_US-lessac-medium`
 
 ### OmniVoice model layout
@@ -205,18 +219,6 @@ For the integrated OmniVoice family, place the downloaded Hugging Face snapshot 
 - `.models/OmniVoice/audio_tokenizer/preprocessor_config.json`
 
 If the download lands in a Hugging Face cache snapshot layout, keep the nested `snapshots/<revision>/...` structure intact — [`TorchBackend`](core/backends/torch_backend.py) already resolves that layout automatically.
-
-### VoxCPM2 model layout
-
-For the integrated VoxCPM2 family, place the downloaded model inside `.models/VoxCPM2`. The current manifest validates the minimal root config / weights / tokenizer surface, and the published upstream repository also exposes companion files that should be mirrored for reliable local inference. A practical local mirror should therefore contain at least:
-
-- `.models/VoxCPM2/config.json`
-- `.models/VoxCPM2/model.safetensors` or `.models/VoxCPM2/model.safetensors.index.json`
-- `.models/VoxCPM2/tokenizer_config.json` or `.models/VoxCPM2/tokenizer.json`
-- `.models/VoxCPM2/special_tokens_map.json`
-- `.models/VoxCPM2/audiovae.pth`
-
-This repository currently treats VoxCPM2 as a shared-folder multi-mode family: the same local directory is reused for custom, design, and clone flows, while the runtime differentiates those flows through stable manifest `model_id` values.
 
 ### Piper voice layout
 
@@ -262,7 +264,7 @@ python scripts/runtime_self_check.py --strict
 
 When `qwen_fast` is enabled or considered, the self-check output also exposes `backend_support`, route candidates, and explicit rejection reasons so operators can see when the accelerated custom-only lane was selected, left unresolved, or rejected.
 
-For OmniVoice and VoxCPM2, the same self-check output now shows them as **Torch-routed family entries**. They do not introduce new backend keys; instead, they appear as model-family items whose `execution_backend` is expected to resolve to `torch` when their local artifacts and optional Python packages are present.
+For OmniVoice, the same self-check output now shows it as a **Torch-routed family entry**. It does not introduce a new backend key; instead, it appears as a model-family item whose `execution_backend` is expected to resolve to `torch` when its local artifacts and optional Python packages are present.
 
 For repeatable validation flows, use the automation entry point instead of assembling commands manually:
 
@@ -271,7 +273,6 @@ python scripts/validate_runtime.py host-matrix
 python scripts/validate_runtime.py smoke-server
 python scripts/validate_runtime.py smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx
 python scripts/validate_runtime.py smoke-server --smoke-model-id OmniVoice-Custom --expected-backend torch
-python scripts/validate_runtime.py smoke-server --smoke-model-id VoxCPM2-Custom --expected-backend torch
 python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"
 python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN" --chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
 ```
@@ -280,7 +281,6 @@ python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM
 - `smoke-server` starts a local HTTP server, waits for health probes, runs the smoke suite, and stops the server automatically. This remains the baseline host-mode HTTP orchestrator for live validation.
 - `smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx` validates the Piper HTTP path explicitly through `POST /v1/audio/speech` while asserting ONNX routing for that model.
 - `smoke-server --smoke-model-id OmniVoice-Custom --expected-backend torch` validates the OmniVoice HTTP path through the shared Torch family lane.
-- `smoke-server --smoke-model-id VoxCPM2-Custom --expected-backend torch` validates the VoxCPM2 HTTP path through the shared Torch family lane.
 - `telegram-live` verifies real Telegram Bot API reachability and can optionally send a validation message when you also pass `--chat-id`.
 - Add `--expect-update-chat-id` and optionally `--expect-update-text` when you want an opt-in dedicated-chat check that also confirms a newer matching inbound update is visible through `getUpdates` without launching the long-polling bot runtime.
 
@@ -288,7 +288,7 @@ For the V1 HTTP adapter, read the host lane as layered evidence rather than as a
 
 `python -m pytest -m "unit or integration"` remains the canonical first step. If a deterministic-baseline failure appears during that check, record it separately from runtime evidence so the adapter, smoke, Docker, Telegram, and CLI lanes stay easy to interpret.
 
-There is also an **optional local-only deep-validation lane** for operators who want stronger real-model evidence on a specific machine. In V1, that lane starts with `python scripts/validate_runtime.py host-matrix` and/or `python scripts/runtime_self_check.py`, then reuses the existing representative `smoke-server` targets for Qwen, OmniVoice, VoxCPM2, and Piper only when the corresponding local assets and runtime packs are installed. Treat outcomes explicitly as ready/passed, missing assets, corrupt or incomplete assets, unsupported hardware/backend, missing optional dependency packs, or intentionally skipped optional features. This lane is advisory and local-only; it is not a CI or release requirement.
+There is also an **optional local-only deep-validation lane** for operators who want stronger real-model evidence on a specific machine. In V1, that lane starts with `python scripts/validate_runtime.py host-matrix` and/or `python scripts/runtime_self_check.py`, then reuses the existing representative `smoke-server` targets for Qwen, OmniVoice, and Piper only when the corresponding local assets and runtime packs are installed. Treat outcomes explicitly as ready/passed, missing assets, corrupt or incomplete assets, unsupported hardware/backend, missing optional dependency packs, or intentionally skipped optional features. This lane is advisory and local-only; it is not a CI or release requirement.
 
 There is also an **optional advisory-only LLM-assisted evaluation lane** for teams that want semantic review of completed evidence packs. In V1, that lane must read only persisted repository-local artifacts already produced by the existing validation flows, such as retained `server_log_path` logs, `.sisyphus/evidence/server-docker-log.txt`, Docker health/model JSON artifacts, retained `telegram-live` summaries, `.sisyphus/evidence/telegram-docker-log.txt`, and `.sisyphus/evidence/cli-*.txt` transcripts. It must not read ephemeral terminal state or live process internals, it must not create a second evidence framework, and it remains strictly advisory: deterministic failures and structured-artifact failures stay failures even if an LLM summary sounds sympathetic or inconclusive.
 
@@ -408,7 +408,7 @@ Supported backend keys now include:
 
 - `mlx` — Qwen3 on Apple Silicon
 - `qwen_fast` — optional accelerated Qwen custom-only lane with explicit readiness and route diagnostics
-- `torch` — Qwen3, OmniVoice, and VoxCPM2 on Torch CPU/CUDA-compatible runtimes
+- `torch` — Qwen3 and OmniVoice on Torch CPU/CUDA-compatible runtimes
 - `onnx` — Piper local voice inference through ONNX runtime
 
 Read the release-facing support matrix in [docs/support-matrix.md](docs/support-matrix.md) before making platform support claims.

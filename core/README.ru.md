@@ -115,12 +115,11 @@ Runtime сейчас поддерживает следующие model families:
 - `Qwen3-TTS` через `mlx` и `torch`
 - `Qwen3-TTS` custom-only accelerated lane через `qwen_fast` с явной диагностикой маршрута, когда fast lane недоступен
 - `OmniVoice` через `torch`
-- `VoxCPM2` через `torch`
 - `Piper` через `onnx`
 
 Для `qwen_fast` нужен optional runtime faster-qwen3-tts; pinned upstream README документирует установку через `pip install faster-qwen3-tts` и указывает prerequisites: Python 3.10+, PyTorch 2.5.1+ и NVIDIA CUDA.
 
-Для операторов в корне репозитория теперь есть split runtime-pack файлы. `requirements.txt` оставляет стабильное общее окружение Qwen + Piper, а `requirements-runtime-omnivoice.txt` и `requirements-runtime-voxcpm.txt` рассчитаны на отдельные окружения в тех случаях, когда этим upstream families нужна изоляция зависимостей относительно Qwen.
+Для операторов репозиторий теперь собирает runtime dependency contours из `profiles/packs/`. `requirements.txt` остаётся тонким convenience-manifest для стабильного общего окружения Qwen + Piper, а `profiles/packs/family/omnivoice.txt` используется как отдельный family-pack файл для изолированных окружений, когда этому upstream family нужна изоляция зависимостей относительно Qwen.
 
 ## Эксплуатационные замечания
 

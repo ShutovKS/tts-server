@@ -176,18 +176,6 @@
       <CrossLink from="M-OMNIVOICE-FAMILY" to="M-BACKENDS" relation="prepares-torch-execution-inputs" />
     </M-OMNIVOICE-FAMILY>
 
-    <M-VOXCPM-FAMILY NAME="VoxCPMFamilyAdapter" TYPE="CORE_LOGIC" STATUS="implemented">
-      <purpose>Adapt VoxCPM custom, design, and clone semantics into planner-prepared backend execution inputs.</purpose>
-      <path>core/model_families/voxcpm.py</path>
-      <depends>M-MODEL-FAMILY, M-CONTRACTS, M-MODELS</depends>
-      <verification-ref>V-M-VOXCPM-FAMILY</verification-ref>
-      <annotations>
-        <class-VoxCPMFamilyAdapter PURPOSE="Planner-facing family adapter for VoxCPM runtime semantics" />
-      </annotations>
-      <CrossLink from="M-VOXCPM-FAMILY" to="M-MODEL-FAMILY" relation="implements-base-contract" />
-      <CrossLink from="M-VOXCPM-FAMILY" to="M-BACKENDS" relation="prepares-torch-execution-inputs" />
-    </M-VOXCPM-FAMILY>
-
     <M-INFRASTRUCTURE NAME="Infrastructure" TYPE="DATA_LAYER" STATUS="implemented">
       <purpose>Provide local implementations for job execution, audio I/O, admission control, and concurrency.</purpose>
       <path>core/infrastructure/</path>
@@ -210,7 +198,7 @@
     <M-MODEL-REGISTRY NAME="ModelRegistry" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Discover, validate, preload, and serve model handles through the selected backend.</purpose>
       <path>core/services/model_registry.py</path>
-      <depends>M-BACKENDS, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS</depends>
+      <depends>M-ARTIFACT-REGISTRY, M-BACKENDS, M-ERRORS, M-METRICS, M-MODEL-CATALOG, M-MODELS, M-OBSERVABILITY, M-PROFILE-RESOLVER, M-RUNTIME-MODEL-REGISTRY</depends>
       <verification-ref>V-M-MODEL-REGISTRY</verification-ref>
       <annotations>
         <class-ModelRegistry PURPOSE="High-level model discovery and loading facade" />
@@ -339,8 +327,8 @@
 
     <M-BOOTSTRAP NAME="CoreBootstrap" TYPE="ENTRY_POINT" STATUS="implemented">
       <purpose>Assemble the full CoreRuntime from settings by wiring all components together.</purpose>
-      <path>core/bootstrap.py</path>
-      <depends>M-CONFIG, M-BACKENDS, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS</depends>
+      <path>core/bootstrap.py, scripts/runtime_self_check.py</path>
+      <depends>M-CONFIG, M-BACKENDS, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-PROFILES</depends>
       <verification-ref>V-M-BOOTSTRAP</verification-ref>
       <annotations>
         <class-CoreRuntime PURPOSE="Frozen dataclass holding all wired runtime components" />
@@ -402,13 +390,81 @@
     <M-CLI NAME="InteractiveCLI" TYPE="ENTRY_POINT" STATUS="implemented">
       <purpose>Provide interactive local CLI for synthesis workflows with optional audio playback.</purpose>
       <path>cli/</path>
-      <depends>M-BOOTSTRAP, M-CONFIG, M-CONTRACTS, M-OBSERVABILITY</depends>
+      <depends>M-BOOTSTRAP, M-CONFIG, M-CONTRACTS, M-INFRASTRUCTURE, M-MODELS</depends>
       <verification-ref>V-M-CLI</verification-ref>
       <annotations>
         <fn-main PURPOSE="CLI entry point with interactive loop" />
       </annotations>
       <CrossLink from="M-CLI" to="M-BOOTSTRAP" relation="uses-runtime" />
     </M-CLI>
+
+    <M-PROFILE-SCHEMA NAME="RuntimeProfileSchema" TYPE="TYPES" STATUS="implemented">
+      <purpose>Define immutable host, family, module, and resolved-launch profile DTOs plus serialization helpers for launcher and operator tooling.</purpose>
+      <path>profiles/schema.py</path>
+      <depends>none</depends>
+      <verification-ref>V-M-PROFILE-SCHEMA</verification-ref>
+      <annotations>
+        <class-HostProfile PURPOSE="Immutable host capability snapshot used during launch-profile resolution" />
+        <class-FamilyProfile PURPOSE="Immutable family profile carrying runtime pack and backend metadata" />
+        <class-ModuleProfile PURPOSE="Immutable module profile carrying entrypoint and transport metadata" />
+        <class-ResolvedLaunchProfile PURPOSE="Immutable resolved launch profile combining host, family, module, compatibility, backend, and metadata payloads" />
+      </annotations>
+    </M-PROFILE-SCHEMA>
+
+    <M-PROFILE-RESOLVER NAME="RuntimeProfileResolver" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Resolve host, family, and module profiles into compatibility-aware launch plans with dependency-pack resolution, expected interpreter calculation, dedicated-env runtime probing, and resolved-profile assembly.</purpose>
+      <path>profiles/resolver.py</path>
+      <depends>M-HOST-PROBE, M-PROFILE-SCHEMA</depends>
+      <verification-ref>V-M-PROFILE-RESOLVER</verification-ref>
+      <annotations>
+        <class-ProfileResolver PURPOSE="Resolver that loads profile catalogs, evaluates compatibility, resolves pack refs, probes dedicated envs, and assembles resolved launch profiles" />
+      </annotations>
+      <CrossLink from="M-PROFILE-RESOLVER" to="M-HOST-PROBE" relation="uses-host-capability-probe" />
+      <CrossLink from="M-PROFILE-RESOLVER" to="M-PROFILE-SCHEMA" relation="returns-profile-dtos" />
+    </M-PROFILE-RESOLVER>
+
+    <M-PROFILES NAME="RuntimeProfilesPackage" TYPE="BARREL" STATUS="implemented">
+      <purpose>Expose the public runtime-profile barrel surface for launcher and operator tooling at the package import boundary.</purpose>
+      <path>profiles/__init__.py</path>
+      <depends>M-PROFILE-SCHEMA, M-PROFILE-RESOLVER</depends>
+      <verification-ref>V-M-PROFILES</verification-ref>
+      <annotations>
+        <export-FamilyProfile PURPOSE="Public package export for family profile DTOs" />
+        <export-HostProfile PURPOSE="Public package export for host profile DTOs" />
+        <export-ModuleProfile PURPOSE="Public package export for module profile DTOs" />
+        <export-ProfileResolver PURPOSE="Public package export for runtime profile resolution" />
+        <export-ResolvedLaunchProfile PURPOSE="Public package export for resolved launch profile payloads" />
+      </annotations>
+      <CrossLink from="M-PROFILES" to="M-PROFILE-RESOLVER" relation="re-exports-resolver-surface" />
+      <CrossLink from="M-PROFILES" to="M-PROFILE-SCHEMA" relation="re-exports-profile-types" />
+    </M-PROFILES>
+
+    <M-LAUNCHER NAME="RuntimeLauncher" TYPE="SCRIPT" STATUS="implemented">
+      <purpose>Provide the profile-aware launcher CLI for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env runtime contours.</purpose>
+      <path>launcher/main.py, launcher/__init__.py, launcher/__main__.py</path>
+      <depends>M-PROFILES</depends>
+      <verification-ref>V-M-LAUNCHER</verification-ref>
+      <annotations>
+        <fn-parse_args PURPOSE="Launcher CLI parser for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env commands" />
+        <fn-main PURPOSE="Launcher command entrypoint for profile inspection, env diagnostics, and execution planning" />
+      </annotations>
+      <CrossLink from="M-LAUNCHER" to="M-PROFILES" relation="consumes-public-package-import-boundary" />
+    </M-LAUNCHER>
+
+    <M-WINDOWS-LAUNCHER NAME="WindowsInteractiveLauncher" TYPE="SCRIPT" STATUS="implemented">
+      <purpose>Provide a Windows-only interactive PowerShell launcher that orchestrates profile-aware family environments, optional model downloads, and adapter startup.</purpose>
+      <path>scripts/launch-windows.ps1</path>
+      <depends>M-LAUNCHER, M-PROFILE-RESOLVER, M-CONFIG</depends>
+      <verification-ref>V-M-WINDOWS-LAUNCHER</verification-ref>
+      <annotations>
+        <fn-Main PURPOSE="Interactive launcher entry point that prompts for service and model, prepares the family env, and starts the selected adapter" />
+        <fn-Ensure-FamilyEnvironment PURPOSE="Bridge PowerShell orchestration to launcher create-env and check-env flows" />
+        <fn-Ensure-ModelAvailability PURPOSE="Validate local model artifacts and run family-aware download strategies when assets are missing" />
+      </annotations>
+      <CrossLink from="M-WINDOWS-LAUNCHER" to="M-LAUNCHER" relation="delegates-profile-aware-env-and-exec-commands" />
+      <CrossLink from="M-WINDOWS-LAUNCHER" to="M-PROFILE-RESOLVER" relation="consumes-resolved-family-module-contours" />
+      <CrossLink from="M-WINDOWS-LAUNCHER" to="M-CONFIG" relation="projects-qwen-tts-env-variables-into-launch-process" />
+    </M-WINDOWS-LAUNCHER>
 
   </Project>
 </KnowledgeGraph>

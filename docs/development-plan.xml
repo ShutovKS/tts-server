@@ -4,14 +4,14 @@
     <non-goal>No distributed or multi-node execution patterns.</non-goal>
     <risk-1>Backend selection at startup must fail fast with explicit diagnostics when no registered backend is actually ready.</risk-1>
     <risk-2>Single inference guard serializes all generation requests across adapters.</risk-2>
-    <risk-3>Additional Torch-backed families must isolate family semantics from backend loading so OmniVoice and VoxCPM do not regress Qwen3 transport behavior.</risk-3>
+    <risk-3>Additional Torch-backed families must isolate family semantics from backend loading so OmniVoice does not regress Qwen3 transport behavior.</risk-3>
     <migration-objective>Maintain the current multi-platform, multi-backend, multi-model runtime without regressing server, Telegram, or CLI adapter behavior.</migration-objective>
     <migration-invariants>
       <item-1>Current transport adapters continue to depend only on shared core and application contracts.</item-1>
       <item-2>Qwen3-TTS remains the reference family while planner, family-adapter, and backend-contract seams are proven.</item-2>
       <item-3>No big-bang rewrite is allowed; planning and family seams remain explicit and contract-driven.</item-3>
       <item-4>Readiness, observability, and job execution remain first-class runtime artifacts.</item-4>
-      <item-5>OmniVoice and VoxCPM onboarding reuse the existing Torch backend contract through family adapters instead of introducing transport-visible forks.</item-5>
+      <item-5>OmniVoice onboarding reuses the existing Torch backend contract through a family adapter instead of introducing transport-visible forks.</item-5>
     </migration-invariants>
   </ArchitectureNotes>
 
@@ -224,7 +224,7 @@
       <interface>
         <export-ModelRegistry PURPOSE="High-level model discovery and loading facade" />
       </interface>
-      <depends>M-BACKENDS, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS</depends>
+      <depends>M-ARTIFACT-REGISTRY, M-BACKENDS, M-ERRORS, M-METRICS, M-MODEL-CATALOG, M-MODELS, M-OBSERVABILITY, M-PROFILE-RESOLVER, M-RUNTIME-MODEL-REGISTRY</depends>
       <target>
         <source>core/services/model_registry.py</source>
       </target>
@@ -300,9 +300,10 @@
         <export-CoreRuntime PURPOSE="Frozen dataclass holding all wired runtime components" />
         <export-build_runtime PURPOSE="Factory function that assembles CoreRuntime from settings" />
       </interface>
-      <depends>M-CONFIG, M-BACKENDS, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS</depends>
+      <depends>M-CONFIG, M-BACKENDS, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-PROFILES</depends>
       <target>
         <source>core/bootstrap.py</source>
+        <source>scripts/runtime_self_check.py</source>
       </target>
       <verification-ref>V-M-BOOTSTRAP</verification-ref>
     </M-BOOTSTRAP>
@@ -373,7 +374,7 @@
       <interface>
         <export-main PURPOSE="CLI entry point with interactive loop" />
       </interface>
-      <depends>M-BOOTSTRAP, M-CONFIG, M-CONTRACTS, M-OBSERVABILITY</depends>
+      <depends>M-BOOTSTRAP, M-CONFIG, M-CONTRACTS, M-INFRASTRUCTURE, M-MODELS</depends>
       <target>
         <source>cli/__main__.py</source>
         <source>cli/bootstrap.py</source>
@@ -464,6 +465,20 @@
       </target>
       <verification-ref>V-M-QWEN3-FAMILY</verification-ref>
     </M-QWEN3-FAMILY>
+
+    <M-OMNIVOICE-FAMILY NAME="OmniVoiceFamilyAdapter" TYPE="CORE_LOGIC" LAYER="1" ORDER="5" STATUS="implemented">
+      <contract>
+        <purpose>Adapt OmniVoice custom, design, and clone semantics into planner-prepared backend execution inputs.</purpose>
+      </contract>
+      <interface>
+        <export-OmniVoiceFamilyAdapter PURPOSE="Planner-facing family adapter for OmniVoice runtime semantics" />
+      </interface>
+      <depends>M-MODEL-FAMILY, M-CONTRACTS, M-MODELS</depends>
+      <target>
+        <source>core/model_families/omnivoice.py</source>
+      </target>
+      <verification-ref>V-M-OMNIVOICE-FAMILY</verification-ref>
+    </M-OMNIVOICE-FAMILY>
 
     <M-MODEL-CATALOG NAME="ModelCatalogRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="4" STATUS="implemented">
       <contract>
@@ -573,6 +588,72 @@
       <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
       <migration-note>Current code binds planner/coordinator seams to typed runtime registry protocols so service layers depend on explicit contracts instead of concrete registry implementations.</migration-note>
     </M-TTS-COORDINATOR>
+
+    <M-PROFILE-SCHEMA NAME="RuntimeProfileSchema" TYPE="TYPES" LAYER="0" ORDER="9" STATUS="implemented">
+      <contract>
+        <purpose>Define immutable host, family, module, and resolved launch-profile DTOs plus serialization helpers for launcher and operator tooling.</purpose>
+      </contract>
+      <interface>
+        <export-HostProfile PURPOSE="Immutable host capability snapshot used during launch-profile resolution" />
+        <export-FamilyProfile PURPOSE="Immutable family profile carrying runtime pack and backend metadata" />
+        <export-ModuleProfile PURPOSE="Immutable module profile carrying entrypoint and transport metadata" />
+        <export-ResolvedLaunchProfile PURPOSE="Immutable resolved launch profile combining host, family, module, compatibility, backend, and metadata payloads" />
+      </interface>
+      <depends>none</depends>
+      <target>
+        <source>profiles/schema.py</source>
+      </target>
+      <verification-ref>V-M-PROFILE-SCHEMA</verification-ref>
+    </M-PROFILE-SCHEMA>
+
+    <M-PROFILE-RESOLVER NAME="RuntimeProfileResolver" TYPE="CORE_LOGIC" LAYER="2" ORDER="11" STATUS="implemented">
+      <contract>
+        <purpose>Resolve host, family, and module profiles into compatibility-aware launch plans with dependency-pack resolution, expected interpreter calculation, dedicated-env runtime probing, and resolved-profile assembly.</purpose>
+      </contract>
+      <interface>
+        <export-ProfileResolver PURPOSE="Resolver that loads profile catalogs, evaluates compatibility, resolves pack refs, probes dedicated envs, and assembles resolved launch profiles" />
+      </interface>
+      <depends>M-HOST-PROBE, M-PROFILE-SCHEMA</depends>
+      <target>
+        <source>profiles/resolver.py</source>
+      </target>
+      <verification-ref>V-M-PROFILE-RESOLVER</verification-ref>
+    </M-PROFILE-RESOLVER>
+
+    <M-PROFILES NAME="RuntimeProfilesPackage" TYPE="BARREL" LAYER="3" ORDER="2" STATUS="implemented">
+      <contract>
+        <purpose>Expose the public runtime-profile barrel surface for launcher and operator tooling at the package import boundary.</purpose>
+      </contract>
+      <interface>
+        <export-FamilyProfile PURPOSE="Public package export for family profile DTOs" />
+        <export-HostProfile PURPOSE="Public package export for host profile DTOs" />
+        <export-ModuleProfile PURPOSE="Public package export for module profile DTOs" />
+        <export-ProfileResolver PURPOSE="Public package export for runtime profile resolution" />
+        <export-ResolvedLaunchProfile PURPOSE="Public package export for resolved launch profile payloads" />
+      </interface>
+      <depends>M-PROFILE-SCHEMA, M-PROFILE-RESOLVER</depends>
+      <target>
+        <source>profiles/__init__.py</source>
+      </target>
+      <verification-ref>V-M-PROFILES</verification-ref>
+    </M-PROFILES>
+
+    <M-LAUNCHER NAME="RuntimeLauncher" TYPE="SCRIPT" LAYER="4" ORDER="4" STATUS="implemented">
+      <contract>
+        <purpose>Provide the profile-aware launcher CLI for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env runtime contours.</purpose>
+      </contract>
+      <interface>
+        <export-parse_args PURPOSE="Launcher CLI parser for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env commands" />
+        <export-main PURPOSE="Launcher command entrypoint for profile inspection, env diagnostics, and execution planning" />
+      </interface>
+      <depends>M-PROFILES</depends>
+      <target>
+        <source>launcher/main.py</source>
+        <source>launcher/__init__.py</source>
+        <source>launcher/__main__.py</source>
+      </target>
+      <verification-ref>V-M-LAUNCHER</verification-ref>
+    </M-LAUNCHER>
   </Modules>
 
   <DataFlow>
@@ -736,6 +817,8 @@
       <goal>Replace platform-order backend choice with explainable capability-based selection.</goal>
       <step-1 module="M-HOST-PROBE" verification="V-M-HOST-PROBE">Add host probe diagnostics.</step-1>
       <step-2 module="M-CAPABILITY-RESOLVER" verification="V-M-CAPABILITY-RESOLVER">Add explicit compatibility resolution and rejection reasons.</step-2>
+      <step-3 module="M-PROFILE-SCHEMA" verification="V-M-PROFILE-SCHEMA">Define host, family, module, and resolved launch profile DTOs for operator-facing planning payloads.</step-3>
+      <step-4 module="M-PROFILE-RESOLVER" verification="V-M-PROFILE-RESOLVER">Resolve compatibility, dependency packs, expected interpreters, and dedicated-env readiness into launch profiles.</step-4>
     </Migration-Phase-7>
 
     <Migration-Phase-8 name="Second Family Proof" status="planned">
@@ -748,6 +831,8 @@
       <goal>Make multi-platform support operational with diagnostics, packaging guidance, and smoke evidence.</goal>
       <step-1>Document support matrix and runtime dependency paths per platform.</step-1>
       <step-2>Extend readiness and smoke verification surfaces for supported hosts.</step-2>
+      <step-3 module="M-PROFILES" verification="V-M-PROFILES">Publish the launcher-consumed profile surface through a package barrel instead of direct resolver imports.</step-3>
+      <step-4 module="M-LAUNCHER" verification="V-M-LAUNCHER">Expose inspect, env guidance, execution planning, and profile-aware launch commands through the shared profiles package boundary.</step-4>
     </Migration-Phase-9>
 
     <Migration-Phase-10 name="Legacy Cleanup" status="planned">
