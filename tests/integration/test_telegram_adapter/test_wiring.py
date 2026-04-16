@@ -31,6 +31,7 @@ without using the real Telegram API.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import wave
 from dataclasses import dataclass, field
@@ -46,6 +47,9 @@ from telegram_bot.handlers.dispatcher import CommandDispatcher
 from telegram_bot.handlers.tts_handler import TTSSynthesizer
 from telegram_bot.polling import PollingAdapter
 from telegram_bot.sender import TelegramSender
+
+
+pytestmark = pytest.mark.integration
 
 
 # Helper to create minimal settings for testing
@@ -188,12 +192,7 @@ class TestTTSSynthesizerWiring:
 
         synthesizer = TTSSynthesizer(mock_app, settings)
 
-        # Should work without specifying speaker
-        import asyncio
-
-        result = asyncio.get_event_loop().run_until_complete(
-            synthesizer.synthesize("test")
-        )
+        result = asyncio.run(synthesizer.synthesize("test"))
 
         assert result.success is True
         assert mock_app.last_command.speaker == "CustomVoice"
@@ -202,7 +201,7 @@ class TestTTSSynthesizerWiring:
 class TestPollingAdapterWiring:
     """Tests for polling adapter wiring."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_polling_adapter_initial_state(self):
         """Test polling adapter initial state."""
         mock_client = MagicMock(spec=TelegramBotClient)
@@ -237,9 +236,7 @@ class TestSenderWiring:
 
         sender = TelegramSender(mock_client, settings)
 
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(sender.send_text(12345, "Hello"))
+        asyncio.run(sender.send_text(12345, "Hello"))
 
         mock_client.send_message.assert_called_once()
 
@@ -279,7 +276,7 @@ class TestFullWiringFlow:
 class TestErrorPropagation:
     """Tests for error propagation through layers."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_api_error_propagates(self):
         """Test that Telegram API errors propagate."""
         client = TelegramBotClient("test_token")

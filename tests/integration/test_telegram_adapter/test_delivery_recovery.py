@@ -43,6 +43,9 @@ from telegram_bot.job_orchestrator import (
 from core.contracts.jobs import JobStatus
 
 
+pytestmark = pytest.mark.integration
+
+
 class TestDeliveryMetadataStoreRecovery:
     """Tests for DeliveryMetadataStore persistence and recovery."""
 
@@ -61,7 +64,7 @@ class TestDeliveryMetadataStoreRecovery:
         """Create a fresh DeliveryMetadataStore."""
         return DeliveryMetadataStore(temp_store_path)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_create_pending_delivery(self, store):
         """Test creating a pending delivery entry."""
         metadata = await store.create(
@@ -76,7 +79,7 @@ class TestDeliveryMetadataStoreRecovery:
         assert metadata["status"] == "pending"
         assert "created_at" in metadata
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_mark_delivered_success(self, store):
         """Test marking a delivery as successfully delivered."""
         await store.create(chat_id=123, message_id=456, job_id="job_001")
@@ -92,7 +95,7 @@ class TestDeliveryMetadataStoreRecovery:
         assert metadata["status"] == "delivered"
         assert "delivered_at" in metadata
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_mark_delivered_failure(self, store):
         """Test marking a delivery as failed."""
         await store.create(chat_id=123, message_id=456, job_id="job_001")
@@ -108,7 +111,7 @@ class TestDeliveryMetadataStoreRecovery:
         assert metadata["status"] == "failed"
         assert metadata["error_message"] == "Telegram API error"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_is_delivered_after_mark(self, store):
         """Test is_delivered returns True after marking."""
         await store.create(chat_id=123, message_id=456, job_id="job_001")
@@ -119,7 +122,7 @@ class TestDeliveryMetadataStoreRecovery:
 
         assert await store.is_delivered(123, 456) is True
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_pending_deliveries(self, store):
         """Test getting all pending deliveries."""
         # Create multiple deliveries
@@ -131,7 +134,7 @@ class TestDeliveryMetadataStoreRecovery:
 
         assert len(pending) == 3
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_pending_excludes_delivered(self, store):
         """Test that get_pending excludes already delivered."""
         await store.create(chat_id=1, message_id=1, job_id="job_1")
@@ -145,7 +148,7 @@ class TestDeliveryMetadataStoreRecovery:
         assert len(pending) == 1
         assert pending[0]["message_id"] == 2
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_recovery_after_restart(self, temp_store_path):
         """Test that pending deliveries persist across restarts."""
         # First session: create pending deliveries
@@ -160,7 +163,7 @@ class TestDeliveryMetadataStoreRecovery:
 
         assert len(pending) == 2
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_recovery_preserves_job_id(self, temp_store_path):
         """Test that job_id is preserved in recovered deliveries."""
         store1 = DeliveryMetadataStore(temp_store_path)
@@ -171,7 +174,7 @@ class TestDeliveryMetadataStoreRecovery:
 
         assert metadata["job_id"] == "unique_job_id"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_delivery_metadata(self, store):
         """Test getting full delivery metadata."""
         await store.create(chat_id=100, message_id=200, job_id="job_check")
@@ -182,14 +185,14 @@ class TestDeliveryMetadataStoreRecovery:
         assert metadata["job_id"] == "job_check"
         assert metadata["status"] == "pending"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_delivery_metadata_not_found(self, store):
         """Test getting metadata for non-existent delivery."""
         metadata = await store.get_delivery_metadata(chat_id=999, message_id=999)
 
         assert metadata is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_idempotent_mark_delivered(self, store):
         """Test that marking delivered is idempotent."""
         await store.create(chat_id=555, message_id=666, job_id="job_idem")
@@ -223,7 +226,7 @@ class TestTelegramJobPollerRecovery:
         sender.send_text = AsyncMock()
         return sender
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_recovery_loads_pending_jobs(self, mock_orchestrator, mock_sender):
         """Test that recovery loads pending jobs from store."""
         from telegram_bot.job_orchestrator import (
@@ -269,7 +272,7 @@ class TestTelegramJobPollerRecovery:
         # Cleanup
         path.unlink()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_recovery_skips_already_delivered(
         self, mock_orchestrator, mock_sender
     ):

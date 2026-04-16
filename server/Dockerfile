@@ -30,9 +30,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./requirements.txt
-COPY requirements-base.txt ./requirements-base.txt
-COPY requirements-runtime-qwen.txt ./requirements-runtime-qwen.txt
-COPY requirements-runtime-piper.txt ./requirements-runtime-piper.txt
+COPY profiles ./profiles
 RUN python - <<'PY'
 from pathlib import Path
 

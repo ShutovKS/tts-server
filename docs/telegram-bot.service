@@ -7,9 +7,12 @@ Wants=network.target
 Type=simple
 User=%u
 Group=%g
-WorkingDirectory=/path/to/qwen3-tts-apple-silicon
-Environment="PYTHONPATH=/path/to/qwen3-tts-apple-silicon"
-ExecStart=/usr/bin/python3 -m telegram_bot
+WorkingDirectory=/path/to/tts-server
+Environment="PYTHONPATH=/path/to/tts-server"
+# Pick the interpreter for the family environment you want to run, for example:
+#   /path/to/tts-server/.envs/qwen/bin/python
+#   /path/to/tts-server/.envs/omnivoice/bin/python
+ExecStart=/path/to/tts-server/.envs/qwen/bin/python -m telegram_bot
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -20,7 +23,7 @@ SyslogIdentifier=qwen3-tts-telegram
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/path/to/qwen3-tts-apple-silicon/.outputs /path/to/qwen3-tts-apple-silicon/.uploads
+ReadWritePaths=/path/to/tts-server/.outputs /path/to/tts-server/.uploads /path/to/tts-server/.state
 
 # Resource limits
 LimitNOFILE=65536

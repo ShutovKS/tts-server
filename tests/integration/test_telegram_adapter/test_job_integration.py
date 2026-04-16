@@ -46,6 +46,9 @@ from telegram_bot.job_orchestrator import (
 )
 
 
+pytestmark = pytest.mark.integration
+
+
 class TestTelegramJobSubmissionIntegration:
     """Integration tests for job submission flow."""
 
@@ -160,7 +163,7 @@ class TestTelegramDeliveryRecoveryIntegration:
         """Create delivery store."""
         return DeliveryMetadataStore(temp_storage)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_pending_deliveries_recovered_after_restart(self, temp_storage):
         """Pending deliveries are recovered after process restart."""
         # Simulate pre-restart state: create pending deliveries
@@ -178,7 +181,7 @@ class TestTelegramDeliveryRecoveryIntegration:
         job_ids = {p["job_id"] for p in pending}
         assert job_ids == {"job-restart-1", "job-restart-2"}
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_already_delivered_not_in_pending(self, temp_storage):
         """Already delivered jobs are not in pending list."""
         # Simulate pre-restart state: delivered
@@ -216,7 +219,7 @@ class TestTelegramJobLifecycleIntegration:
         if tmp_path.exists():
             tmp_path.unlink()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_submission_creates_pending_delivery(self, temp_storage):
         """Submission flow creates pending delivery entry."""
         delivery_store = DeliveryMetadataStore(temp_storage)
@@ -253,7 +256,7 @@ class TestTelegramJobLifecycleIntegration:
         assert result.success is True
         assert result.job_id == "job-flow-test"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_delivery_completes_after_result(self, temp_storage):
         """Delivery becomes complete after marking as delivered."""
         delivery_store = DeliveryMetadataStore(temp_storage)
@@ -279,7 +282,7 @@ class TestTelegramJobLifecycleIntegration:
         metadata = await delivery_store.get(chat_id=12345, message_id=67890)
         assert metadata["status"] == "delivered"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_failed_delivery_tracked(self, temp_storage):
         """Failed delivery is tracked correctly."""
         delivery_store = DeliveryMetadataStore(temp_storage)

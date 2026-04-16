@@ -16,14 +16,25 @@ This document describes deployment options for the Telegram bot service.
    ffmpeg -version
    ```
 
-2. **Python dependencies**: Ensure requirements are installed:
-    ```bash
-    pip install -r requirements.txt
-    ```
+2. **Python dependencies**: choose the runtime contour that matches the family you want the bot to serve.
+   ```bash
+   # Stable shared lane: Qwen + Piper
+   pip install -r requirements.txt
+
+   # Dedicated family lane when you want live OmniVoice execution
+   pip install -r profiles/packs/family/omnivoice.txt
+   ```
 
    For CI-style repository verification without heavyweight optional runtime packages, use:
    ```bash
    pip install -r requirements-ci.txt
+   ```
+
+   If you are migrating to the profile-aware launcher flow, prefer checking or creating the resolved family environment instead of guessing the pack manually:
+   ```bash
+   python -m launcher doctor --family qwen --module telegram
+   python -m launcher create-env --family qwen --module telegram --apply
+   python -m launcher check-env --family qwen --module telegram
    ```
 
 ## Environment Variables
@@ -82,7 +93,7 @@ For Linux servers, use the provided systemd unit file:
 # Copy unit file
 sudo cp docs/telegram-bot.service /etc/systemd/system/
 
-# Edit to adjust paths if needed
+# Edit to adjust paths and the selected family interpreter
 sudo nano /etc/systemd/system/telegram-bot.service
 
 # Reload systemd
@@ -102,11 +113,21 @@ journalctl -u telegram-bot -f
 ### Option 3: Direct Python Execution
 
 ```bash
-# Run directly
+# Run directly from the selected family environment
 python -m telegram_bot
 
 # Or with custom settings
 QWEN_TTS_TELEGRAM_BOT_TOKEN=your_token python -m telegram_bot
+```
+
+Under the profile-aware environment layout, the practical operator flow is:
+
+```bash
+# Inspect which interpreter the selected family should use
+python -m launcher plan-run --family qwen --module telegram
+
+# Execute through the resolved interpreter in dry-run mode first
+python -m launcher exec --family qwen --module telegram --dry-run
 ```
 
 ## Startup Sequence
@@ -116,7 +137,7 @@ The Telegram bot follows this startup sequence:
 1. **Configuration validation** - Validate required settings
 2. **ffmpeg check** - Verify ffmpeg is available
 3. **Token validation** - Test bot token via Telegram API
-4. **Core runtime initialization** - Load MLX/Torch backend
+4. **Core runtime initialization** - Load the backend/runtime packages available in the selected family environment
 5. **Job execution setup** - Initialize job execution infrastructure
 6. **Polling start** - Begin receiving updates from Telegram
 
