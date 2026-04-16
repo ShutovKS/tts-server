@@ -72,3 +72,4 @@ docs/plans/
 .sisyphus/
 
 *.crt
+.kilo/package-lock.json
