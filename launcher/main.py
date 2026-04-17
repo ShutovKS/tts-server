@@ -1,8 +1,8 @@
 # FILE: launcher/main.py
-# VERSION: 1.0.2
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide the profile-aware launcher CLI for inspecting, planning, validating, and executing runtime contours.
-#   SCOPE: CLI parsing and command dispatch for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env flows
+#   SCOPE: CLI parsing and command dispatch for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env flows including CUDA-aware Qwen environment bootstrap verification
 #   DEPENDS: M-PROFILES
 #   LINKS: M-LAUNCHER
 #   ROLE: SCRIPT
@@ -14,13 +14,18 @@
 #   _entrypoint_to_command - Translate a configured module entrypoint into an interpreter command
 #   _build_compiled_requirements_preview - Build preview lines for the resolved dependency pack file
 #   _compiled_requirements_payload - Serialize resolved dependency-pack metadata for operator-facing JSON output
+#   _resolved_pack_refs - Extract normalized resolved dependency pack refs from launcher metadata.
+#   _needs_qwen_cuda_torch_bootstrap - Decide whether the resolved launch profile requires CUDA-specific Torch bootstrap.
+#   _qwen_fast_addon_path - Resolve the optional qwen_fast add-on dependency pack path.
+#   _build_runtime_bootstrap_steps - Build pre-requirements pip install commands for runtime-specific bootstrap dependencies.
+#   _probe_torch_runtime - Inspect the resolved interpreter for Torch version and CUDA visibility after bootstrap.
 #   _write_compiled_requirements_file - Materialize a temporary compiled requirements file for create-env execution
 #   parse_args - Parse launcher CLI arguments and subcommands
 #   main - Resolve the requested launcher command and emit JSON payloads or process exit codes
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.2 - Aligned launcher dependency contract with the package-level profiles import boundary without changing runtime behavior]
+#   LAST_CHANGE: [v1.1.0 - Added CUDA-aware Qwen Torch bootstrap planning and post-install Torch runtime verification for isolated family environments]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -88,6 +93,127 @@ def _compiled_requirements_payload(resolved: object) -> dict[str, object]:
         "pack_files": list(resolved.metadata.get("pack_files", [])),
         "preview_lines": _build_compiled_requirements_preview(resolved),
     }
+
+
+# START_CONTRACT: _resolved_pack_refs
+#   PURPOSE: Extract normalized resolved dependency pack references from launcher metadata.
+#   INPUTS: { resolved: object - resolved launch profile carrying metadata.pack_refs }
+#   OUTPUTS: { dict[str, tuple[str, ...]] - normalized pack refs grouped by category }
+#   SIDE_EFFECTS: none
+#   LINKS: M-LAUNCHER, M-PROFILE-RESOLVER
+# END_CONTRACT: _resolved_pack_refs
+def _resolved_pack_refs(resolved: object) -> dict[str, tuple[str, ...]]:
+    raw_pack_refs = resolved.metadata.get("pack_refs", {})
+    return {
+        str(category): tuple(str(value) for value in values)
+        for category, values in dict(raw_pack_refs).items()
+    }
+
+
+# START_CONTRACT: _needs_qwen_cuda_torch_bootstrap
+#   PURPOSE: Decide whether a resolved Qwen launch profile requires CUDA-specific Torch bootstrap before general dependency installation.
+#   INPUTS: { resolved: object - resolved launch profile carrying family metadata and resolved pack refs }
+#   OUTPUTS: { bool - true when the profile targets Qwen on a CUDA contour }
+#   SIDE_EFFECTS: none
+#   LINKS: M-LAUNCHER, M-PROFILE-RESOLVER
+# END_CONTRACT: _needs_qwen_cuda_torch_bootstrap
+def _needs_qwen_cuda_torch_bootstrap(resolved: object) -> bool:
+    if resolved.family.key != "qwen":
+        return False
+    platform_refs = _resolved_pack_refs(resolved).get("platform", ())
+    return "cuda" in platform_refs
+
+
+# START_CONTRACT: _qwen_fast_addon_path
+#   PURPOSE: Resolve the optional qwen_fast add-on dependency pack used for CUDA Qwen contours.
+#   INPUTS: { resolved: object - resolved launch profile carrying repository root metadata }
+#   OUTPUTS: { Path - absolute path to the qwen_fast add-on pack file }
+#   SIDE_EFFECTS: none
+#   LINKS: M-LAUNCHER, M-PROFILE-RESOLVER
+# END_CONTRACT: _qwen_fast_addon_path
+def _qwen_fast_addon_path(resolved: object) -> Path:
+    project_root = Path(str(resolved.metadata.get("project_root", Path.cwd())))
+    return project_root / "profiles" / "packs" / "family" / "qwen-fast-addon.txt"
+
+
+# START_CONTRACT: _build_runtime_bootstrap_steps
+#   PURPOSE: Build runtime-specific pip bootstrap commands that must run before the compiled dependency pack installation.
+#   INPUTS: { resolved: object - resolved launch profile, python_path: str - resolved interpreter path }
+#   OUTPUTS: { list[list[str]] - subprocess-safe command sequences for pre-requirements installation }
+#   SIDE_EFFECTS: none
+#   LINKS: M-LAUNCHER, M-PROFILE-RESOLVER
+# END_CONTRACT: _build_runtime_bootstrap_steps
+def _build_runtime_bootstrap_steps(resolved: object, python_path: str) -> list[list[str]]:
+    if not _needs_qwen_cuda_torch_bootstrap(resolved):
+        return []
+
+    return [
+        [
+            python_path,
+            "-m",
+            "pip",
+            "install",
+            "torch>=2.6",
+            "torchaudio>=2.6",
+            "--index-url",
+            "https://download.pytorch.org/whl/cu128",
+        ],
+        [
+            python_path,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            str(_qwen_fast_addon_path(resolved)),
+        ]
+    ]
+
+
+# START_CONTRACT: _probe_torch_runtime
+#   PURPOSE: Probe the resolved interpreter for Torch install details and CUDA visibility after environment bootstrap.
+#   INPUTS: { python_path: str - resolved interpreter path }
+#   OUTPUTS: { dict[str, object] - JSON-serializable Torch runtime probe payload }
+#   SIDE_EFFECTS: Executes the resolved interpreter in a subprocess
+#   LINKS: M-LAUNCHER
+# END_CONTRACT: _probe_torch_runtime
+def _probe_torch_runtime(python_path: str) -> dict[str, object]:
+    probe_code = "\n".join(
+        [
+            "import importlib.util",
+            "import json",
+            "torch_spec = importlib.util.find_spec('torch')",
+            "payload = {'torch_installed': torch_spec is not None}",
+            "if torch_spec is None:",
+            "    print(json.dumps(payload))",
+            "    raise SystemExit(0)",
+            "import torch",
+            "payload.update({",
+            "    'torch_version': getattr(torch, '__version__', None),",
+            "    'cuda_available': bool(torch.cuda.is_available()),",
+            "    'cuda_version': getattr(torch.version, 'cuda', None),",
+            "    'device_count': int(torch.cuda.device_count()) if torch.cuda.is_available() else 0,",
+            "})",
+            "print(json.dumps(payload))",
+        ]
+    )
+    completed = subprocess.run(
+        [python_path, "-c", probe_code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    payload: dict[str, object] = {
+        "returncode": completed.returncode,
+        "stderr": completed.stderr.strip(),
+    }
+    if completed.stdout.strip():
+        try:
+            payload["stdout"] = json.loads(completed.stdout.strip())
+        except Exception:
+            payload["stdout"] = {"raw_stdout": completed.stdout.strip()}
+    else:
+        payload["stdout"] = None
+    return payload
 
 
 # START_CONTRACT: _write_compiled_requirements_file
@@ -255,6 +381,7 @@ def main() -> int:
     if args.command == "bootstrap-env":
         resolved = resolver.resolve(family=args.family, module=args.module)
         env_root = Path(resolved.expected_python_path).parent.parent
+        runtime_bootstrap_steps = _build_runtime_bootstrap_steps(resolved, resolved.expected_python_path)
         bootstrap = {
             "family": resolved.family.key,
             "module": resolved.module.key,
@@ -267,6 +394,7 @@ def main() -> int:
                 "create_env": f"py -3.11 -m venv {env_root}",
                 "set_backend": f"set QWEN_TTS_BACKEND={resolved.selected_backend}" if resolved.selected_backend else None,
                 "upgrade_pip": f"{resolved.expected_python_path} -m pip install --upgrade pip",
+                "runtime_bootstrap": [" ".join(step) for step in runtime_bootstrap_steps],
                 "install_compiled_requirements": f"{resolved.expected_python_path} -m pip install -r <temp compiled requirements file>",
             },
         }
@@ -335,6 +463,7 @@ def main() -> int:
         env_root = expected_python.parent.parent
         payload = resolved.to_dict()
         compiled_requirements_path = _write_compiled_requirements_file(resolved)
+        runtime_bootstrap_steps = _build_runtime_bootstrap_steps(resolved, str(expected_python))
         payload["create_env"] = {
             "family": resolved.family.key,
             "module": resolved.module.key,
@@ -343,6 +472,7 @@ def main() -> int:
             "expected_python_path": str(expected_python),
             "compiled_requirements_path": compiled_requirements_path,
             "compiled_requirements": _compiled_requirements_payload(resolved),
+            "runtime_bootstrap_steps": runtime_bootstrap_steps,
             "steps": [
                 ["py", "-3.11", "-m", "venv", str(env_root)],
                 [str(expected_python), "-m", "pip", "install", "--upgrade", "pip"],
@@ -358,6 +488,14 @@ def main() -> int:
             if not expected_python.exists():
                 subprocess.run(create_env_command, check=True)
             subprocess.run(upgrade_pip_command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            for bootstrap_command in runtime_bootstrap_steps:
+                subprocess.run(
+                    bootstrap_command,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
             subprocess.run(
                 install_compiled_requirements_command,
                 check=True,
@@ -371,6 +509,8 @@ def main() -> int:
                 "step": (
                     "install_compiled_requirements"
                     if exc.cmd == install_compiled_requirements_command
+                    else "runtime_bootstrap"
+                    if exc.cmd in runtime_bootstrap_steps
                     else "upgrade_pip"
                     if exc.cmd == upgrade_pip_command
                     else "bootstrap"
@@ -384,6 +524,7 @@ def main() -> int:
             Path(compiled_requirements_path).unlink(missing_ok=True)
             return 1
         payload["create_env"]["created"] = expected_python.exists()
+        payload["create_env"]["torch_runtime_probe"] = _probe_torch_runtime(str(expected_python))
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         Path(compiled_requirements_path).unlink(missing_ok=True)
         return 0
