@@ -28,14 +28,15 @@
 from __future__ import annotations
 
 import json
+import importlib
 import platform
 import sys
 from pathlib import Path
 
 import pytest
-
-import launcher.main as launcher_main
 from profiles.schema import HostProfile
+
+launcher_main = importlib.import_module("launcher.main")
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

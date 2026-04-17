@@ -1,5 +1,5 @@
 # FILE: tests/integration/test_backend_api_metadata.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Integration tests for backend metadata exposure in the HTTP API.
 #   SCOPE: Backend headers, readiness reporting, model metadata responses
@@ -14,12 +14,13 @@
 #   test_audio_response_includes_backend_header - Verifies audio responses expose selected backend metadata
 #   test_readiness_report_exposes_backend_configuration - Verifies readiness payload reports configured and selected backends
 #   test_models_endpoint_exposes_backend_and_capabilities - Verifies model listing exposes backend and capability metadata
+#   test_models_endpoint_exposes_route_candidates_for_design_mode - Verifies design-capable models expose mixed-backend routing diagnostics
 #   test_models_endpoint_exposes_route_candidates_for_clone_mode - Verifies clone-capable models expose mixed-backend routing diagnostics
-#   test_clone_readiness_excludes_qwen_fast_from_available_backends - Verifies clone readiness surfaces qwen_fast only as a rejected custom-only candidate, never as the selected execution route
+#   test_clone_readiness_prefers_selected_backend_route - Verifies clone readiness keeps selected-backend routing semantics for the active host/backend combination
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.1.0 - Updated backend metadata expectations so qwen_fast clone routing reflects full-mode support]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -121,6 +122,12 @@ def test_readiness_report_exposes_backend_configuration(client: TestClient):
     assert payload["checks"]["models"]["backend_capabilities"]["supports_clone"] is True
     assert payload["checks"]["models"]["routing"]["mixed_backend_routing"] is True
     assert payload["checks"]["models"]["routing"]["per_model_backend_overrides"] == 1
+    assert payload["checks"]["models"]["family_summary"]["qwen3_tts"] == {
+        "family": "Qwen3-TTS",
+        "configured_models": 3,
+        "available_models": 3,
+        "runtime_ready_models": 3,
+    }
     assert payload["checks"]["models"]["cache_diagnostics"]["cached_model_count"] == 1
     assert (
         payload["checks"]["models"]["preload"]["loaded_model_ids"]
@@ -203,12 +210,35 @@ def test_models_endpoint_exposes_route_candidates_for_clone_mode(client: TestCli
     assert clone_model["execution_backend"] == "mlx"
     assert clone_model["route"]["route_reason"] == "selected_backend_supports_model"
     assert clone_model["route"]["routing_mode"] == "selected_backend"
-    assert clone_model["route"]["candidates"] == []
+    assert clone_model["route"]["candidates"][0]["key"] == "qwen_fast"
+    assert clone_model["route"]["candidates"][0]["supports_mode"] is True
+    assert clone_model["route"]["candidates"][0]["route_reason"] == "unsupported_platform"
     assert clone_model["capabilities"]["supports_clone"] is True
     assert clone_model["runtime_ready"] is True
 
 
-def test_clone_readiness_excludes_qwen_fast_from_available_backends(client: TestClient):
+def test_models_endpoint_exposes_route_candidates_for_design_mode(client: TestClient):
+    response = client.get("/api/v1/models")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    design_model = next(
+        item for item in payload if item["id"] == "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit"
+    )
+
+    assert design_model["mode"] == "design"
+    assert design_model["selected_backend"] == "mlx"
+    assert design_model["execution_backend"] == "mlx"
+    assert design_model["route"]["route_reason"] == "selected_backend_supports_model"
+    assert design_model["route"]["routing_mode"] == "selected_backend"
+    assert design_model["route"]["candidates"][0]["key"] == "qwen_fast"
+    assert design_model["route"]["candidates"][0]["supports_mode"] is True
+    assert design_model["route"]["candidates"][0]["route_reason"] == "unsupported_platform"
+    assert design_model["capabilities"]["supports_voice_description_tts"] is True
+    assert design_model["runtime_ready"] is True
+
+
+def test_clone_readiness_prefers_selected_backend_route(client: TestClient):
     response = client.get("/health/ready")
 
     assert response.status_code == 200
@@ -224,11 +254,8 @@ def test_clone_readiness_excludes_qwen_fast_from_available_backends(client: Test
     assert clone_model["route"]["routing_mode"] == "selected_backend"
     assert clone_model["route"]["route_reason"] == "selected_backend_supports_model"
     assert clone_model["route"]["candidates"][0]["key"] == "qwen_fast"
-    assert clone_model["route"]["candidates"][0]["supports_mode"] is False
-    assert (
-        clone_model["route"]["candidates"][0]["route_reason"]
-        == "model_backend_affinity_mismatch"
-    )
+    assert clone_model["route"]["candidates"][0]["supports_mode"] is True
+    assert clone_model["route"]["candidates"][0]["route_reason"] == "unsupported_platform"
     assert clone_model["route"]["candidates"][0]["diagnostics"]["backend"] == "qwen_fast"
     assert any(
         backend["key"] == "qwen_fast"

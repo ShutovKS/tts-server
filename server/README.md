@@ -62,7 +62,7 @@ The image exposes port `8000` and uses `python -m uvicorn server:app --host 0.0.
 
 - `GET /api/v1/models`
 
-Model discovery now exposes family metadata, supported capabilities, selected backend, per-model execution backend, missing artifacts, and route explanations for mixed-family deployments. For Qwen custom models this may include the optional `qwen_fast` route candidate, which is **custom-only** in the current MVP and remains unresolved when its fast-path prerequisites are not satisfied.
+Model discovery now exposes family metadata, supported capabilities, selected backend, per-model execution backend, missing artifacts, and route explanations for mixed-family deployments. For Qwen models this may include the optional `qwen_fast` route candidate, which remains unresolved when its fast-path prerequisites are not satisfied.
 
 ### Synchronous TTS endpoints
 
@@ -140,7 +140,7 @@ Important variables:
 
 Shared variables from [../core/README.md](../core/README.md) also apply.
 
-If you want to disable the accelerated Qwen lane entirely, set `QWEN_TTS_QWEN_FAST_ENABLED=false`. This affects only the optional custom-only fast lane and does not disable the standard Torch Qwen path.
+If you want to disable the accelerated Qwen lane entirely, set `QWEN_TTS_QWEN_FAST_ENABLED=false`. This affects only the optional fast lane and does not disable the standard Torch Qwen path.
 
 When enabling this lane on a supported Linux/Windows CUDA host, install the optional accelerated runtime separately with `pip install faster-qwen3-tts` and follow the upstream prerequisites (Python 3.10+, PyTorch 2.5.1+, NVIDIA GPU with CUDA).
 

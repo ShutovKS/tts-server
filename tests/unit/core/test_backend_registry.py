@@ -715,6 +715,76 @@ def test_backend_registry_prefers_qwen_fast_for_custom_model_when_ready():
     assert route["route_reason"] == "selected_backend_supports_model"
 
 
+def test_backend_registry_prefers_qwen_fast_for_design_model_when_ready():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(
+                key="qwen_fast",
+                available=True,
+                platform_supported=True,
+                supports_design=True,
+                supports_clone=True,
+            ),
+            StubBackend(key="torch", available=True, platform_supported=True),
+        ],
+        requested_backend="qwen_fast",
+        autoselect=True,
+    )
+
+    route = backend_registry.explain_backend_route_for_spec(MODEL_SPECS["2"])
+
+    assert route["selected_backend"] == "qwen_fast"
+    assert route["execution_backend"] == "qwen_fast"
+    assert route["route_reason"] == "selected_backend_supports_model"
+
+
+def test_backend_registry_prefers_qwen_fast_for_clone_model_when_ready():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(
+                key="qwen_fast",
+                available=True,
+                platform_supported=True,
+                supports_design=True,
+                supports_clone=True,
+            ),
+            StubBackend(key="torch", available=True, platform_supported=True),
+        ],
+        requested_backend="qwen_fast",
+        autoselect=True,
+    )
+
+    route = backend_registry.explain_backend_route_for_spec(MODEL_SPECS["3"])
+
+    assert route["selected_backend"] == "qwen_fast"
+    assert route["execution_backend"] == "qwen_fast"
+    assert route["route_reason"] == "selected_backend_supports_model"
+
+
+def test_backend_registry_prefers_qwen_fast_for_0_6b_custom_design_and_clone_when_ready():
+    backend_registry = BackendRegistry(
+        [
+            StubBackend(
+                key="qwen_fast",
+                available=True,
+                platform_supported=True,
+                supports_design=True,
+                supports_clone=True,
+            ),
+            StubBackend(key="torch", available=True, platform_supported=True),
+        ],
+        requested_backend="qwen_fast",
+        autoselect=True,
+    )
+
+    for spec_key in ("4", "5", "6"):
+        route = backend_registry.explain_backend_route_for_spec(MODEL_SPECS[spec_key])
+
+        assert route["selected_backend"] == "qwen_fast"
+        assert route["execution_backend"] == "qwen_fast"
+        assert route["route_reason"] == "selected_backend_supports_model"
+
+
 def test_backend_registry_rejects_explicit_qwen_fast_when_not_ready():
     with pytest.raises(BackendNotAvailableError) as exc_info:
         BackendRegistry(

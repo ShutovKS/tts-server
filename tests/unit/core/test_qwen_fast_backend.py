@@ -1,8 +1,8 @@
 # FILE: tests/unit/core/test_qwen_fast_backend.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Unit tests for the additive accelerated Qwen custom-only backend.
-#   SCOPE: Readiness diagnostics, artifact inspection, model loading, and custom-only execution boundaries
+#   PURPOSE: Unit tests for the additive accelerated Qwen backend.
+#   SCOPE: Readiness diagnostics, artifact inspection, model loading, and custom/design/clone execution behavior
 #   DEPENDS: M-CORE
 #   LINKS: V-M-BACKENDS-V2
 #   ROLE: TEST
@@ -14,11 +14,11 @@
 #   test_qwen_fast_backend_reports_disabled_by_config - Verifies explicit config disablement is surfaced
 #   test_qwen_fast_backend_inspects_missing_artifacts - Verifies artifact validation for fast-capable custom models
 #   test_qwen_fast_backend_loads_model_with_stub_runtime - Verifies dependency-gated loading through a stub runtime
-#   test_qwen_fast_backend_rejects_design_and_clone_execution - Verifies MVP custom-only scope is enforced at execution time
+#   test_qwen_fast_backend_executes_custom_design_and_clone - Verifies custom, design, and clone execution paths use the fast runtime when available
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added accelerated Qwen backend unit coverage]
+#   LAST_CHANGE: [v1.1.0 - Expanded accelerated Qwen backend test coverage to custom, design, and clone execution paths]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ import pytest
 
 from core.backends.base import ExecutionRequest
 from core.backends.qwen_fast_backend import QwenFastBackend
-from core.errors import TTSGenerationError
 from core.models.catalog import MODEL_SPECS
 
 
@@ -116,34 +115,82 @@ def test_qwen_fast_backend_loads_model_with_stub_runtime(
     assert inspection["cached"] is True
 
 
-def test_qwen_fast_backend_rejects_design_and_clone_execution(tmp_path: Path):
+def test_qwen_fast_backend_executes_custom_design_and_clone(tmp_path: Path):
     backend = QwenFastBackend(models_dir=tmp_path)
+    recorded_calls: list[tuple[str, dict[str, object]]] = []
+
+    class RuntimeStub:
+        @staticmethod
+        def generate_custom_voice(**kwargs):
+            recorded_calls.append(("custom", kwargs))
+            return [[0.0, 0.0]], 24000
+
+        @staticmethod
+        def generate_voice_design(**kwargs):
+            recorded_calls.append(("design", kwargs))
+            return [[0.0, 0.0]], 24000
+
+        @staticmethod
+        def generate_voice_clone(**kwargs):
+            recorded_calls.append(("clone", kwargs))
+            return [[0.0, 0.0]], 24000
+
     handle = type(
         "HandleStub",
         (),
-        {"spec": MODEL_SPECS["1"], "runtime_model": object()},
+        {"spec": MODEL_SPECS["1"], "runtime_model": RuntimeStub()},
     )()
+    reference_audio = tmp_path / "reference.wav"
+    reference_audio.write_bytes(b"wav")
 
-    with pytest.raises(TTSGenerationError, match="custom synthesis only"):
-        backend.execute(
-            ExecutionRequest(
-                handle=handle,
-                text="hello",
-                output_dir=tmp_path,
-                language="auto",
-                execution_mode="design",
-                generation_kwargs={"instruct": "Warm narrator"},
-            )
+    backend.execute(
+        ExecutionRequest(
+            handle=handle,
+            text="hello custom",
+            output_dir=tmp_path / "custom-output",
+            language="auto",
+            execution_mode="custom",
+            generation_kwargs={
+                "voice": "Vivian",
+                "instruct": "Normal tone",
+                "speed": 1.0,
+            },
         )
+    )
+    backend.execute(
+        ExecutionRequest(
+            handle=handle,
+            text="hello design",
+            output_dir=tmp_path / "design-output",
+            language="auto",
+            execution_mode="design",
+            generation_kwargs={"instruct": "Warm narrator"},
+        )
+    )
+    backend.execute(
+        ExecutionRequest(
+            handle=handle,
+            text="hello clone",
+            output_dir=tmp_path / "clone-output",
+            language="English",
+            execution_mode="clone",
+            generation_kwargs={"ref_audio": reference_audio, "ref_text": "reference text"},
+        )
+    )
 
-    with pytest.raises(TTSGenerationError, match="custom synthesis only"):
-        backend.execute(
-            ExecutionRequest(
-                handle=handle,
-                text="hello",
-                output_dir=tmp_path,
-                language="auto",
-                execution_mode="clone",
-                generation_kwargs={"ref_audio": tmp_path / "reference.wav", "ref_text": "hello"},
-            )
-        )
+    assert recorded_calls[0][0] == "custom"
+    assert recorded_calls[0][1]["text"] == "hello custom"
+    assert recorded_calls[0][1]["speaker"] == "Vivian"
+    assert recorded_calls[0][1]["instruct"] == "Normal tone"
+    assert recorded_calls[0][1]["language"] == "Auto"
+
+    assert recorded_calls[1][0] == "design"
+    assert recorded_calls[1][1]["text"] == "hello design"
+    assert recorded_calls[1][1]["instruct"] == "Warm narrator"
+    assert recorded_calls[1][1]["language"] == "Auto"
+
+    assert recorded_calls[2][0] == "clone"
+    assert recorded_calls[2][1]["text"] == "hello clone"
+    assert recorded_calls[2][1]["language"] == "English"
+    assert recorded_calls[2][1]["ref_audio"] == reference_audio
+    assert recorded_calls[2][1]["ref_text"] == "reference text"

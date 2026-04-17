@@ -14,12 +14,12 @@
 | macOS Apple Silicon | MLX | Qwen3-TTS | Proven | Primary optimized path; local regression and live runtime validation exist |
 | macOS Apple Silicon | ONNX | Piper | Proven | Local Piper voice synthesis validated through `piper-tts` |
 | macOS Apple Silicon | Torch | Qwen3-TTS | Partially proven | Supported by code and tests, but MLX remains the preferred path |
-| macOS Apple Silicon | Qwen Fast | Qwen3-TTS custom-only | Unsupported | Fast lane is CUDA-oriented and reports explicit rejection/fallback diagnostics on macOS |
+| macOS Apple Silicon | Qwen Fast | Qwen3-TTS | Unsupported | Fast lane is CUDA-oriented and reports explicit rejection/fallback diagnostics on macOS |
 | Linux | Torch | Qwen3-TTS | Partially proven | Official upstream install path exists via `pip install -U qwen-tts`; full host validation still remains outstanding |
-| Linux | Qwen Fast | Qwen3-TTS custom-only | Partially proven | Additive accelerated lane exists in code/tests with explicit CUDA/runtime gating and fallback to Torch; end-to-end host evidence still depends on CUDA-capable validation |
+| Linux | Qwen Fast | Qwen3-TTS | Partially proven | Additive accelerated lane exists in code/tests with explicit CUDA/runtime gating; end-to-end host evidence still depends on CUDA-capable validation |
 | Linux | ONNX | Piper | Partially proven | Supported by code and CI-oriented setup guidance |
 | Windows | Torch | Qwen3-TTS | Proven | Native Windows validation now covers strict self-check, Torch-only host-matrix checks with qwen_fast disabled by config, and smoke-server execution against the Torch backend on this host |
-| Windows | Qwen Fast | Qwen3-TTS custom-only | Proven | Native Windows validation now covers strict self-check, host-matrix diagnostics, and smoke-server execution on a CUDA-capable host; explicit Torch fallback remains in place when fast prerequisites are missing |
+| Windows | Qwen Fast | Qwen3-TTS | Proven | Native Windows validation now covers strict self-check, host-matrix diagnostics, smoke-server execution, and live HTTP custom/design/clone execution on a CUDA-capable host; explicit Torch fallback remains in place when fast prerequisites are missing |
 | Windows | ONNX | Piper | Proven | Native Windows validation now covers strict self-check with a real Piper runtime plus downloaded voice artifacts, direct synthesis evidence, and smoke-server HTTP validation via `--smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx` on this host |
 | Any platform | MLX | Piper | Unsupported | Piper routes through ONNX, not MLX |
 | Any platform | ONNX | Qwen3-TTS | Unsupported | Qwen3 runtime is not wired to ONNX in this repository |
@@ -28,10 +28,10 @@
 
 - The **selected backend** can differ from the **execution backend** for a specific model.
 - Mixed-family deployments are expected to report per-model routing explicitly.
-- `qwen_fast` is a **custom-only** Qwen lane in the current MVP and must not be read as clone/design acceleration.
+- `qwen_fast` is an accelerated Qwen lane for custom, design, and clone on supported CUDA hosts.
 - When fast prerequisites are missing, operators should expect explicit route candidates and fallback reasons rather than silent disablement.
 - The accelerated runtime itself is operator-managed: use `pip install faster-qwen3-tts` on supported Linux/Windows CUDA hosts and keep the standard Torch lane available as fallback.
-- Platform claims should be read together with CI status and runtime self-check output; Windows is no longer treated as a best-effort-only automation lane, and the CUDA-backed `qwen_fast` custom path now has native-host smoke evidence.
+- Platform claims should be read together with CI status and runtime self-check output; Windows is no longer treated as a best-effort-only automation lane, and the CUDA-backed `qwen_fast` path now has native-host smoke and live endpoint evidence.
 - On the current Windows host, Docker Desktop Linux-container validation now includes successful server image build plus live `/health/live`, `/health/ready`, and `/api/v1/models` probes, with retained evidence in `.sisyphus/evidence/server-docker-health-live.json`, `.sisyphus/evidence/server-docker-health-ready.json`, `.sisyphus/evidence/server-docker-models.json`, and `.sisyphus/evidence/server-docker-log.txt`. Telegram Docker remains a documented compose path, but this retained evidence set does not claim it as proven on this host.
 - `grace` CLI is optional and currently documented upstream through the GRACE packaging repository as `bun add -g @osovv/grace-cli`.
 

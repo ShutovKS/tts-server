@@ -164,7 +164,7 @@ The non-macOS Qwen lane depends on the official `qwen-tts` Python package used b
 
 ### Optional accelerated Qwen lane note
 
-The repository also includes an additive `qwen_fast` backend for **custom-only** Qwen synthesis. This lane is optional, remains separate from the standard `torch` backend key, and surfaces an unresolved route when its runtime prerequisites are not satisfied.
+The repository also includes an additive `qwen_fast` backend for accelerated Qwen synthesis across custom, design, and clone modes on supported CUDA hosts. This lane is optional, remains separate from the standard `torch` backend key, and surfaces an unresolved route when its runtime prerequisites are not satisfied.
 
 The pinned faster-qwen3-tts README documents the accelerated install path as:
 
@@ -262,7 +262,7 @@ Use strict mode in automation when you want a non-zero exit code for degraded ru
 python scripts/runtime_self_check.py --strict
 ```
 
-When `qwen_fast` is enabled or considered, the self-check output also exposes `backend_support`, route candidates, and explicit rejection reasons so operators can see when the accelerated custom-only lane was selected, left unresolved, or rejected.
+When `qwen_fast` is enabled or considered, the self-check output also exposes `backend_support`, route candidates, and explicit rejection reasons so operators can see when the accelerated lane was selected, left unresolved, or rejected.
 
 For OmniVoice, the same self-check output now shows it as a **Torch-routed family entry**. It does not introduce a new backend key; instead, it appears as a model-family item whose `execution_backend` is expected to resolve to `torch` when its local artifacts and optional Python packages are present.
 
@@ -407,7 +407,7 @@ Shared settings are parsed by [`CoreSettings.from_env()`](core/config.py:112). C
 Supported backend keys now include:
 
 - `mlx` — Qwen3 on Apple Silicon
-- `qwen_fast` — optional accelerated Qwen custom-only lane with explicit readiness and route diagnostics
+- `qwen_fast` - optional accelerated Qwen lane with explicit readiness and route diagnostics
 - `torch` — Qwen3 and OmniVoice on Torch CPU/CUDA-compatible runtimes
 - `onnx` — Piper local voice inference through ONNX runtime
 

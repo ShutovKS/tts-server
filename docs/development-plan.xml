@@ -158,7 +158,7 @@
         <export-BackendRegistry PURPOSE="Backend selection and model spec resolution" />
         <export-MLXBackend PURPOSE="Apple Silicon MLX inference backend" />
         <export-TorchBackend PURPOSE="PyTorch CPU/CUDA inference backend" />
-        <export-QwenFastBackend PURPOSE="Accelerated Qwen custom-only backend with explicit readiness diagnostics" />
+        <export-QwenFastBackend PURPOSE="Accelerated Qwen backend for custom, design, and clone with explicit readiness diagnostics" />
         <export-ONNXBackend PURPOSE="ONNX runtime backend for Piper voices" />
         <export-TTSBackend PURPOSE="Abstract backend interface" />
         <export-LoadedModelHandle PURPOSE="Handle to a loaded model with metadata" />

@@ -93,7 +93,11 @@ def test_profile_schema_dataclasses_serialize_nested_payloads_without_aliasing_m
         label="Qwen3-TTS",
         pack_refs={"base": ("common",), "family": ("qwen",)},
         isolated_env_name="qwen",
-        supported_capabilities=("preset_speaker_tts", "reference_voice_clone"),
+        supported_capabilities=(
+            "preset_speaker_tts",
+            "voice_description_tts",
+            "reference_voice_clone",
+        ),
         allowed_backends=("mlx", "qwen_fast", "torch"),
         required_artifacts=("config.json",),
         benchmark_command="python scripts/validate_runtime.py representative-models --target qwen",
@@ -289,7 +293,7 @@ def test_profile_resolver_reports_incompatibility_reasons_when_qwen_runtime_prer
     resolved = resolver.resolve(family="qwen", module="server").to_dict()
 
     assert resolved["compatible"] is False
-    assert resolved["reasons"] == ["ffmpeg_missing", "torch_runtime_missing"]
+    assert tuple(resolved["reasons"]) == ("ffmpeg_missing", "torch_runtime_missing")
     assert resolved["selected_backend"] == "torch"
     assert resolved["required_env_name"] == "qwen"
 
@@ -320,7 +324,11 @@ def test_runtime_self_check_builds_profile_payload_from_resolver_surface(
                     label="Qwen3-TTS",
                     pack_refs={"family": ("qwen",)},
                     isolated_env_name="qwen",
-                    supported_capabilities=("preset_speaker_tts",),
+                    supported_capabilities=(
+                        "preset_speaker_tts",
+                        "voice_description_tts",
+                        "reference_voice_clone",
+                    ),
                     allowed_backends=("torch",),
                     required_artifacts=("config.json",),
                     benchmark_command="benchmark qwen",

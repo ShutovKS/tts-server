@@ -162,7 +162,7 @@ C:\Users\shutov.k.s\AppData\Local\Programs\sox
 
 ### Важная оговорка по ускоренному Qwen lane
 
-В репозитории также появился дополнительный backend `qwen_fast` для **custom-only** Qwen synthesis. Этот lane optional, не подменяет стандартный `torch` backend key и при отсутствии нужных runtime prerequisites остаётся в состоянии rejected/unresolved route вместо автоматического переключения на Torch execution path.
+В репозитории также появился дополнительный backend `qwen_fast` для ускоренного Qwen synthesis в режимах custom, design и clone на поддерживаемых CUDA-хостах. Этот lane optional, не подменяет стандартный `torch` backend key и при отсутствии нужных runtime prerequisites остаётся в состоянии rejected/unresolved route вместо автоматического переключения на Torch execution path.
 
 Pinned README проекта faster-qwen3-tts документирует путь установки ускоренного runtime так:
 
@@ -251,7 +251,7 @@ python scripts/runtime_self_check.py
 python scripts/runtime_self_check.py --strict
 ```
 
-Если `qwen_fast` включён или рассматривается для маршрутизации, self-check теперь дополнительно показывает `backend_support`, route candidates и явные причины отклонения, чтобы оператор видел, когда ускоренный custom-only lane был выбран, а когда нет.
+Если `qwen_fast` включён или рассматривается для маршрутизации, self-check теперь дополнительно показывает `backend_support`, route candidates и явные причины отклонения, чтобы оператор видел, когда ускоренный lane был выбран, а когда нет.
 
 Для OmniVoice тот же self-check теперь показывает его как **Torch-routed family entry**. Он не добавляет новый backend key; вместо этого появляется как model-family элемент, у которого `execution_backend` должен разрешаться в `torch`, если локальные артефакты и optional Python packages доступны.
 
@@ -378,7 +378,7 @@ docker compose -f docker-compose.telegram-bot.yaml up --build
 Поддерживаемые backend keys теперь включают:
 
 - `mlx` — Qwen3 на Apple Silicon
-- `qwen_fast` — optional ускоренный Qwen custom-only lane с явной диагностикой готовности и маршрутизации
+- `qwen_fast` — optional ускоренный Qwen lane с явной диагностикой готовности и маршрутизации
 - `torch` — Qwen3 и OmniVoice на Torch CPU/CUDA-совместимых runtime
 - `onnx` — Piper local voice inference через ONNX runtime
 

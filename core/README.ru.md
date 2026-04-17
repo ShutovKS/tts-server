@@ -58,7 +58,7 @@ runtime = build_runtime(settings)
 ### Backend layer
 
 - [`MLXBackend`](backends/mlx_backend.py:20) — backend для Qwen на Apple Silicon
-- [`QwenFastBackend`](backends/qwen_fast_backend.py) — optional ускоренный backend для Qwen custom-only с явным CUDA/runtime gating
+- [`QwenFastBackend`](backends/qwen_fast_backend.py) — optional ускоренный backend для Qwen с явным CUDA/runtime gating
 - [`TorchBackend`](backends/torch_backend.py:15) — PyTorch backend для Qwen на CPU/CUDA-совместимых окружениях
 - [`ONNXBackend`](backends/onnx_backend.py) — backend для Piper local voice inference через ONNX
 - [`BackendRegistry`](backends/registry.py:14) — регистрация и выбор backend
@@ -104,7 +104,7 @@ Transport-specific настройки описаны в [../server/README.ru.md]
 
 - [`ModelRegistry.readiness_report()`](services/model_registry.py:218) теперь публикует selected backend, per-model execution backend, mixed-backend routing summary, host snapshot, family summary и per-candidate route diagnostics для optional fast-lane решений.
 - Operator-утилита [`scripts/runtime_self_check.py`](../scripts/runtime_self_check.py) печатает JSON snapshot для локальной setup-проверки и CI evidence.
-- В mixed-family deployment model discovery и readiness специально различают `selected_backend` и `execution_backend`, потому что Piper может маршрутизироваться в ONNX, даже если глобально выбран MLX, а Qwen custom models могут одновременно показывать `qwen_fast` как выбранный или отклонённый route candidate без изменения non-custom modes.
+- В mixed-family deployment model discovery и readiness специально различают `selected_backend` и `execution_backend`, потому что Piper может маршрутизироваться в ONNX, даже если глобально выбран MLX, а Qwen models могут одновременно показывать `qwen_fast` как выбранный или отклонённый route candidate для конкретного режима без влияния на другие family.
 
 ## Модельные артефакты
 
@@ -113,7 +113,7 @@ Transport-specific настройки описаны в [../server/README.ru.md]
 Runtime сейчас поддерживает следующие model families:
 
 - `Qwen3-TTS` через `mlx` и `torch`
-- `Qwen3-TTS` custom-only accelerated lane через `qwen_fast` с явной диагностикой маршрута, когда fast lane недоступен
+- `Qwen3-TTS` accelerated lane через `qwen_fast` с явной диагностикой маршрута, когда fast lane недоступен
 - `OmniVoice` через `torch`
 - `Piper` через `onnx`
 

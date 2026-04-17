@@ -98,7 +98,7 @@ def test_build_readiness_report_returns_deep_diagnostics(
     report = build_readiness_report(_make_request(settings, DummyRegistry(settings)))
 
     assert report.status == "ok"
-    assert report.checks["models"]["runtime_ready_models"] == 2
+    assert report.checks["models"]["runtime_ready_models"] == 3
     assert report.checks["models"]["loaded_models"] == 1
     assert report.checks["models"]["preload"]["status"] == "completed"
     assert report.checks["models"]["cache_diagnostics"]["cached_model_count"] == 1

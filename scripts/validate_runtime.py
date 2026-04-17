@@ -1091,6 +1091,12 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
     eligible_custom_route = _route_candidate(
         _model_entry(eligible, CUSTOM_SMOKE_MODEL_ID), "qwen_fast"
     )
+    eligible_design_route = _route_candidate(
+        _model_entry(eligible, "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit"), "qwen_fast"
+    )
+    eligible_clone_route = _route_candidate(
+        _model_entry(eligible, "Qwen3-TTS-12Hz-1.7B-Base-8bit"), "qwen_fast"
+    )
     if qwen_fast_enabled:
         _require(
             eligible_qwen_fast["diagnostics"]["ready"] is True,
@@ -1098,11 +1104,27 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
         )
         _require(
             eligible_custom_route["ready"] is True,
-            "Expected qwen_fast eligible simulation to produce a ready custom route candidate",
+            "Expected qwen_fast eligible simulation to produce a ready custom route",
         )
         _require(
             eligible_custom_route["route_reason"] == "route_candidate_accepted",
-            "Expected qwen_fast eligible simulation to accept the custom route candidate",
+            "Expected qwen_fast eligible simulation to accept the custom route",
+        )
+        _require(
+            eligible_design_route["ready"] is True,
+            "Expected qwen_fast eligible simulation to produce a ready design route candidate",
+        )
+        _require(
+            eligible_design_route["route_reason"] == "route_candidate_accepted",
+            "Expected qwen_fast eligible simulation to accept the design route candidate",
+        )
+        _require(
+            eligible_clone_route["ready"] is True,
+            "Expected qwen_fast eligible simulation to produce a ready clone route candidate",
+        )
+        _require(
+            eligible_clone_route["route_reason"] == "route_candidate_accepted",
+            "Expected qwen_fast eligible simulation to accept the clone route candidate",
         )
     else:
         _require(
@@ -1112,6 +1134,14 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
         _require(
             eligible_custom_route["route_reason"] == "disabled_by_config",
             "Expected qwen_fast eligible simulation to keep the custom route disabled when qwen_fast is disabled by config",
+        )
+        _require(
+            eligible_design_route["route_reason"] == "disabled_by_config",
+            "Expected qwen_fast eligible simulation to keep the design route disabled when qwen_fast is disabled by config",
+        )
+        _require(
+            eligible_clone_route["route_reason"] == "disabled_by_config",
+            "Expected qwen_fast eligible simulation to keep the clone route disabled when qwen_fast is disabled by config",
         )
 
     cuda_missing_qwen_fast = cuda_missing_backends["qwen_fast"]
@@ -1171,6 +1201,8 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
                 "ready": eligible_qwen_fast["diagnostics"]["ready"],
                 "reason": eligible_qwen_fast["diagnostics"]["reason"],
                 "custom_route_reason": eligible_custom_route["route_reason"],
+                "design_route_reason": eligible_design_route["route_reason"],
+                "clone_route_reason": eligible_clone_route["route_reason"],
             },
             "cuda_missing": {
                 "ready": cuda_missing_qwen_fast["diagnostics"]["ready"],

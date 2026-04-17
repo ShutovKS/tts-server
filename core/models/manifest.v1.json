@@ -86,7 +86,7 @@
         "label": "Voice Design",
         "semantics": "Generate speech from free-form voice description"
       },
-      "backend_affinity": ["mlx", "torch"],
+      "backend_affinity": ["mlx", "qwen_fast", "torch"],
       "rollout": {
         "enabled": true,
         "stage": "general",
@@ -101,6 +101,14 @@
           ]
         },
         "torch": {
+          "required_rules": [
+            {"name": "config", "any_of": ["config.json"]},
+            {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
+            {"name": "preprocessor", "any_of": ["preprocessor_config.json"]},
+            {"name": "tokenizer", "any_of": ["tokenizer_config.json", "vocab.json"]}
+          ]
+        },
+        "qwen_fast": {
           "required_rules": [
             {"name": "config", "any_of": ["config.json"]},
             {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
@@ -126,7 +134,7 @@
         "label": "Voice Cloning",
         "semantics": "Clone a target voice from reference audio"
       },
-      "backend_affinity": ["mlx", "torch"],
+      "backend_affinity": ["mlx", "qwen_fast", "torch"],
       "rollout": {
         "enabled": true,
         "stage": "general",
@@ -141,6 +149,14 @@
           ]
         },
         "torch": {
+          "required_rules": [
+            {"name": "config", "any_of": ["config.json"]},
+            {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
+            {"name": "preprocessor", "any_of": ["preprocessor_config.json"]},
+            {"name": "tokenizer", "any_of": ["tokenizer_config.json", "vocab.json"]}
+          ]
+        },
+        "qwen_fast": {
           "required_rules": [
             {"name": "config", "any_of": ["config.json"]},
             {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
@@ -214,7 +230,7 @@
         "label": "Voice Design",
         "semantics": "Generate speech from free-form voice description"
       },
-      "backend_affinity": ["mlx", "torch"],
+      "backend_affinity": ["mlx", "qwen_fast", "torch"],
       "rollout": {
         "enabled": true,
         "stage": "general",
@@ -229,6 +245,14 @@
           ]
         },
         "torch": {
+          "required_rules": [
+            {"name": "config", "any_of": ["config.json"]},
+            {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
+            {"name": "preprocessor", "any_of": ["preprocessor_config.json"]},
+            {"name": "tokenizer", "any_of": ["tokenizer_config.json", "vocab.json"]}
+          ]
+        },
+        "qwen_fast": {
           "required_rules": [
             {"name": "config", "any_of": ["config.json"]},
             {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
@@ -254,7 +278,7 @@
         "label": "Voice Cloning",
         "semantics": "Clone a target voice from reference audio"
       },
-      "backend_affinity": ["mlx", "torch"],
+      "backend_affinity": ["mlx", "qwen_fast", "torch"],
       "rollout": {
         "enabled": true,
         "stage": "general",
@@ -269,6 +293,14 @@
           ]
         },
         "torch": {
+          "required_rules": [
+            {"name": "config", "any_of": ["config.json"]},
+            {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},
+            {"name": "preprocessor", "any_of": ["preprocessor_config.json"]},
+            {"name": "tokenizer", "any_of": ["tokenizer_config.json", "vocab.json"]}
+          ]
+        },
+        "qwen_fast": {
           "required_rules": [
             {"name": "config", "any_of": ["config.json"]},
             {"name": "weights", "any_of": ["model.safetensors", "model.safetensors.index.json"]},

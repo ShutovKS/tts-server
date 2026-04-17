@@ -58,7 +58,7 @@ The resulting runtime exposes the shared services consumed by transport adapters
 ### Backend layer
 
 - [`MLXBackend`](backends/mlx_backend.py:20) — Apple Silicon focused Qwen backend
-- [`QwenFastBackend`](backends/qwen_fast_backend.py) — optional accelerated Qwen custom-only backend with explicit CUDA/runtime gating
+- [`QwenFastBackend`](backends/qwen_fast_backend.py) - optional accelerated Qwen backend with explicit CUDA/runtime gating
 - [`TorchBackend`](backends/torch_backend.py:15) — PyTorch backend for CPU/CUDA-compatible Qwen setups
 - [`ONNXBackend`](backends/onnx_backend.py) — Piper backend for local ONNX voice inference
 - [`BackendRegistry`](backends/registry.py:14) — backend registration and selection
@@ -104,7 +104,7 @@ Transport-specific settings are documented in [../server/README.md](../server/RE
 
 - [`ModelRegistry.readiness_report()`](services/model_registry.py:218) now exposes selected backend, per-model execution backend, mixed-backend routing summary, host snapshot, family summary, and per-candidate route diagnostics for optional fast-lane decisions.
 - The operator utility [`scripts/runtime_self_check.py`](../scripts/runtime_self_check.py) prints a JSON snapshot suitable for local setup validation and CI evidence collection.
-- Model discovery payloads intentionally expose `selected_backend` and `execution_backend` separately because mixed-family deployments may route Piper to ONNX while the runtime still selects MLX globally, and Qwen custom models may advertise `qwen_fast` as a rejected or selected route candidate without changing non-custom modes.
+- Model discovery payloads intentionally expose `selected_backend` and `execution_backend` separately because mixed-family deployments may route Piper to ONNX while the runtime still selects MLX globally, and Qwen models may advertise `qwen_fast` as a rejected or selected route candidate on a per-mode basis without affecting unrelated families.
 
 ## Model assets
 
@@ -113,7 +113,7 @@ The manifest lives in [models/manifest.v1.json](models/manifest.v1.json). Local 
 The runtime currently supports these model families:
 
 - `Qwen3-TTS` via `mlx` and `torch`
-- `Qwen3-TTS` custom-only accelerated lane via `qwen_fast` with explicit route diagnostics when the fast lane is unavailable
+- `Qwen3-TTS` accelerated lane via `qwen_fast` with explicit route diagnostics when the fast lane is unavailable
 - `OmniVoice` via `torch`
 - `Piper` via `onnx`
 

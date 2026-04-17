@@ -175,16 +175,20 @@ def test_models_endpoint(client: TestClient):
     response = client.get("/api/v1/models")
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["data"]) == 3
+    assert len(payload["data"]) == 4
     assert payload["data"][0]["available"] is True
     qwen_model = next(
         item for item in payload["data"] if item["id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    )
+    design_model = next(
+        item for item in payload["data"] if item["id"] == "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit"
     )
     piper_model = next(
         item for item in payload["data"] if item["id"] == "Piper-en_US-lessac-medium"
     )
     assert qwen_model["profile"]["key"] == "qwen"
     assert qwen_model["profile"]["pack_refs"]["family"] == ["qwen"]
+    assert design_model["profile"]["key"] == "qwen"
     assert piper_model["profile"]["key"] == "piper"
     assert piper_model["profile"]["isolated_env_name"] == "piper"
 
@@ -1452,6 +1456,8 @@ def test_async_job_endpoints_handle_concurrent_reads_and_cancel_deterministicall
 
         def fetch_result_status() -> tuple[int, str]:
             response = test_client.get(f"/api/v1/tts/jobs/{job_id}/result")
+            if response.status_code == 200:
+                return response.status_code, response.headers["content-type"]
             payload = response.json()
             return response.status_code, payload["code"]
 
@@ -1467,10 +1473,15 @@ def test_async_job_endpoints_handle_concurrent_reads_and_cancel_deterministicall
             outcomes = [future.result(timeout=2.0) for future in futures]
 
         status_outcomes = [outcome for outcome in outcomes if outcome[0] == 200]
-        result_outcomes = [
+        result_not_ready_outcomes = [
             outcome
             for outcome in outcomes
             if outcome[0] == 409 and outcome[1] == "job_not_ready"
+        ]
+        result_ready_outcomes = [
+            outcome
+            for outcome in outcomes
+            if outcome[0] == 200 and str(outcome[1]).startswith("audio/wav")
         ]
         cancel_outcomes = [
             outcome
@@ -1482,7 +1493,7 @@ def test_async_job_endpoints_handle_concurrent_reads_and_cancel_deterministicall
             f"Expected all concurrent status reads to succeed, got: {outcomes}"
         )
         assert {status for _, status in status_outcomes} <= {"running", "succeeded"}
-        assert len(result_outcomes) == 3, (
+        assert len(result_not_ready_outcomes) + len(result_ready_outcomes) == 3, (
             f"Expected all concurrent result reads to stay controlled, got: {outcomes}"
         )
         assert len(cancel_outcomes) == 1, (

@@ -77,7 +77,6 @@ from scripts.validate_runtime import (
     CUSTOM_SMOKE_MODEL_ID,
     OMNIVOICE_SMOKE_MODEL_ID,
     PIPER_SMOKE_MODEL_ID,
-    REPRESENTATIVE_TARGET_TO_MODEL_ID,
     _find_matching_update,
     _next_update_offset,
     build_validation_env,
@@ -310,6 +309,14 @@ def test_run_host_matrix_validation_respects_disabled_qwen_fast_config():
     assert summary["simulated_qwen_fast"]["eligible"]["reason"] == "disabled_by_config"
     assert (
         summary["simulated_qwen_fast"]["eligible"]["custom_route_reason"]
+        == "disabled_by_config"
+    )
+    assert (
+        summary["simulated_qwen_fast"]["eligible"]["design_route_reason"]
+        == "disabled_by_config"
+    )
+    assert (
+        summary["simulated_qwen_fast"]["eligible"]["clone_route_reason"]
         == "disabled_by_config"
     )
 

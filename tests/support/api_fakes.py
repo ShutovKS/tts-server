@@ -1,5 +1,5 @@
 # FILE: tests/support/api_fakes.py
-# VERSION: 1.2.0
+# VERSION: 1.3.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Test doubles and helper builders for API, readiness, and runtime-validation tests.
 #   SCOPE: Fake registries, stub TTS services, subprocess doubles, readiness payload helpers, WAV fixture helpers
@@ -27,7 +27,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.0 - Expanded validation payload doubles for representative-model preflight and routing semantics]
+#   LAST_CHANGE: [v1.3.0 - Updated Qwen clone metadata doubles so qwen_fast route candidates reflect full-mode support semantics]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -139,6 +139,75 @@ class DummyRegistry(ModelRegistry):
                 ],
             },
             {
+                "key": "2",
+                "id": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+                "name": "Voice Design",
+                "mode": "design",
+                "family": "Qwen3-TTS",
+                "family_key": "qwen3_tts",
+                "capabilities_supported": ["voice_description_tts"],
+                "backend_support": ["mlx", "qwen_fast", "torch"],
+                "profile": self._qwen_profile,
+                "folder": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+                "available": True,
+                "loadable": True,
+                "runtime_ready": True,
+                "backend": "mlx",
+                "selected_backend": "mlx",
+                "selected_backend_label": "MLX Apple Silicon",
+                "execution_backend": "mlx",
+                "execution_backend_label": "MLX Apple Silicon",
+                "capabilities": {
+                    "supports_custom": True,
+                    "supports_design": True,
+                    "supports_clone": True,
+                    "supports_voice_description_tts": True,
+                    "supports_reference_voice_clone": True,
+                },
+                "route": {
+                    "selected_backend": "mlx",
+                    "selected_backend_label": "MLX Apple Silicon",
+                    "selected_backend_compatible_with_model": True,
+                    "selected_backend_ready_for_model": True,
+                    "execution_backend": "mlx",
+                    "execution_backend_label": "MLX Apple Silicon",
+                    "routing_mode": "selected_backend",
+                    "route_reason": "selected_backend_supports_model",
+                    "candidates": [
+                        {
+                            "key": "qwen_fast",
+                            "label": "Qwen Fast CUDA",
+                            "selected": False,
+                            "compatible_with_model": True,
+                            "supports_mode": True,
+                            "platform_supported": False,
+                            "available": False,
+                            "ready": False,
+                            "host_reason": "platform_unsupported",
+                            "selection_score": 0,
+                            "route_reason": "unsupported_platform",
+                            "diagnostics": {
+                                "backend": "qwen_fast",
+                                "label": "Qwen Fast CUDA",
+                                "available": False,
+                                "ready": False,
+                                "reason": "platform_unsupported",
+                                "details": {
+                                    "enabled": True,
+                                    "test_mode": None,
+                                },
+                            },
+                        }
+                    ],
+                },
+                "missing_artifacts": [],
+                "required_artifacts": [
+                    "config.json",
+                    "model.safetensors|model.safetensors.index.json",
+                    "tokenizer_config.json|vocab.json",
+                ],
+            },
+            {
                 "key": "3",
                 "id": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
                 "name": "Voice Cloning",
@@ -146,7 +215,7 @@ class DummyRegistry(ModelRegistry):
                 "family": "Qwen3-TTS",
                 "family_key": "qwen3_tts",
                 "capabilities_supported": ["reference_voice_clone"],
-                "backend_support": ["mlx", "torch"],
+                "backend_support": ["mlx", "qwen_fast", "torch"],
                 "profile": self._qwen_profile,
                 "folder": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
                 "available": True,
@@ -161,6 +230,8 @@ class DummyRegistry(ModelRegistry):
                     "supports_custom": True,
                     "supports_design": True,
                     "supports_clone": True,
+                    "supports_voice_description_tts": True,
+                    "supports_reference_voice_clone": True,
                 },
                 "route": {
                     "selected_backend": "mlx",
@@ -171,7 +242,32 @@ class DummyRegistry(ModelRegistry):
                     "execution_backend_label": "MLX Apple Silicon",
                     "routing_mode": "selected_backend",
                     "route_reason": "selected_backend_supports_model",
-                    "candidates": [],
+                    "candidates": [
+                        {
+                            "key": "qwen_fast",
+                            "label": "Qwen Fast CUDA",
+                            "selected": False,
+                            "compatible_with_model": True,
+                            "supports_mode": True,
+                            "platform_supported": False,
+                            "available": False,
+                            "ready": False,
+                            "host_reason": "platform_unsupported",
+                            "selection_score": 0,
+                            "route_reason": "unsupported_platform",
+                            "diagnostics": {
+                                "backend": "qwen_fast",
+                                "label": "Qwen Fast CUDA",
+                                "available": False,
+                                "ready": False,
+                                "reason": "platform_unsupported",
+                                "details": {
+                                    "enabled": True,
+                                    "test_mode": None,
+                                },
+                            },
+                        }
+                    ],
                 },
                 "missing_artifacts": [],
                 "required_artifacts": [
@@ -244,10 +340,10 @@ class DummyRegistry(ModelRegistry):
 
     def readiness_report(self) -> dict:
         return {
-            "configured_models": 2,
-            "available_models": 2,
-            "loadable_models": 2,
-            "runtime_ready_models": 2,
+            "configured_models": 4,
+            "available_models": 3,
+            "loadable_models": 3,
+            "runtime_ready_models": 3,
             "loaded_models": 1,
             "selected_backend": "mlx",
             "selected_backend_label": "MLX Apple Silicon",
@@ -297,9 +393,9 @@ class DummyRegistry(ModelRegistry):
             "family_summary": {
                 "qwen3_tts": {
                     "family": "Qwen3-TTS",
-                    "configured_models": 2,
-                    "available_models": 2,
-                    "runtime_ready_models": 2,
+                    "configured_models": 3,
+                    "available_models": 3,
+                    "runtime_ready_models": 3,
                 },
                 "piper": {
                     "family": "Piper",
@@ -397,11 +493,13 @@ class DummyRegistry(ModelRegistry):
                     "selected": True,
                     "platform_supported": True,
                     "available": True,
-                    "capabilities": {
-                        "supports_custom": True,
-                        "supports_design": True,
-                        "supports_clone": True,
-                    },
+                "capabilities": {
+                    "supports_custom": True,
+                    "supports_design": True,
+                    "supports_clone": True,
+                    "supports_voice_description_tts": True,
+                    "supports_reference_voice_clone": True,
+                },
                     "diagnostics": {
                         "backend": "mlx",
                         "label": "MLX Apple Silicon",
@@ -419,8 +517,8 @@ class DummyRegistry(ModelRegistry):
                     "available": False,
                     "capabilities": {
                         "supports_custom": True,
-                        "supports_design": False,
-                        "supports_clone": False,
+                        "supports_design": True,
+                        "supports_clone": True,
                     },
                     "diagnostics": {
                         "backend": "qwen_fast",
@@ -529,7 +627,7 @@ class DummyRegistry(ModelRegistry):
                     "family_key": "qwen3_tts",
                     "profile": self._qwen_profile,
                     "capabilities_supported": ["reference_voice_clone"],
-                    "backend_support": ["mlx", "torch"],
+                    "backend_support": ["mlx", "qwen_fast", "torch"],
                     "folder": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
                     "backend": "mlx",
                     "selected_backend": "mlx",
@@ -550,14 +648,14 @@ class DummyRegistry(ModelRegistry):
                                 "key": "qwen_fast",
                                 "label": "Qwen Fast CUDA",
                                 "selected": False,
-                                "compatible_with_model": False,
-                                "supports_mode": False,
+                                "compatible_with_model": True,
+                                "supports_mode": True,
                                 "platform_supported": False,
                                 "available": False,
                                 "ready": False,
                                 "host_reason": "platform_unsupported",
                                 "selection_score": 0,
-                                "route_reason": "model_backend_affinity_mismatch",
+                                "route_reason": "unsupported_platform",
                                 "diagnostics": {
                                     "backend": "qwen_fast",
                                     "label": "Qwen Fast CUDA",

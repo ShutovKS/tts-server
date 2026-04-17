@@ -128,7 +128,7 @@
       <annotations>
         <class-BackendRegistry PURPOSE="Backend selection and model spec resolution" />
         <class-MLXBackend PURPOSE="Apple Silicon MLX inference backend" />
-        <class-QwenFastBackend PURPOSE="Accelerated Qwen custom-only backend with explicit CUDA/runtime gating" />
+        <class-QwenFastBackend PURPOSE="Accelerated Qwen backend for custom, design, and clone with explicit CUDA/runtime gating" />
         <class-TorchBackend PURPOSE="PyTorch CPU/CUDA inference backend" />
         <class-ONNXBackend PURPOSE="ONNX runtime backend for Piper voices" />
         <class-TTSBackend PURPOSE="Abstract backend interface" />
@@ -278,7 +278,7 @@
       <verification-ref>V-M-BACKENDS-V2</verification-ref>
       <annotations>
         <class-ExecutionRequest PURPOSE="Backend execution request carrying family-prepared runtime inputs" />
-        <class-QwenFastBackend PURPOSE="Accelerated Qwen custom-only backend that remains additive to the direct execution contract" />
+        <class-QwenFastBackend PURPOSE="Accelerated Qwen backend that remains additive to the direct execution contract for custom, design, and clone" />
       </annotations>
       <CrossLink from="M-BACKENDS-V2" to="M-EXECUTION-PLAN" relation="executes-normalized-plans" />
     </M-BACKENDS-V2>

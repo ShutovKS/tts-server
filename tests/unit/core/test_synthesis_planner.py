@@ -232,6 +232,38 @@ def test_synthesis_planner_surfaces_fast_backend_selection_reason():
     assert plan.selection_reason == "selected_backend_supports_model"
 
 
+def test_synthesis_planner_surfaces_fast_backend_selection_reason_for_design():
+    registry = PlannerRegistryStub()
+    registry.route_backend_key = "qwen_fast"
+    registry.route_backend_label = "Qwen Fast CUDA"
+    registry.route_reason = "selected_backend_supports_model"
+    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+
+    plan = planner.plan_command(
+        VoiceDesignCommand(text="Hello", voice_description="Warm narrator")
+    )
+
+    assert plan.backend_key == "qwen_fast"
+    assert plan.backend_label == "Qwen Fast CUDA"
+    assert plan.selection_reason == "selected_backend_supports_model"
+
+
+def test_synthesis_planner_surfaces_fast_backend_selection_reason_for_clone():
+    registry = PlannerRegistryStub()
+    registry.route_backend_key = "qwen_fast"
+    registry.route_backend_label = "Qwen Fast CUDA"
+    registry.route_reason = "selected_backend_supports_model"
+    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+
+    plan = planner.plan_command(
+        VoiceCloneCommand(text="Hello", ref_audio_path=Path("reference.wav"))
+    )
+
+    assert plan.backend_key == "qwen_fast"
+    assert plan.backend_label == "Qwen Fast CUDA"
+    assert plan.selection_reason == "selected_backend_supports_model"
+
+
 def test_synthesis_planner_resolves_omnivoice_family_key_from_manifest():
     registry = PlannerRegistryStub()
     planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]

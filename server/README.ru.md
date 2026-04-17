@@ -62,7 +62,7 @@ docker compose -f docker-compose.server.yaml up --build
 
 - `GET /api/v1/models`
 
-Model discovery теперь отдаёт family metadata, supported capabilities, selected backend, per-model execution backend, missing artifacts и route explanations для mixed-family deployment. Для Qwen custom models здесь также может появляться optional route candidate `qwen_fast`, который в текущем MVP остаётся **custom-only** и при невыполненных fast-path prerequisites остаётся rejected/unresolved route candidate.
+Model discovery теперь отдаёт family metadata, supported capabilities, selected backend, per-model execution backend, missing artifacts и route explanations для mixed-family deployment. Для Qwen models здесь также может появляться optional route candidate `qwen_fast`, который при невыполненных fast-path prerequisites остаётся rejected/unresolved route candidate.
 
 ### Синхронные TTS endpoint'ы
 
@@ -112,7 +112,7 @@ Server-specific настройки расширяют [`CoreSettings`](../core/c
 
 Также применяются общие переменные из [../core/README.ru.md](../core/README.ru.md).
 
-Если нужно полностью отключить ускоренный Qwen lane, установите `QWEN_TTS_QWEN_FAST_ENABLED=false`. Это влияет только на optional custom-only fast lane и не отключает стандартный Torch Qwen path.
+Если нужно полностью отключить ускоренный Qwen lane, установите `QWEN_TTS_QWEN_FAST_ENABLED=false`. Это влияет только на optional fast lane и не отключает стандартный Torch Qwen path.
 
 Если lane нужно включить на поддерживаемом Linux/Windows CUDA-хосте, установите optional accelerated runtime отдельно через `pip install faster-qwen3-tts` и соблюдайте upstream prerequisites (Python 3.10+, PyTorch 2.5.1+, NVIDIA GPU с CUDA).
 

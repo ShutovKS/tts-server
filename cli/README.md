@@ -121,7 +121,7 @@ Useful variables include:
 - It does not use Docker-specific entrypoints or compose files.
 - Audio playback depends on OS tools invoked by [`maybe_play_audio()`](runtime.py:53); on Windows the CLI now prefers the native file association launcher instead of shelling through `cmd /c start`.
 - Because the interface is interactive, it is best suited for manual testing rather than automation.
-- If the shared runtime selects `qwen_fast`, that accelerated lane applies only to Qwen custom synthesis and still falls back safely to `torch` when unavailable.
+- If the shared runtime selects `qwen_fast`, that accelerated lane can serve Qwen custom, design, and clone synthesis on supported CUDA hosts and still falls back safely to `torch` when unavailable.
 - `Piper` is intentionally limited to preset-speaker synthesis in the CLI because its family adapter exposes only `preset_speaker_tts` capability.
 - `OmniVoice` reuses the shared custom/design/clone interaction model, but its availability still depends on a runtime-ready OmniVoice family environment.
 

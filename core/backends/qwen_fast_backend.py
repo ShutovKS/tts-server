@@ -1,8 +1,8 @@
 # FILE: core/backends/qwen_fast_backend.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Provide an additive accelerated Qwen custom-only backend with explicit CUDA/runtime eligibility diagnostics.
-#   SCOPE: QwenFastBackend class with dependency checks, model inspection, cache handling, and custom synthesis execution
+#   PURPOSE: Provide an additive accelerated Qwen backend with explicit CUDA/runtime eligibility diagnostics.
+#   SCOPE: QwenFastBackend class with dependency checks, model inspection, cache handling, and custom/design/clone synthesis execution
 #   DEPENDS: M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS
 #   LINKS: M-BACKENDS
 #   ROLE: RUNTIME
@@ -10,11 +10,11 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   QwenFastBackend - Optional accelerated Qwen custom-only backend with explicit readiness gating
+#   QwenFastBackend - Optional accelerated Qwen backend with explicit readiness gating
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Updated backend wording to describe explicit readiness and rejection diagnostics instead of fallback semantics]
+#   LAST_CHANGE: [v1.1.0 - Expanded the accelerated Qwen backend to custom, design, and clone execution paths]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -70,15 +70,15 @@ class QwenFastBackend(TTSBackend):
     def capabilities(self) -> BackendCapabilitySet:
         return BackendCapabilitySet(
             supports_custom=True,
-            supports_design=False,
-            supports_clone=False,
+            supports_design=True,
+            supports_clone=True,
             supports_streaming=False,
             supports_local_models=True,
             supports_voice_prompt_cache=True,
             supports_reference_transcription=False,
             supports_preset_speaker_tts=True,
-            supports_voice_description_tts=False,
-            supports_reference_voice_clone=False,
+            supports_voice_description_tts=True,
+            supports_reference_voice_clone=True,
             preferred_formats=("wav",),
             platforms=("linux", "windows"),
         )
@@ -413,14 +413,22 @@ class QwenFastBackend(TTSBackend):
         language: str,
         voice_description: str,
     ) -> None:
-        raise TTSGenerationError(
-            "Fast Qwen backend supports custom synthesis only in MVP",
-            details={
-                "backend": self.key,
-                "mode": "design",
-                "model": handle.spec.api_name,
-            },
+        runtime_model = handle.runtime_model
+        if not hasattr(runtime_model, "generate_voice_design"):
+            raise TTSGenerationError(
+                "Fast Qwen runtime does not expose generate_voice_design",
+                details={
+                    "backend": self.key,
+                    "model": handle.spec.api_name,
+                    "runtime_type": type(runtime_model).__name__,
+                },
+            )
+        wavs, sample_rate = runtime_model.generate_voice_design(
+            text=text,
+            instruct=voice_description,
+            language=self._resolve_language(language),
         )
+        self._persist_first_wav(output_dir, wavs, sample_rate)
 
     def _execute_clone(
         self,
@@ -432,14 +440,23 @@ class QwenFastBackend(TTSBackend):
         ref_audio_path: Path,
         ref_text: str | None,
     ) -> None:
-        raise TTSGenerationError(
-            "Fast Qwen backend supports custom synthesis only in MVP",
-            details={
-                "backend": self.key,
-                "mode": "clone",
-                "model": handle.spec.api_name,
-            },
+        runtime_model = handle.runtime_model
+        if not hasattr(runtime_model, "generate_voice_clone"):
+            raise TTSGenerationError(
+                "Fast Qwen runtime does not expose generate_voice_clone",
+                details={
+                    "backend": self.key,
+                    "model": handle.spec.api_name,
+                    "runtime_type": type(runtime_model).__name__,
+                },
+            )
+        wavs, sample_rate = runtime_model.generate_voice_clone(
+            text=text,
+            language=self._resolve_language(language),
+            ref_audio=ref_audio_path,
+            ref_text="" if ref_text is None else ref_text,
         )
+        self._persist_first_wav(output_dir, wavs, sample_rate)
 
     @classmethod
     def _torch_version_supported(cls) -> bool:
@@ -538,6 +555,14 @@ class QwenFastBackend(TTSBackend):
 
             @staticmethod
             def generate_custom_voice(**kwargs):
+                return [[0.0] * 480], 24000
+
+            @staticmethod
+            def generate_voice_design(**kwargs):
+                return [[0.0] * 480], 24000
+
+            @staticmethod
+            def generate_voice_clone(**kwargs):
                 return [[0.0] * 480], 24000
 
         return _TestRuntimeModel(model_path)

@@ -1,5 +1,5 @@
 # FILE: tests/unit/core/test_model_manifest.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for model manifest loading and artifact validation rules.
 #   SCOPE: Manifest parsing, backend artifact requirements, validation reporting
@@ -18,7 +18,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.1.0 - Updated Qwen manifest expectations so design and clone models advertise qwen_fast full-mode support]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -182,6 +182,33 @@ def test_manifest_artifact_validation_rules_match_existing_backend_requirements(
     }
 
 
+def test_manifest_artifact_validation_rules_match_existing_backend_requirements_for_0_6b_qwen_modes(
+    tmp_path: Path,
+):
+    for spec_key in ("4", "5", "6"):
+        model_path = tmp_path / MODEL_SPECS[spec_key].folder
+        model_path.mkdir(parents=True)
+        for filename in [
+            "config.json",
+            "model.safetensors",
+            "tokenizer_config.json",
+            "preprocessor_config.json",
+        ]:
+            (model_path / filename).write_text("{}", encoding="utf-8")
+
+        fast_check = (
+            MODEL_SPECS[spec_key]
+            .artifact_validation_for_backend("qwen_fast")
+            .validate(model_path)
+        )
+
+        assert fast_check == {
+            "loadable": True,
+            "required_artifacts": REQUIRED_QWEN_FAST_ARTIFACTS,
+            "missing_artifacts": [],
+        }
+
+
 def test_manifest_artifact_validation_reports_missing_torch_preprocessor(
     tmp_path: Path,
 ):
@@ -213,11 +240,11 @@ def test_model_descriptor_exposes_family_aware_compatibility_fields():
     assert descriptor.artifact_format == "local_model_dir"
 
 
-def test_non_custom_qwen_models_do_not_advertise_fast_backend():
-    assert MODEL_SPECS["2"].backend_affinity == ("mlx", "torch")
-    assert MODEL_SPECS["3"].backend_affinity == ("mlx", "torch")
-    assert MODEL_SPECS["5"].backend_affinity == ("mlx", "torch")
-    assert MODEL_SPECS["6"].backend_affinity == ("mlx", "torch")
+def test_non_custom_qwen_models_advertise_fast_backend_for_full_mode_support():
+    assert MODEL_SPECS["2"].backend_affinity == ("mlx", "qwen_fast", "torch")
+    assert MODEL_SPECS["3"].backend_affinity == ("mlx", "qwen_fast", "torch")
+    assert MODEL_SPECS["5"].backend_affinity == ("mlx", "qwen_fast", "torch")
+    assert MODEL_SPECS["6"].backend_affinity == ("mlx", "qwen_fast", "torch")
 
 
 def test_manifest_descriptors_preserve_enabled_model_count():
