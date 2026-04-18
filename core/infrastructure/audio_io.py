@@ -187,7 +187,9 @@ def check_ffmpeg_available() -> bool:
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
 
+
 __all__ = [
+    "is_wav_reference_compatible",
     "temporary_output_dir",
     "convert_audio_to_wav_if_needed",
     "read_generated_wav",

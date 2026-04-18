@@ -12,6 +12,10 @@
 # START_MODULE_MAP
 #   test_run_design_session_uses_model_metadata_id_for_omnivoice - Ensures CLI design flow routes via capability-specific model id
 # END_MODULE_MAP
+#
+# START_CHANGE_SUMMARY
+#   LAST_CHANGE: [v1.0.0 - Added GRACE change tracking metadata for the OmniVoice CLI runtime unit coverage]
+# END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
@@ -42,16 +46,22 @@ class _ServiceStub:
         )
 
 
-def test_run_design_session_uses_model_metadata_id_for_omnivoice(monkeypatch: pytest.MonkeyPatch):
+def test_run_design_session_uses_model_metadata_id_for_omnivoice(
+    monkeypatch: pytest.MonkeyPatch,
+):
     runtime = CliRuntime()
     runtime.service = _ServiceStub()
 
     monkeypatch.setattr(runtime, "display_saved_output", lambda *args, **kwargs: None)
     inputs = iter(["Design validation sample.", None])
     monkeypatch.setattr(runtime, "get_safe_input", lambda *args, **kwargs: next(inputs))
-    monkeypatch.setattr(runtime, "_prompt_instruct", lambda **kwargs: "Warm bilingual narrator")
+    monkeypatch.setattr(
+        runtime, "_prompt_instruct", lambda **kwargs: "Warm bilingual narrator"
+    )
     monkeypatch.setattr(runtime, "_prompt_language", lambda: "auto")
-    monkeypatch.setattr(runtime, "_available_model_specs", lambda: [CLI_MODELS["omnivoice-design-1"]])
+    monkeypatch.setattr(
+        runtime, "_available_model_specs", lambda: [CLI_MODELS["omnivoice-design-1"]]
+    )
 
     runtime.run_design_session("omnivoice-design-1")
 

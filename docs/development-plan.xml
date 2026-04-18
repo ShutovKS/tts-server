@@ -638,6 +638,56 @@
       <verification-ref>V-M-PROFILES</verification-ref>
     </M-PROFILES>
 
+    <M-DOCKER-ASSETS NAME="DockerDeploymentAssets" TYPE="DEPLOYMENT" LAYER="4" ORDER="1" STATUS="implemented">
+      <contract>
+        <purpose>Define Docker Desktop deployment assets for the server and Telegram adapters, including compose scenarios and container trust-store wiring.</purpose>
+      </contract>
+      <interface>
+        <export-file-server-Dockerfile PURPOSE="Container image definition for the FastAPI server runtime" />
+        <export-file-telegram-bot-Dockerfile PURPOSE="Container image definition for the Telegram bot runtime" />
+        <export-file-docker-compose-server PURPOSE="Compose entrypoint for the server deployment contour" />
+        <export-file-docker-compose-telegram PURPOSE="Compose entrypoint for the Telegram deployment contour" />
+      </interface>
+      <depends>M-BOOTSTRAP, M-CONFIG, M-SERVER, M-TELEGRAM</depends>
+      <target>
+        <source>server/Dockerfile</source>
+        <source>telegram_bot/Dockerfile</source>
+        <source>docker-compose.server.yaml</source>
+        <source>docker-compose.telegram-bot.yaml</source>
+      </target>
+      <verification-ref>V-M-DOCKER-ASSETS</verification-ref>
+    </M-DOCKER-ASSETS>
+
+    <M-WINDOWS-LAUNCHER NAME="WindowsInteractiveLauncher" TYPE="SCRIPT" LAYER="4" ORDER="2" STATUS="implemented">
+      <contract>
+        <purpose>Provide the Windows-only interactive PowerShell launcher that resolves profiles, prepares environments, and starts the selected adapter.</purpose>
+      </contract>
+      <interface>
+        <export-Main PURPOSE="Interactive PowerShell launcher entrypoint for guided runtime startup" />
+        <export-Ensure-FamilyEnvironment PURPOSE="Bridge family-aware environment creation and readiness checks before launch" />
+        <export-Ensure-ModelAvailability PURPOSE="Validate required model assets and trigger guided download flows when missing" />
+      </interface>
+      <depends>M-CONFIG, M-LAUNCHER, M-PROFILE-RESOLVER</depends>
+      <target>
+        <source>scripts/launch-windows.ps1</source>
+      </target>
+      <verification-ref>V-M-WINDOWS-LAUNCHER</verification-ref>
+    </M-WINDOWS-LAUNCHER>
+
+    <M-WINDOWS-LAUNCHER-CMD NAME="WindowsInteractiveLauncherCmd" TYPE="SCRIPT" LAYER="4" ORDER="3" STATUS="implemented">
+      <contract>
+        <purpose>Provide a Windows CMD entrypoint that invokes the interactive PowerShell launcher through an inline command string.</purpose>
+      </contract>
+      <interface>
+        <export-launch-windows-cmd PURPOSE="CMD bridge that executes the PowerShell launcher content via powershell.exe -Command" />
+      </interface>
+      <depends>M-WINDOWS-LAUNCHER</depends>
+      <target>
+        <source>scripts/launch-windows.cmd</source>
+      </target>
+      <verification-ref>V-M-WINDOWS-LAUNCHER-CMD</verification-ref>
+    </M-WINDOWS-LAUNCHER-CMD>
+
     <M-LAUNCHER NAME="RuntimeLauncher" TYPE="SCRIPT" LAYER="4" ORDER="4" STATUS="implemented">
       <contract>
         <purpose>Provide the profile-aware launcher CLI for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env runtime contours.</purpose>
