@@ -1,22 +1,24 @@
 # FILE: tests/unit/scripts/test_windows_launcher_script.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Validate the Windows launcher script stays aligned with the profile-aware launcher flow and documented family download strategies.
-#   SCOPE: script presence, launcher orchestration markers, curated model menu anchors, and bounded secret-handling command references
-#   DEPENDS: M-WINDOWS-LAUNCHER
-#   LINKS: V-M-WINDOWS-LAUNCHER
+#   PURPOSE: Validate the Windows PowerShell and CMD launcher entrypoints stay aligned with the documented profile-aware Windows launch flow.
+#   SCOPE: launcher-script presence, PowerShell orchestration markers, curated model menu anchors, CMD delegation shape, and bounded secret-handling command references
+#   DEPENDS: M-WINDOWS-LAUNCHER, M-WINDOWS-LAUNCHER-CMD
+#   LINKS: V-M-WINDOWS-LAUNCHER, V-M-WINDOWS-LAUNCHER-CMD
 #   ROLE: TEST
 #   MAP_MODE: LOCALS
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   SCRIPT_PATH - Canonical path to the interactive Windows launcher script.
-#   test_windows_launcher_script_exists_with_grace_contract - Verifies the script file exists and retains top-level GRACE contract anchors.
-#   test_windows_launcher_script_reuses_profile_aware_launcher_and_family_download_paths - Verifies the script delegates env setup and execution to launcher commands while keeping HF and Piper download flows explicit.
+#   SCRIPT_PATH - Canonical path to the interactive Windows PowerShell launcher script.
+#   CMD_SCRIPT_PATH - Canonical path to the Windows CMD wrapper.
+#   test_windows_launcher_script_exists_with_grace_contract - Verifies the PowerShell launcher file exists and retains top-level GRACE contract anchors.
+#   test_windows_launcher_script_reuses_profile_aware_launcher_and_family_download_paths - Verifies the PowerShell launcher delegates env setup and execution to launcher commands while keeping HF and Piper download flows explicit.
+#   test_windows_cmd_launcher_wraps_powershell_script_without_file_execution - Verifies the CMD wrapper executes the PowerShell launcher via an inline command string instead of PowerShell -File script execution.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added deterministic coverage for the new interactive Windows launcher script surface]
+#   LAST_CHANGE: [v1.1.0 - Added deterministic coverage for the CMD wrapper that avoids PowerShell file-signing policy enforcement]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ pytestmark = pytest.mark.unit
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "launch-windows.ps1"
+CMD_SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "launch-windows.cmd"
 
 
 def test_windows_launcher_script_exists_with_grace_contract():
@@ -39,6 +42,7 @@ def test_windows_launcher_script_exists_with_grace_contract():
     assert "# START_MODULE_CONTRACT" in contents
     assert "#   PURPOSE: Provide an interactive Windows PowerShell launcher" in contents
     assert "$SCRIPT:MODEL_OPTIONS" in contents
+    assert "QWEN_TTS_LAUNCH_PROJECT_ROOT" in contents
 
 
 def test_windows_launcher_script_reuses_profile_aware_launcher_and_family_download_paths():
@@ -59,3 +63,17 @@ def test_windows_launcher_script_reuses_profile_aware_launcher_and_family_downlo
     assert "Qwen Custom 1.7B" in contents
     assert "OmniVoice" in contents
     assert "Piper en_US lessac medium" in contents
+
+
+def test_windows_cmd_launcher_wraps_powershell_script_without_file_execution():
+    contents = CMD_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert CMD_SCRIPT_PATH.exists()
+    assert "START_MODULE_CONTRACT" in contents
+    assert "bypasses PowerShell script-signing policy" in contents
+    assert "launch-windows.ps1" in contents
+    assert "QWEN_TTS_LAUNCH_PROJECT_ROOT" in contents
+    assert "powershell.exe -NoLogo -NoProfile -Command" in contents
+    assert "Get-Content -LiteralPath" in contents
+    assert "[ScriptBlock]::Create" in contents
+    assert "-File" not in contents

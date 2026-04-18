@@ -89,17 +89,25 @@ pip install -r requirements.txt
 choco install ffmpeg -y
 ```
 
-If PowerShell blocks activation scripts, run `Set-ExecutionPolicy -Scope Process Bypass` in the current shell first.
+If your machine allows unsigned local PowerShell scripts, you can still use `Set-ExecutionPolicy -Scope Process Bypass` in the current shell. On Windows hosts where `MachinePolicy` enforces `AllSigned`, that override does not help, so prefer the CMD entrypoint below.
 
 ### Interactive Windows launcher
 
-For a guided Windows-only launch flow, use the interactive PowerShell orchestrator:
+For a guided Windows-only launch flow on hosts where `.ps1` execution is allowed, use the interactive PowerShell orchestrator:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\launch-windows.ps1
 ```
 
 The script reuses the profile-aware `launcher` package to resolve the selected service and family, creates or reuses `.envs/<family>`, checks whether the chosen model exists under `.models/`, optionally downloads missing assets, and then starts the selected adapter.
+
+When PowerShell script signing is enforced by `MachinePolicy` (`AllSigned`), use the Windows CMD wrapper instead:
+
+```bat
+.\scripts\launch-windows.cmd
+```
+
+That wrapper feeds `scripts/launch-windows.ps1` to `powershell.exe -Command` as inline text instead of executing the `.ps1` file directly, which avoids the file-signing gate while preserving the same interactive flow.
 
 Important notes:
 

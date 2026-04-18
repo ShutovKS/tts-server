@@ -466,5 +466,16 @@
       <CrossLink from="M-WINDOWS-LAUNCHER" to="M-CONFIG" relation="projects-qwen-tts-env-variables-into-launch-process" />
     </M-WINDOWS-LAUNCHER>
 
+    <M-WINDOWS-LAUNCHER-CMD NAME="WindowsInteractiveLauncherCmd" TYPE="SCRIPT" STATUS="implemented">
+      <purpose>Provide a Windows CMD entrypoint that runs the interactive PowerShell launcher through an inline command string so MachinePolicy AllSigned does not block the supported guided launch flow.</purpose>
+      <path>scripts/launch-windows.cmd</path>
+      <depends>M-WINDOWS-LAUNCHER</depends>
+      <verification-ref>V-M-WINDOWS-LAUNCHER-CMD</verification-ref>
+      <annotations>
+        <fn-launch-windows-cmd PURPOSE="Resolve the project root and execute launch-windows.ps1 content through powershell.exe -Command rather than PowerShell -File." />
+      </annotations>
+      <CrossLink from="M-WINDOWS-LAUNCHER-CMD" to="M-WINDOWS-LAUNCHER" relation="delegates-to-existing-interactive-powershell-orchestration" />
+    </M-WINDOWS-LAUNCHER-CMD>
+
   </Project>
 </KnowledgeGraph>

@@ -650,6 +650,18 @@
         <scenario-3 kind="success">The Windows launcher keeps transient secret handling bounded to process-local HF and Telegram token prompts instead of persisting credentials to repository files.</scenario-3>
       </scenarios>
     </V-M-WINDOWS-LAUNCHER>
+    <V-M-WINDOWS-LAUNCHER-CMD MODULE="M-WINDOWS-LAUNCHER-CMD" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/scripts/test_windows_launcher_script.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_windows_launcher_script.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The Windows CMD wrapper remains a thin entrypoint that delegates to the PowerShell launcher without using PowerShell -File, so signed-script enforcement on .ps1 files does not block startup.</scenario-1>
+        <scenario-2 kind="success">The wrapper resolves the repository root relative to its own location and fails fast when powershell.exe or the delegated launch-windows.ps1 file is unavailable.</scenario-2>
+      </scenarios>
+    </V-M-WINDOWS-LAUNCHER-CMD>
   </ModuleVerification>
 
   <PhaseGates>

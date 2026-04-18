@@ -1,8 +1,8 @@
 # FILE: scripts/launch-windows.ps1
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide an interactive Windows PowerShell launcher that orchestrates profile-aware environment setup, optional model downloads, and adapter startup.
-#   SCOPE: Windows-only preflight checks, service/model prompts, launcher CLI orchestration, family-env bootstrap, model artifact validation, optional Hugging Face and Piper downloads, and final adapter execution.
+#   SCOPE: Windows-only preflight checks, service/model prompts, launcher CLI orchestration, family-env bootstrap, model artifact validation, optional Hugging Face and Piper downloads, inline-wrapper project-root fallback, and final adapter execution.
 #   DEPENDS: M-LAUNCHER, M-PROFILE-RESOLVER, M-CONFIG
 #   LINKS: M-WINDOWS-LAUNCHER
 #   ROLE: SCRIPT
@@ -11,7 +11,7 @@
 #
 # START_MODULE_MAP
 #   $SCRIPT:MODEL_OPTIONS - Curated model menu entries mapped to runtime family contours and local artifact folders.
-#   Get-ProjectRoot - Resolve the repository root relative to the script location.
+#   Get-ProjectRoot - Resolve the repository root relative to the script location or an inline-wrapper fallback root.
 #   ConvertTo-PlainText - Convert a secure string to plaintext for transient process-local environment use.
 #   Read-TrimmedHostInput - Read one host prompt and normalize null or whitespace-padded input.
 #   Resolve-HttpProbeHost - Convert bind hosts like 0.0.0.0 or :: into a client-reachable loopback probe target.
@@ -28,7 +28,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added Windows-only interactive launcher that reuses the profile-aware Python launcher for env setup and service execution while supporting optional model downloads]
+#   LAST_CHANGE: [v1.1.0 - Added inline-wrapper project-root fallback so the CMD launcher can execute this script content without relying on $PSScriptRoot]
 # END_CHANGE_SUMMARY
 
 Set-StrictMode -Version 3.0
@@ -46,7 +46,16 @@ $SCRIPT:MODEL_OPTIONS = @(
 )
 
 function Get-ProjectRoot {
-    return (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        return (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    }
+
+    $fallbackRoot = $env:QWEN_TTS_LAUNCH_PROJECT_ROOT
+    if (-not [string]::IsNullOrWhiteSpace($fallbackRoot) -and (Test-Path $fallbackRoot)) {
+        return (Resolve-Path $fallbackRoot).Path
+    }
+
+    throw 'Unable to resolve project root: neither $PSScriptRoot nor QWEN_TTS_LAUNCH_PROJECT_ROOT is available.'
 }
 
 function ConvertTo-PlainText {

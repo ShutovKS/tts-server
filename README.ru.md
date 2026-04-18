@@ -87,17 +87,25 @@ pip install -r requirements.txt
 choco install ffmpeg -y
 ```
 
-Если PowerShell блокирует запуск activation script, сначала выполните `Set-ExecutionPolicy -Scope Process Bypass` в текущей сессии.
+Если ваша машина разрешает неподписанные локальные PowerShell-скрипты, можно сначала выполнить `Set-ExecutionPolicy -Scope Process Bypass` в текущей сессии. На Windows-хостах, где `MachinePolicy` принудительно задаёт `AllSigned`, это не поможет, поэтому используйте CMD-entrypoint ниже.
 
 ### Интерактивный Windows launcher
 
-Для управляемого запуска в Windows используйте интерактивный PowerShell-оркестратор:
+Для управляемого запуска в Windows на хостах, где разрешён запуск `.ps1`, используйте интерактивный PowerShell-оркестратор:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\launch-windows.ps1
 ```
 
 Скрипт переиспользует profile-aware пакет `launcher`, подбирает family/service contour, создаёт или переиспользует `.envs/<family>`, проверяет наличие выбранной модели в `.models/`, при необходимости предлагает скачать отсутствующие артефакты и затем запускает выбранный адаптер.
+
+Если подпись PowerShell-скриптов принудительно включена через `MachinePolicy` (`AllSigned`), используйте Windows CMD wrapper:
+
+```bat
+.\scripts\launch-windows.cmd
+```
+
+Этот wrapper передаёт содержимое `scripts/launch-windows.ps1` в `powershell.exe -Command` как inline-текст вместо прямого запуска `.ps1`, поэтому file-signing gate не срабатывает, а сам интерактивный flow остаётся тем же.
 
 Важные детали:
 
