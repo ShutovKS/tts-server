@@ -53,6 +53,27 @@ The image exposes port `8000` and uses `python -m uvicorn server:app --host 0.0.
 
 ## API surface
 
+### CORS note for separate frontend modules
+
+The HTTP server no longer owns the demo UI or any other frontend assets. A standalone local demo frontend now lives in the repository root under `frontend_demo/` and calls the API over HTTP.
+
+To support that local split, the server exposes development CORS for:
+
+- `http://127.0.0.1:8030`
+- `http://localhost:8030`
+
+For a fully working clone demo on this host, run the server in the qwen isolated contour rather than the generic base runtime. The launcher-approved path is:
+
+```powershell
+python -m launcher inspect --family qwen --module server
+python -m launcher check-env --family qwen --module server
+$env:QWEN_TTS_HOST='127.0.0.1'
+$env:QWEN_TTS_PORT='8020'
+& .\.envs\qwen\Scripts\python.exe -m server
+```
+
+If readiness reports `selected_backend=onnx` and `supports_clone=false`, the standalone demo will intentionally refuse to submit clone requests because that contour cannot complete the advertised flow.
+
 ### Health endpoints
 
 - `GET /health/live`
@@ -103,6 +124,8 @@ Async submission endpoints accept the `Idempotency-Key` header.
 For V1 host validation, keep `python scripts/validate_runtime.py smoke-server` as the baseline HTTP orchestrator. That command is meant to sit on top of deterministic adapter checks rather than replace them: run `python -m pytest -m "unit or integration"` and the named HTTP integration cases for contract coverage, then use `smoke-server` for live `/health/live` and `/health/ready` startup proof, synchronous audio generation, async job submit/status/result verification, and scenario-aware backend assertions for the selected smoke target.
 
 `python -m pytest -m "unit or integration"` remains the canonical first step for this lane. If that check reports a deterministic-baseline failure, record it separately from host runtime evidence so the pytest surface and the smoke-server lane stay easy to distinguish.
+
+For the standalone frontend demo specifically, pair the smoke-server lane with a qwen-contour browser or HTTP proof that the `frontend_demo/` page loads, reads `/health/ready`, and submits `POST /api/v1/tts/clone` successfully through a clone-capable backend.
 
 The host lane is target-aware by design. The existing smoke suite reuses one path for default Qwen custom validation plus `OmniVoice-Custom --expected-backend torch` and `Piper-en_US-lessac-medium --expected-backend onnx`; those backend expectations should stay tied to the chosen smoke target instead of being treated as one global backend rule.
 

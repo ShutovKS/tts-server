@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TTS Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="terminal-container">
+      <!-- Главный "железный" фрейм интерфейса -->
+      <div class="hardware-frame">
+        
+        <!-- Верх: Выбор персонажей -->
+        <section class="preset-section" aria-label="Выбор голоса">
+          <div id="preset-list" class="preset-carousel" role="radiogroup">
+            <!-- Сюда JS вставит карточки -->
+          </div>
+        </section>
+
+        <!-- Центр: Экран ввода текста -->
+        <section class="input-section">
+          <div class="screen-bezel">
+            <textarea
+              id="tts-text"
+              name="text"
+              placeholder="Искусственный интеллект — ..._"
+              maxlength="2000"
+            ></textarea>
+            <span id="char-counter" class="char-counter">[ 0 / 2000 ]</span>
+            <!-- Статус бар внутри экрана (ошибки/загрузка) -->
+            <div id="status-overlay" class="status-overlay" hidden></div>
+          </div>
+        </section>
+
+        <!-- Низ: Действия и Аудио -->
+        <section class="action-section">
+          <div class="action-row">
+            <button id="synthesize-button" type="submit" class="action-btn">
+              СИНТЕЗИРОВАТЬ <span class="btn-key">[ENTER]</span>
+            </button>
+            <button id="preview-button" type="button" class="action-btn secondary">
+              ПРОСЛУШАТЬ РЕФЕРЕНС
+            </button>
+          </div>
+
+          <!-- Панель аудио (Скрыта до успешного синтеза) -->
+          <div id="audio-panel" class="audio-panel" hidden>
+            <div class="audio-track-ui">
+              <audio id="result-audio" controls preload="metadata"></audio>
+            </div>
+            <a id="download-link" class="download-btn" download="tts-audio.wav">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              СКАЧАТЬ WAV
+            </a>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

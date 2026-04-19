@@ -312,7 +312,7 @@
 
     <M-SERVER NAME="HTTPServer" TYPE="ENTRY_POINT" LAYER="4" ORDER="1" STATUS="implemented">
       <contract>
-        <purpose>Expose TTS capabilities through FastAPI HTTP endpoints with auth, rate limiting, and error handling.</purpose>
+        <purpose>Expose TTS capabilities through FastAPI HTTP endpoints with auth, rate limiting, error handling, and API-only transport behavior.</purpose>
       </contract>
       <interface>
         <export-app PURPOSE="FastAPI application instance" />
@@ -336,6 +336,26 @@
       </observability>
       <verification-ref>V-M-SERVER</verification-ref>
     </M-SERVER>
+
+    <M-FRONTEND-DEMO NAME="FrontendDemo" TYPE="ENTRY_POINT" LAYER="4" ORDER="4" STATUS="implemented">
+      <contract>
+        <purpose>Provide a standalone static one-page demo frontend that targets the existing TTS HTTP API without living inside the server adapter.</purpose>
+      </contract>
+      <interface>
+        <export-index-html PURPOSE="Static page shell for the demo frontend" />
+        <export-app-js PURPOSE="Browser-side clone demo flow targeting the HTTP API by configured base URL" />
+        <export-voice-presets-json PURPOSE="Local preset configuration owned by the frontend module" />
+      </interface>
+      <depends>M-SERVER</depends>
+      <target>
+        <source>frontend_demo/index.html</source>
+        <source>frontend_demo/styles.css</source>
+        <source>frontend_demo/app.js</source>
+        <source>frontend_demo/voice-presets.json</source>
+        <source>frontend_demo/README.md</source>
+      </target>
+      <verification-ref>V-M-FRONTEND-DEMO</verification-ref>
+    </M-FRONTEND-DEMO>
 
     <M-TELEGRAM NAME="TelegramBot" TYPE="ENTRY_POINT" LAYER="4" ORDER="2" STATUS="implemented">
       <contract>
@@ -735,6 +755,17 @@
       <step-5>Temporary files are cleaned up in finally block</step-5>
       <evidence>tts.clone.reference_audio_prepared, tts.clone.completed log markers</evidence>
     </DF-CLONE-TTS>
+
+    <DF-DEMO-FRONTEND NAME="Standalone Demo Frontend Clone Flow" TRIGGER="Browser interaction with the root-level frontend_demo module and POST /api/v1/tts/clone through the server API">
+      <step-1>Browser loads the standalone static frontend from the `frontend_demo/` module</step-1>
+      <step-2>Frontend reads local preset metadata from `voice-presets.json`</step-2>
+      <step-3>User selects a preset and enters synthesis text in the single-page UI</step-3>
+      <step-4>Frontend loads the selected local reference audio file path from the frontend module</step-4>
+      <step-5>Frontend checks `/health/ready`, verifies clone support, and blocks synthesis when the active backend is incompatible</step-5>
+      <step-6>Frontend builds `multipart/form-data` and submits it to `/api/v1/tts/clone` using the configured API base URL</step-6>
+      <step-7>Browser receives WAV audio, creates an object URL, and exposes playback plus download</step-7>
+      <evidence>Standalone frontend renders, local presets load, clone-capable runtime is surfaced correctly, clone endpoint returns audio, browser exposes playable/downloadable WAV output</evidence>
+    </DF-DEMO-FRONTEND>
 
     <DF-TELEGRAM-TTS NAME="Telegram Bot TTS Flow" TRIGGER="Telegram /tts, /design, or /clone command">
       <step-1>Polling loop receives update from Telegram API</step-1>

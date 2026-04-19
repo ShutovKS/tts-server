@@ -9,6 +9,7 @@ This repository provides a local text-to-speech stack with a shared modular runt
 - [server/](server/README.md) — FastAPI HTTP API
 - [telegram_bot/](telegram_bot/README.md) — Telegram bot based on long polling
 - [cli/](cli/README.md) — interactive local CLI
+- [frontend_demo/](frontend_demo/README.md) — standalone static demo frontend for the HTTP API
 - [core/](core/README.md) — shared runtime, model registry, backends, jobs, and observability
 
 The repository layout was updated so Docker assets now live next to the components they build:

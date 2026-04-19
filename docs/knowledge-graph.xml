@@ -362,17 +362,32 @@
     </M-DOCKER-ASSETS>
 
     <M-SERVER NAME="HTTPServer" TYPE="ENTRY_POINT" STATUS="implemented">
-      <purpose>Expose TTS capabilities through FastAPI HTTP endpoints with auth, rate limiting, and error handling.</purpose>
+      <purpose>Expose TTS capabilities through FastAPI HTTP endpoints with auth, rate limiting, error handling, and API-only transport behavior.</purpose>
       <path>server/</path>
       <depends>M-BOOTSTRAP, M-CONFIG, M-ERRORS, M-CONTRACTS, M-OBSERVABILITY</depends>
       <verification-ref>V-M-SERVER</verification-ref>
       <annotations>
         <fn-app PURPOSE="FastAPI application instance" />
         <fn-build_server_runtime PURPOSE="Server-specific runtime assembly" />
+        <fn-request_context_middleware PURPOSE="Bind request-scoped observability context and uniform API response metadata" />
       </annotations>
       <CrossLink from="M-SERVER" to="M-BOOTSTRAP" relation="uses-runtime" />
       <CrossLink from="M-SERVER" to="M-OBSERVABILITY" relation="uses-logging" />
     </M-SERVER>
+
+    <M-FRONTEND-DEMO NAME="FrontendDemo" TYPE="ENTRY_POINT" STATUS="implemented">
+      <purpose>Provide a standalone static one-page demo frontend that targets the TTS HTTP API from a separate root-level module.</purpose>
+      <path>frontend_demo/</path>
+      <depends>M-SERVER</depends>
+      <verification-ref>V-M-FRONTEND-DEMO</verification-ref>
+      <annotations>
+        <file-index-html PURPOSE="Standalone demo page shell" />
+        <file-styles-css PURPOSE="Industrial Cyber-Noir styling for the standalone demo" />
+        <file-app-js PURPOSE="Browser-side readiness checks, preset loading, clone submission, playback, and download flow" />
+        <file-voice-presets-json PURPOSE="Local frontend-owned voice preset configuration" />
+      </annotations>
+      <CrossLink from="M-FRONTEND-DEMO" to="M-SERVER" relation="calls-http-api" />
+    </M-FRONTEND-DEMO>
 
     <M-TELEGRAM NAME="TelegramBot" TYPE="ENTRY_POINT" STATUS="implemented">
       <purpose>Expose TTS capabilities through Telegram bot commands with allowlist, rate limiting, and delivery persistence.</purpose>

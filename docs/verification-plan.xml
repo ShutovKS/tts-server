@@ -481,7 +481,7 @@
         <file>tests/smoke/test_local_runtime.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/integration/test_api.py tests/unit/server/test_health_routes.py -m "integration or unit"</check-1>
+        <check-1>python -m pytest tests/integration/test_api.py tests/unit/server/test_health_routes.py tests/unit/server/test_tts_routes.py -m "integration or unit"</check-1>
         <check-2>QWEN_TTS_RUN_SMOKE=1 python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-2>
         <check-3>QWEN_TTS_RUN_SMOKE=1 QWEN_TTS_SMOKE_MODEL_ID=Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-3>
         <check-4>QWEN_TTS_RUN_SMOKE=1 QWEN_TTS_SMOKE_MODEL_ID=Piper-en_US-lessac-medium QWEN_TTS_SMOKE_EXPECTED_BACKEND=onnx python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-4>
@@ -512,6 +512,30 @@
         <marker-4>[Responses][build_audio_response][BUILD_AUDIO_RESPONSE]</marker-4>
       </required-log-markers>
     </V-M-SERVER>
+
+    <V-M-FRONTEND-DEMO MODULE="M-FRONTEND-DEMO" PRIORITY="medium">
+      <test-files>
+        <file>frontend_demo/index.html</file>
+        <file>frontend_demo/app.js</file>
+        <file>frontend_demo/styles.css</file>
+        <file>frontend_demo/voice-presets.json</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m http.server 8030 -d .</check-1>
+        <check-2>python scripts/validate_runtime.py smoke-server</check-2>
+        <check-3>Browser verification loads the standalone demo, fetches `/health/ready`, submits `/api/v1/tts/clone`, and verifies playback/download state through the browser UI</check-3>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The standalone frontend module renders without server-owned static routes and loads local preset configuration from `voice-presets.json`.</scenario-1>
+        <scenario-2 kind="success">The frontend reads `/health/ready`, surfaces the active backend, and blocks clone submission when clone mode is unavailable.</scenario-2>
+        <scenario-3 kind="success">The frontend loads local reference audio, submits `multipart/form-data` to `/api/v1/tts/clone`, and exposes playback plus download after receiving `audio/wav`.</scenario-3>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[ServerApp][request_context_middleware][BLOCK_LOG_REQUEST_START]</marker-1>
+        <marker-2>[RoutesTTS][run_inference_with_timeout][BLOCK_EXECUTE_SYNTHESIS]</marker-2>
+        <marker-3>[Responses][build_audio_response][BUILD_AUDIO_RESPONSE]</marker-3>
+      </required-log-markers>
+    </V-M-FRONTEND-DEMO>
 
     <V-M-TELEGRAM MODULE="M-TELEGRAM" PRIORITY="medium">
       <test-files>

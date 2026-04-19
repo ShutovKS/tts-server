@@ -27,6 +27,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from core.observability import (
     Timer,
@@ -87,6 +88,15 @@ def create_app(settings: Optional[ServerSettings] = None) -> FastAPI:
         title="Qwen3-TTS API Server",
         version="1.0.0",
         lifespan=lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://127.0.0.1:8030", "http://localhost:8030"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["x-request-id", "x-model-id", "x-backend-id"],
     )
 
     # START_BLOCK_CONFIGURE_APP_STATE
