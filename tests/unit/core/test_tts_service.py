@@ -150,6 +150,34 @@ def test_synthesize_clone_passes_explicit_language(
     assert captured_kwargs["language"] == "ru"
 
 
+def test_synthesize_clone_preserves_missing_ref_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    settings = _make_core_settings(tmp_path)
+    ref_audio_path = tmp_path / "reference.wav"
+    ref_audio_path.write_bytes(make_wav_bytes())
+    service = TTSService(registry=StubRegistry(), settings=settings)  # type: ignore[arg-type]
+    captured_kwargs = {}
+
+    def fake_generate_audio(**kwargs):
+        captured_kwargs.update(kwargs)
+        output_dir = Path(kwargs["output_path"])
+        (output_dir / "audio_0001.wav").write_bytes(make_wav_bytes())
+
+    monkeypatch.setattr("core.services.tts_service.generate_audio", fake_generate_audio)
+
+    service.synthesize_clone(
+        VoiceCloneCommand(
+            text="Clone this",
+            ref_audio_path=ref_audio_path,
+            ref_text=None,
+        )
+    )
+
+    assert "ref_text" in captured_kwargs
+    assert captured_kwargs["ref_text"] is None
+
+
 def test_tts_service_emits_structured_logs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):

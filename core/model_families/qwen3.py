@@ -85,7 +85,7 @@ class Qwen3FamilyAdapter(ModelFamilyAdapter):
                     "ref_audio": str(payload.ref_audio_path)
                     if payload.ref_audio_path is not None
                     else None,
-                    "ref_text": payload.ref_text or ".",
+                    "ref_text": payload.ref_text,
                 }
             )
         else:  # pragma: no cover - defensive guard for future payload variants

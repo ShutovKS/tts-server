@@ -120,6 +120,30 @@ def test_qwen3_family_adapter_prepares_clone_execution_kwargs(tmp_path: Path):
     }
 
 
+def test_qwen3_family_adapter_preserves_missing_clone_ref_text(tmp_path: Path):
+    adapter = Qwen3FamilyAdapter()
+    ref_audio_path = tmp_path / "reference.wav"
+    ref_audio_path.write_bytes(b"wav")
+    plan = _make_plan(
+        VoiceCloneCommand(
+            text="Clone this",
+            ref_audio_path=ref_audio_path,
+            ref_text=None,
+            language="en",
+        ),
+        "3",
+    )
+
+    prepared = adapter.prepare_execution(plan)
+
+    assert prepared.execution_mode == "clone"
+    assert prepared.generation_kwargs == {
+        "language": "en",
+        "ref_audio": str(ref_audio_path),
+        "ref_text": None,
+    }
+
+
 def test_catalog_re_exports_qwen3_family_metadata():
     assert "English" in SPEAKER_MAP
     assert "Ryan" in SPEAKER_MAP["English"]
