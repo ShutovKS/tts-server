@@ -73,3 +73,5 @@ docs/plans/
 
 *.crt
 .kilo/package-lock.json
+.playwright-mcp/
+docs/superpowers/specs/
