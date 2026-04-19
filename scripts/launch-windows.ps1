@@ -10,12 +10,14 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
+#   $SCRIPT:FAMILY_OPTIONS - Curated family menu entries mapped to runtime contours.
 #   $SCRIPT:MODEL_OPTIONS - Curated model menu entries mapped to runtime family contours and local artifact folders.
 #   Get-ProjectRoot - Resolve the repository root relative to the script location or an inline-wrapper fallback root.
 #   ConvertTo-PlainText - Convert a secure string to plaintext for transient process-local environment use.
 #   Read-TrimmedHostInput - Read one host prompt and normalize null or whitespace-padded input.
 #   Resolve-HttpProbeHost - Convert bind hosts like 0.0.0.0 or :: into a client-reachable loopback probe target.
 #   Select-MenuOption - Prompt the user to select one numbered option from a curated menu.
+#   Select-MultipleMenuOptions - Prompt the user to select one or more numbered options from a curated menu.
 #   Invoke-LauncherJson - Execute the profile-aware Python launcher and parse its JSON payload.
 #   Assert-WindowsPreflight - Validate that the script runs on Windows PowerShell with Python 3.11 and ffmpeg available.
 #   Test-ModelArtifacts - Validate a model folder or Hugging Face snapshot layout against required artifact groups.
@@ -33,6 +35,12 @@
 
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
+
+$SCRIPT:FAMILY_OPTIONS = @(
+    [pscustomobject]@{ Key = 'qwen'; Label = 'Qwen3' },
+    [pscustomobject]@{ Key = 'omnivoice'; Label = 'OmniVoice' },
+    [pscustomobject]@{ Key = 'piper'; Label = 'Piper' }
+)
 
 $SCRIPT:MODEL_OPTIONS = @(
     [pscustomobject]@{ Key = 'qwen-custom-17b'; Label = 'Qwen Custom 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
@@ -109,6 +117,57 @@ function Select-MenuOption {
             return $Options[$choice - 1]
         }
         Write-Warning 'Enter a number from the menu.'
+    }
+}
+
+function Select-MultipleMenuOptions {
+    param(
+        [Parameter(Mandatory = $true)][string]$Prompt,
+        [Parameter(Mandatory = $true)][object[]]$Options,
+        [string]$DisplayProperty = 'Label'
+    )
+
+    if ($Options.Count -eq 0) {
+        throw 'Select-MultipleMenuOptions requires at least one option.'
+    }
+
+    Write-Host ''
+    Write-Host $Prompt -ForegroundColor Cyan
+    for ($index = 0; $index -lt $Options.Count; $index++) {
+        Write-Host ('[{0}] {1}' -f ($index + 1), $Options[$index].$DisplayProperty)
+    }
+
+    while ($true) {
+        $raw = Read-TrimmedHostInput -Prompt 'Enter one or more option numbers separated by comma'
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            Write-Warning 'Select at least one option from the menu.'
+            continue
+        }
+
+        $selectedIndexes = New-Object System.Collections.Generic.List[int]
+        $isValid = $true
+        foreach ($token in ($raw -split ',')) {
+            $trimmed = $token.Trim()
+            $choice = 0
+            if (-not [int]::TryParse($trimmed, [ref]$choice) -or $choice -lt 1 -or $choice -gt $Options.Count) {
+                $isValid = $false
+                break
+            }
+            if (-not $selectedIndexes.Contains($choice - 1)) {
+                $selectedIndexes.Add($choice - 1) | Out-Null
+            }
+        }
+
+        if (-not $isValid -or $selectedIndexes.Count -eq 0) {
+            Write-Warning 'Enter one or more valid menu numbers separated by commas.'
+            continue
+        }
+
+        $selectedOptions = New-Object System.Collections.Generic.List[object]
+        foreach ($selectedIndex in $selectedIndexes) {
+            $selectedOptions.Add($Options[$selectedIndex]) | Out-Null
+        }
+        return $selectedOptions.ToArray()
     }
 }
 
@@ -396,22 +455,38 @@ function Main {
 
     Write-Host 'Interactive Windows launcher for tts-server' -ForegroundColor Green
     $service = Select-MenuOption -Prompt 'Select service to launch' -Options $serviceOptions
-    $model = Select-MenuOption -Prompt 'Select model/family to prepare' -Options $SCRIPT:MODEL_OPTIONS
+    $family = Select-MenuOption -Prompt 'Select family to prepare' -Options $SCRIPT:FAMILY_OPTIONS
+    $familyModels = @($SCRIPT:MODEL_OPTIONS | Where-Object { $_.Family -eq $family.Key })
+    if ($familyModels.Count -eq 0) {
+        throw "No model options are configured for family '$($family.Key)'."
+    }
 
-    $familyPython = Ensure-FamilyEnvironment -ProjectRoot $projectRoot -Family $model.Family -Module $service.Key
-    $inspectResult = Invoke-LauncherJson -ProjectRoot $projectRoot -LauncherArgs @('inspect', '--family', $model.Family, '--module', $service.Key)
+    $modelsToEnsure = @()
+    if ($familyModels.Count -eq 1) {
+        $modelsToEnsure = @($familyModels[0])
+        Write-Host ''
+        Write-Host ('Automatically preparing the only model for {0}: {1}' -f $family.Label, $familyModels[0].Label) -ForegroundColor Cyan
+    }
+    else {
+        $modelsToEnsure = @(Select-MultipleMenuOptions -Prompt 'Select models to download if missing (multiple options can be selected, separated by comma)' -Options $familyModels)
+    }
+
+    $familyPython = Ensure-FamilyEnvironment -ProjectRoot $projectRoot -Family $family.Key -Module $service.Key
+    $inspectResult = Invoke-LauncherJson -ProjectRoot $projectRoot -LauncherArgs @('inspect', '--family', $family.Key, '--module', $service.Key)
     if ($inspectResult.ExitCode -ne 0) { throw "Failed to resolve launch profile: `n$($inspectResult.RawOutput)" }
     Write-Host ''
-    Write-Host ('Selected family: {0}' -f $model.Family) -ForegroundColor Cyan
-    Write-Host ('Selected model folder: {0}' -f $model.Folder) -ForegroundColor Cyan
+    Write-Host ('Selected family: {0}' -f $family.Label) -ForegroundColor Cyan
     Write-Host ('Host contour: {0} / backend: {1}' -f $inspectResult.Payload.host.platform_system, $inspectResult.Payload.selected_backend) -ForegroundColor Cyan
     if (-not $inspectResult.Payload.compatible) { throw "Selected profile is incompatible with this host even after environment setup: $([string]::Join(', ', $inspectResult.Payload.reasons))" }
 
     $modelsDir = Join-Path $projectRoot '.models'
     New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
-    Ensure-ModelAvailability -PythonPath $familyPython -Model $model -ModelsDir $modelsDir | Out-Null
+    foreach ($model in $modelsToEnsure) {
+        Write-Host ('Ensuring model: {0}' -f $model.Label) -ForegroundColor Cyan
+        Ensure-ModelAvailability -PythonPath $familyPython -Model $model -ModelsDir $modelsDir | Out-Null
+    }
     Configure-ServiceEnvironment -ProjectRoot $projectRoot -InspectPayload $inspectResult.Payload -Service $service
-    Start-SelectedService -ProjectRoot $projectRoot -Family $model.Family -Module $service.Key -Service $service
+    Start-SelectedService -ProjectRoot $projectRoot -Family $family.Key -Module $service.Key -Service $service
 }
 
 try {
