@@ -17,6 +17,7 @@
 #   BackendNotAvailableError - No suitable backend found
 #   BackendCapabilityError - Backend lacks required capability
 #   ModelCapabilityError - Requested model family lacks the requested synthesis capability
+#   RuntimeCapabilityNotConfiguredError - Requested runtime capability has no active model binding
 #   ModelLoadError - Model loading failure
 #   TTSGenerationError - Audio generation failure
 #   InferenceBusyError - Inference slot occupied
@@ -161,6 +162,32 @@ class ModelCapabilityError(CoreError):
             "model": model_id,
             "capability": capability,
             "supported_capabilities": list(supported_capabilities),
+        }
+        if family:
+            payload["family"] = family
+        if details:
+            payload.update(details)
+        self.context = ErrorContext(reason=resolved_reason, details=payload)
+
+
+class RuntimeCapabilityNotConfiguredError(CoreError):
+    def __init__(
+        self,
+        *,
+        capability: str,
+        execution_mode: str,
+        family: str | None = None,
+        reason: str | None = None,
+        details: dict[str, Any] | None = None,
+    ):
+        resolved_reason = (
+            reason
+            or f"Runtime capability '{capability}' is not configured for execution mode '{execution_mode}'"
+        )
+        super().__init__(resolved_reason)
+        payload: dict[str, Any] = {
+            "capability": capability,
+            "execution_mode": execution_mode,
         }
         if family:
             payload["family"] = family

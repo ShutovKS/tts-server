@@ -20,7 +20,7 @@
 #   LOCAL_JOB_ARTIFACT_BACKEND - Default local job artifact backend key
 #   LOCAL_RATE_LIMIT_BACKEND - Default local rate limit backend key
 #   LOCAL_QUOTA_BACKEND - Default local quota backend key
-#   CoreSettings - Frozen dataclass holding all shared runtime settings
+#   CoreSettings - Frozen dataclass holding all shared runtime settings including active capability bindings
 #   CoreSettingsEnv - TypedDict describing parsed settings shape
 #   AuthMode - Literal type for authentication mode
 #   parse_core_settings_from_env - Parse environment variables into typed settings dict
@@ -66,6 +66,10 @@ class CoreSettingsEnv(TypedDict):
     voices_dir: Path
     upload_staging_dir: Path
     model_manifest_path: Path
+    active_family: str | None
+    default_custom_model: str | None
+    default_design_model: str | None
+    default_clone_model: str | None
     backend: str | None
     backend_autoselect: bool
     qwen_fast_enabled: bool
@@ -118,6 +122,10 @@ class CoreSettings:
     model_manifest_path: Path = field(
         default_factory=lambda: (PROJECT_ROOT / "core" / "models" / "manifest.v1.json")
     )
+    active_family: str | None = None
+    default_custom_model: str | None = None
+    default_design_model: str | None = None
+    default_clone_model: str | None = None
     backend: str | None = None
     backend_autoselect: bool = True
     qwen_fast_enabled: bool = True
@@ -156,6 +164,24 @@ class CoreSettings:
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
         self.voices_dir.mkdir(parents=True, exist_ok=True)
         self.upload_staging_dir.mkdir(parents=True, exist_ok=True)
+
+    def runtime_capability_map(self) -> dict[str, str | None]:
+        return {
+            "family": self.active_family,
+            "custom_model": self.default_custom_model,
+            "design_model": self.default_design_model,
+            "clone_model": self.default_clone_model,
+        }
+
+    def resolve_runtime_model_binding(self, execution_mode: str) -> str | None:
+        normalized_mode = (execution_mode or "").strip().lower()
+        if normalized_mode == "custom":
+            return self.default_custom_model
+        if normalized_mode == "design":
+            return self.default_design_model
+        if normalized_mode == "clone":
+            return self.default_clone_model
+        return None
 
 
 # START_CONTRACT: env_text
@@ -267,6 +293,19 @@ def parse_core_settings_from_env(
             PROJECT_ROOT / "core" / "models" / "manifest.v1.json",
             environ,
         ),
+        "active_family": env_text("QWEN_TTS_ACTIVE_FAMILY", "", environ).strip() or None,
+        "default_custom_model": env_text(
+            "QWEN_TTS_DEFAULT_CUSTOM_MODEL", "", environ
+        ).strip()
+        or None,
+        "default_design_model": env_text(
+            "QWEN_TTS_DEFAULT_DESIGN_MODEL", "", environ
+        ).strip()
+        or None,
+        "default_clone_model": env_text(
+            "QWEN_TTS_DEFAULT_CLONE_MODEL", "", environ
+        ).strip()
+        or None,
         # END_BLOCK_PARSE_PATH_SETTINGS
         # START_BLOCK_PARSE_RUNTIME_SETTINGS
         "backend": backend,

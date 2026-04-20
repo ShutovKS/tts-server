@@ -78,14 +78,22 @@
     <V-M-CONFIG MODULE="M-CONFIG" PRIORITY="high">
       <test-files>
         <file>tests/unit/core/test_config_and_bootstrap.py</file>
+        <file>tests/unit/core/test_synthesis_planner.py</file>
+        <file>tests/integration/test_api.py</file>
       </test-files>
       <module-checks>
         <check-1>python -m pytest tests/unit/core/test_config_and_bootstrap.py -m unit</check-1>
+        <check-2>python -m pytest tests/unit/core/test_synthesis_planner.py tests/integration/test_api.py -m "unit or integration"</check-2>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Default settings use local runtime defaults for job backends, auth, manifest path, preload policy, rate limiting, and quota.</scenario-1>
         <scenario-2 kind="success">Environment variables override manifest, preload, auth, rate-limit, and quota settings with normalized values.</scenario-2>
         <scenario-3 kind="success">Explicit models, outputs, voices, and upload staging directories are parsed into the resulting settings object.</scenario-3>
+        <scenario-4 kind="success">Runtime capability bindings for family, custom, design, and clone models are parsed from environment variables as active runtime configuration rather than inferred artifact presence.</scenario-4>
+        <scenario-5 kind="success">When a capability binding is configured, requests without an explicit model resolve through the runtime-bound model for that execution mode.</scenario-5>
+        <scenario-6 kind="failure">When a capability binding is missing, the API returns a controlled runtime capability error instead of falling back to another local model.</scenario-6>
+        <scenario-7 kind="success">Launcher and readiness surfaces expose the runtime capability map explicitly so adapters can distinguish bound capabilities from local artifact presence.</scenario-7>
+        <scenario-8 kind="success">CLI, Telegram, and the frontend demo consume runtime capability bindings instead of requiring explicit model identifiers in normal runtime-bound flows.</scenario-8>
       </scenarios>
     </V-M-CONFIG>
 

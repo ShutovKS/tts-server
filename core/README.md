@@ -87,6 +87,10 @@ Common environment variables:
 - `QWEN_TTS_OUTPUTS_DIR`
 - `QWEN_TTS_VOICES_DIR`
 - `QWEN_TTS_UPLOAD_STAGING_DIR`
+- `QWEN_TTS_ACTIVE_FAMILY`
+- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
+- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
+- `QWEN_TTS_DEFAULT_CLONE_MODEL`
 - `QWEN_TTS_BACKEND`
 - `QWEN_TTS_BACKEND_AUTOSELECT`
 - `QWEN_TTS_QWEN_FAST_ENABLED`
@@ -99,6 +103,15 @@ Common environment variables:
 - `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
 
 Transport-specific settings are documented in [../server/README.md](../server/README.md), [../telegram_bot/README.md](../telegram_bot/README.md), and [../cli/README.md](../cli/README.md).
+
+The shared runtime contract now also includes an explicit runtime capability map exposed through `CoreSettings.runtime_capability_map()`:
+
+- `family`
+- `custom_model`
+- `design_model`
+- `clone_model`
+
+These values are active runtime bindings, not a proxy for which artifacts happen to exist on disk. A model folder under `.models/` does not enable a mode by itself. The mode becomes available only when the runtime is launched with the corresponding binding configured.
 
 ## Runtime readiness and self-checks
 

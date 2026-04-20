@@ -378,10 +378,23 @@ docker compose -f docker-compose.telegram-bot.yaml up --build
 - `QWEN_TTS_OUTPUTS_DIR`
 - `QWEN_TTS_VOICES_DIR`
 - `QWEN_TTS_UPLOAD_STAGING_DIR`
+- `QWEN_TTS_ACTIVE_FAMILY`
+- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
+- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
+- `QWEN_TTS_DEFAULT_CLONE_MODEL`
 - `QWEN_TTS_BACKEND`
 - `QWEN_TTS_BACKEND_AUTOSELECT`
 - `QWEN_TTS_SAMPLE_RATE`
 - `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
+
+Runtime теперь опирается на явный capability-binding contract. Активный процесс должен трактовать `family`, `custom_model`, `design_model` и `clone_model` как runtime-привязки, а не как вывод о том, какие каталоги случайно существуют на диске. Иными словами, это модели, привязанные к текущему запущенному контуру, а не синоним «скачано локально».
+
+Поведение по умолчанию для этого контракта:
+
+- capability binding отсутствует -> соответствующий режим недоступен для текущего процесса
+- capability binding настроен -> запросы могут не передавать `model` и использовать runtime-bound модель
+
+Эти переменные являются source-of-truth контрактом между launcher и runtime. Если capability binding отсутствует, соответствующий режим должен завершаться controlled unsupported-mode response, а не молча откатываться к какой-то другой локальной модели.
 
 Поддерживаемые backend keys теперь включают:
 

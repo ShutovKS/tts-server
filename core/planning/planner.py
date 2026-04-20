@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+from core.config import CoreSettings
 from core.contracts import RuntimePlanningRegistry
 from core.contracts.commands import GenerationCommand
 from core.contracts.synthesis import (
@@ -27,7 +28,7 @@ from core.contracts.synthesis import (
     SynthesisRequest,
     normalize_family_key,
 )
-from core.errors import ModelCapabilityError
+from core.errors import ModelCapabilityError, RuntimeCapabilityNotConfiguredError
 from core.observability import get_logger, log_event, operation_scope
 
 
@@ -35,13 +36,23 @@ LOGGER = get_logger(__name__)
 
 
 class SynthesisPlanner:
-    def __init__(self, registry: RuntimePlanningRegistry):
+    def __init__(self, registry: RuntimePlanningRegistry, settings: CoreSettings):
         self.registry = registry
+        self.settings = settings
 
     def plan(self, request: SynthesisRequest) -> ExecutionPlan:
         with operation_scope("core.synthesis_planner.plan"):
+            resolved_model_name = request.requested_model or self.settings.resolve_runtime_model_binding(
+                request.execution_mode
+            )
+            if resolved_model_name is None:
+                raise RuntimeCapabilityNotConfiguredError(
+                    capability=request.capability,
+                    execution_mode=request.execution_mode,
+                    family=self.settings.active_family,
+                )
             spec = self.registry.get_model_spec(
-                model_name=request.requested_model,
+                model_name=resolved_model_name,
                 mode=request.execution_mode,
             )
             if request.capability not in spec.supported_capabilities:
@@ -70,6 +81,7 @@ class SynthesisPlanner:
                 message="Synthesis request resolved into execution plan",
                 capability=request.capability,
                 requested_model=request.requested_model,
+                runtime_bound_model=resolved_model_name if request.requested_model is None else None,
                 resolved_model=spec.api_name,
                 execution_mode=plan.execution_mode,
                 backend=plan.backend_key,

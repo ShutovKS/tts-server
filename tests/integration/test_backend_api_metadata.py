@@ -46,6 +46,10 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         outputs_dir=tmp_path / ".outputs",
         voices_dir=tmp_path / ".voices",
         upload_staging_dir=tmp_path / ".uploads",
+        active_family="qwen",
+        default_custom_model="Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+        default_design_model="Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+        default_clone_model="Qwen3-TTS-12Hz-1.7B-Base-8bit",
         backend=None,
         backend_autoselect=True,
         enable_streaming=True,
@@ -112,6 +116,12 @@ def test_readiness_report_exposes_backend_configuration(client: TestClient):
     payload = response.json()
     assert payload["checks"]["runtime"]["configured_backend"] == "torch"
     assert payload["checks"]["runtime"]["backend_autoselect"] is True
+    assert payload["checks"]["runtime"]["runtime_capability_map"] == {
+        "family": "qwen",
+        "custom_model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+        "design_model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+        "clone_model": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
+    }
     assert payload["checks"]["models"]["selected_backend"] == "mlx"
     assert (
         payload["checks"]["models"]["backend_selection"]["selection_reason"]
@@ -136,6 +146,9 @@ def test_readiness_report_exposes_backend_configuration(client: TestClient):
     assert payload["checks"]["models"]["host"]["platform_system"] == "darwin"
     assert payload["checks"]["models"]["available_backends"][0]["key"] == "mlx"
     assert payload["checks"]["models"]["available_backends"][0]["selected"] is True
+    assert payload["checks"]["capabilities"]["capability_status"]["custom"]["bound"] is True
+    assert payload["checks"]["capabilities"]["capability_status"]["custom"]["bound_model"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    assert payload["checks"]["capabilities"]["capability_status"]["clone"]["runtime_ready"] is True
     assert any(
         item["key"] == "qwen_fast"
         and item["diagnostics"]["reason"] == "platform_unsupported"

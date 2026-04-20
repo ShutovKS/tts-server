@@ -79,7 +79,7 @@ def validate_text_length(value: str, *, field_name: str, max_chars: int) -> str:
 
 # START_CONTRACT: OpenAISpeechRequest
 #   PURPOSE: Define the OpenAI-compatible speech request payload schema.
-#   INPUTS: { model: str - requested model id, input: str - source text, voice: str - speaker name, language: str - requested language code, response_format: Literal['wav', 'pcm'] - desired audio format, speed: float - playback speed multiplier }
+#   INPUTS: { model: Optional[str] - optional model override, input: str - source text, voice: str - speaker name, language: str - requested language code, response_format: Literal['wav', 'pcm'] - desired audio format, speed: float - playback speed multiplier }
 #   OUTPUTS: { OpenAISpeechRequest - validated OpenAI-style speech request model }
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER
@@ -87,7 +87,7 @@ def validate_text_length(value: str, *, field_name: str, max_chars: int) -> str:
 class OpenAISpeechRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    model: str = Field(..., description="Model identifier")
+    model: Optional[str] = Field(default=None, description="Optional model override")
     input: str = Field(..., min_length=1, description="Input text")
     voice: str = Field(default="Vivian", description="Speaker/voice name")
     language: str = Field(default="auto", description="Language code or auto")

@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import json
+import importlib
 import platform
 import shutil
 import subprocess
@@ -33,8 +34,9 @@ from pathlib import Path
 
 import pytest
 
-import launcher.main as launcher_main
 from profiles.schema import HostProfile
+
+launcher_main = importlib.import_module("launcher.main")
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -110,6 +112,16 @@ def _run_exec_dry_run(
         lambda path: str(path) == expected_python_path if python_exists else False,
     )
     monkeypatch.setattr(
+        launcher_main.os,
+        "environ",
+        {
+            "QWEN_TTS_ACTIVE_FAMILY": family,
+            "QWEN_TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+            "QWEN_TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+            "QWEN_TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
+        },
+    )
+    monkeypatch.setattr(
         sys,
         "argv",
         ["launcher", "exec", "--family", family, "--module", module, "--dry-run"],
@@ -140,6 +152,31 @@ def test_launcher_exec_dry_run_outputs_platform_aware_qwen_command(
         "command": [_expected_python_path("qwen"), "-m", "server"],
         "dry_run": True,
         "python_exists": True,
+        "runtime_bindings": {
+            "bindings": {
+                "family": "qwen",
+                "custom_model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+                "design_model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+                "clone_model": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
+            },
+            "capability_status": {
+                "custom": {
+                    "bound": True,
+                    "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+                    "env_var": "QWEN_TTS_DEFAULT_CUSTOM_MODEL",
+                },
+                "design": {
+                    "bound": True,
+                    "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+                    "env_var": "QWEN_TTS_DEFAULT_DESIGN_MODEL",
+                },
+                "clone": {
+                    "bound": True,
+                    "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
+                    "env_var": "QWEN_TTS_DEFAULT_CLONE_MODEL",
+                },
+            },
+        },
     }
 
 
@@ -175,11 +212,25 @@ def test_launcher_exec_reports_missing_python_when_env_absent():
 
         assert completed.returncode == 1
         payload = json.loads(completed.stdout)
-        assert payload["exec"] == {
-            "family": "omnivoice",
-            "module": "telegram",
-            "command": [_expected_python_path("omnivoice", isolated_root), "-m", "telegram_bot"],
-            "dry_run": False,
-            "python_exists": False,
-            "error": "expected_python_missing",
+        assert payload["exec"]["family"] == "omnivoice"
+        assert payload["exec"]["module"] == "telegram"
+        assert Path(payload["exec"]["command"][0]).resolve() == Path(
+            _expected_python_path("omnivoice", isolated_root)
+        ).resolve()
+        assert payload["exec"]["command"][1:] == ["-m", "telegram_bot"]
+        assert payload["exec"]["dry_run"] is False
+        assert payload["exec"]["python_exists"] is False
+        assert payload["exec"]["runtime_bindings"] == {
+            "bindings": {
+                "family": "omnivoice",
+                "custom_model": "OmniVoice-Custom",
+                "design_model": "OmniVoice-Design",
+                "clone_model": "OmniVoice-Clone",
+            },
+            "capability_status": {
+                "custom": {"bound": True, "model": "OmniVoice-Custom", "env_var": "QWEN_TTS_DEFAULT_CUSTOM_MODEL"},
+                "design": {"bound": True, "model": "OmniVoice-Design", "env_var": "QWEN_TTS_DEFAULT_DESIGN_MODEL"},
+                "clone": {"bound": True, "model": "OmniVoice-Clone", "env_var": "QWEN_TTS_DEFAULT_CLONE_MODEL"},
+            },
         }
+        assert payload["exec"]["error"] == "expected_python_missing"

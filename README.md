@@ -408,10 +408,25 @@ Shared settings are parsed by [`CoreSettings.from_env()`](core/config.py:112). C
 - `QWEN_TTS_OUTPUTS_DIR`
 - `QWEN_TTS_VOICES_DIR`
 - `QWEN_TTS_UPLOAD_STAGING_DIR`
+- `QWEN_TTS_ACTIVE_FAMILY`
+- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
+- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
+- `QWEN_TTS_DEFAULT_CLONE_MODEL`
 - `QWEN_TTS_BACKEND`
 - `QWEN_TTS_BACKEND_AUTOSELECT`
 - `QWEN_TTS_SAMPLE_RATE`
 - `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
+
+The runtime is moving to an explicit capability-binding contract. The active process should treat `family`, `custom_model`, `design_model`, and `clone_model` as runtime-selected bindings rather than inferring supported modes from whatever model directories exist on disk. In other words, these are the models bound to the running contour, not a synonym for “downloaded locally”.
+
+Default behavior for this contract is:
+
+- missing capability binding -> that mode is unavailable for the running process
+- configured capability binding -> requests may omit `model` and use the runtime-bound model instead
+
+These variables are the source-of-truth contract that launcher and runtime share. When a capability binding is absent, the corresponding mode is expected to fail with a controlled unsupported-mode response instead of silently falling back to some other local model.
+
+That same contract is now consumed consistently by the launcher, `/health/ready`, the CLI, the Telegram bot, and the static frontend demo. Transport adapters should treat runtime capability bindings as authoritative and should not infer enabled modes from the contents of `.models/`.
 
 Supported backend keys now include:
 

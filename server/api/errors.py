@@ -54,6 +54,7 @@ from core.errors import (
     QuotaExceededError,
     RateLimitExceededError,
     RequestTimeoutError,
+    RuntimeCapabilityNotConfiguredError,
     TTSGenerationError,
     UnauthorizedError,
 )
@@ -192,6 +193,15 @@ def build_exception_mappings(
                 status_code=422,
                 code="model_capability_not_supported",
                 message="Requested model does not support the requested operation",
+                details=build_error_details(exc, default_reason=str(exc)),
+            ),
+        ),
+        RuntimeCapabilityNotConfiguredError: ExceptionMapping(
+            error_type=RuntimeCapabilityNotConfiguredError,
+            builder=lambda exc: ErrorDescriptor(
+                status_code=422,
+                code="runtime_capability_not_configured",
+                message="Requested mode is not configured for the current runtime",
                 details=build_error_details(exc, default_reason=str(exc)),
             ),
         ),

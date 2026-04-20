@@ -11,6 +11,8 @@
       <annotations>
         <class-CoreSettings PURPOSE="Frozen dataclass holding all shared runtime settings" />
         <fn-parse_core_settings_from_env PURPOSE="Parse environment variables into typed settings dict" />
+        <fn-runtime_capability_map PURPOSE="Expose the active runtime capability bindings independent of on-disk artifact presence" />
+        <fn-resolve_runtime_model_binding PURPOSE="Resolve the runtime-bound model identifier for a requested execution mode" />
         <type-CoreSettingsEnv PURPOSE="TypedDict describing the parsed settings shape" />
         <type-AuthMode PURPOSE="Literal type for authentication mode" />
       </annotations>
@@ -27,6 +29,7 @@
         <class-ModelNotAvailableError PURPOSE="Requested model not found" />
         <class-BackendError PURPOSE="Base for backend failures" />
         <class-BackendNotAvailableError PURPOSE="No suitable backend found" />
+        <class-RuntimeCapabilityNotConfiguredError PURPOSE="Requested runtime capability has no active model binding" />
         <class-TTSGenerationError PURPOSE="Audio generation failure" />
         <class-InferenceBusyError PURPOSE="Inference slot occupied" />
         <class-AudioConversionError PURPOSE="Audio format conversion failure" />

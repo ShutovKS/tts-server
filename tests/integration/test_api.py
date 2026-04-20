@@ -301,6 +301,50 @@ def test_openai_speech_returns_audio(client: TestClient):
     assert response.content.startswith(b"RIFF")
 
 
+def test_openai_speech_uses_runtime_binding_when_model_is_omitted(client: TestClient):
+    object.__setattr__(
+        _state(client).settings,
+        "default_custom_model",
+        "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+    )
+
+    response = client.post(
+        "/v1/audio/speech",
+        json={
+            "input": "Hello world",
+            "voice": "Vivian",
+            "response_format": "wav",
+            "speed": 1.0,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["x-model-id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+
+
+def test_clone_endpoint_rejects_when_runtime_clone_capability_is_unbound(client: TestClient):
+    object.__setattr__(_state(client).settings, "default_clone_model", None)
+    _state(client).tts_service = TTSService(
+        registry=StubRegistry(), settings=_state(client).settings
+    )
+    _state(client).application = TTSApplicationService(tts_service=_state(client).tts_service)
+    object.__setattr__(
+        _state(client).job_execution.manager.executor,
+        "application_service",
+        _state(client).application,
+    )
+    files = {"ref_audio": ("reference.wav", make_wav_bytes(), "audio/wav")}
+    data = {"text": "Clone this", "ref_text": "Clone this"}
+
+    response = client.post("/api/v1/tts/clone", data=data, files=files)
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["code"] == "runtime_capability_not_configured"
+    assert payload["details"]["capability"] == "reference_voice_clone"
+    assert payload["details"]["execution_mode"] == "clone"
+
+
 def test_openai_speech_passes_language_to_application(client: TestClient):
     response = client.post(
         "/v1/audio/speech",
@@ -1924,6 +1968,7 @@ def test_clone_endpoint_returns_controlled_error_when_generation_artifact_missin
         upload_staging_dir=tmp_path / ".uploads",
         enable_streaming=True,
         default_save_output=False,
+        default_clone_model="Qwen3-TTS-12Hz-1.7B-Base-8bit",
     )
     settings.ensure_directories()
     monkeypatch.setattr("server.api.routes_health.check_ffmpeg_available", lambda: True)
