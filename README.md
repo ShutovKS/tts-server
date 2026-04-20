@@ -117,6 +117,40 @@ Important notes:
 - Piper downloads use the documented `piper.download_voices` flow and normalize the resulting filenames into `model.onnx` and `model.onnx.json`.
 - Telegram launch still requires a real bot token; the script can prompt for it transiently during the current run.
 
+### Interactive macOS launcher
+
+For a guided macOS launch flow that mirrors the Windows orchestrator while staying on top of the same profile-aware `launcher` package, use:
+
+```bash
+bash ./scripts/launch-macos.sh
+```
+
+The script keeps the same high-level flow as the Windows launcher: select the target adapter, select the model/family to prepare, create or reuse `.envs/<family>`, check the isolated environment, validate local model assets under `.models/`, optionally download missing assets, and then start the selected adapter.
+
+Important macOS notes:
+
+- The script is macOS-only and expects `python3.11` plus `ffmpeg` in `PATH`.
+- When `python3.11` or `ffmpeg` is missing, the script can offer an opt-in Homebrew install path with `brew install python@3.11 ffmpeg` instead of silently mutating the host.
+- Qwen and OmniVoice downloads still use the guided Hugging Face snapshot flow, and Piper still uses `piper.download_voices` with filename normalization into `model.onnx` and `model.onnx.json`.
+- HF tokens and Telegram bot tokens remain transient and process-local; the launcher does not persist them.
+
+### Interactive Linux launcher
+
+For the analogous guided Linux launch flow, use:
+
+```bash
+bash ./scripts/launch-linux.sh
+```
+
+This launcher mirrors the same service/model selection and `launcher`-driven env preparation flow as Windows and macOS, but keeps Linux system package installation manual.
+
+Important Linux notes:
+
+- The script is Linux-only and expects `python3.11` plus `ffmpeg` in `PATH`.
+- When required system dependencies are missing, the script detects common package managers such as `apt`, `dnf`, `yum`, `pacman`, and `zypper`, then prints exact install commands without executing them.
+- Model download behavior is the same as the other guided launchers: Hugging Face snapshot guidance for Qwen and OmniVoice, plus the documented `piper.download_voices` path for Piper.
+- HF tokens and Telegram bot tokens remain transient and process-local; the launcher does not persist them.
+
 ### Recommended environment layouts
 
 #### Default shared runtime environment

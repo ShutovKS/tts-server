@@ -694,6 +694,32 @@
         <scenario-2 kind="success">The wrapper resolves the repository root relative to its own location and fails fast when powershell.exe or the delegated launch-windows.ps1 file is unavailable.</scenario-2>
       </scenarios>
     </V-M-WINDOWS-LAUNCHER-CMD>
+    <V-M-MACOS-LAUNCHER MODULE="M-MACOS-LAUNCHER" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/scripts/test_unix_launcher_scripts.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_unix_launcher_scripts.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The macOS launcher script remains a thin orchestrator over the profile-aware Python launcher by reusing create-env, check-env, and exec flows instead of duplicating runtime resolution logic.</scenario-1>
+        <scenario-2 kind="success">The macOS launcher keeps system dependency mutation bounded to explicit opt-in Homebrew guidance while preserving the guided Hugging Face and Piper download paths for missing model assets.</scenario-2>
+        <scenario-3 kind="success">The macOS launcher keeps transient secret handling bounded to process-local HF and Telegram token prompts instead of persisting credentials to repository files.</scenario-3>
+      </scenarios>
+    </V-M-MACOS-LAUNCHER>
+    <V-M-LINUX-LAUNCHER MODULE="M-LINUX-LAUNCHER" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/scripts/test_unix_launcher_scripts.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_unix_launcher_scripts.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The Linux launcher script remains a thin orchestrator over the profile-aware Python launcher by reusing create-env, check-env, and exec flows instead of duplicating runtime resolution logic.</scenario-1>
+        <scenario-2 kind="success">The Linux launcher keeps package-manager-specific install guidance manual-only and does not execute apt, dnf, yum, pacman, or zypper commands on the operator host.</scenario-2>
+        <scenario-3 kind="success">The Linux launcher keeps transient secret handling bounded to process-local HF and Telegram token prompts instead of persisting credentials to repository files.</scenario-3>
+      </scenarios>
+    </V-M-LINUX-LAUNCHER>
   </ModuleVerification>
 
   <PhaseGates>
@@ -856,7 +882,7 @@
   <AutomationNotes>
     <note>Telegram Docker remains a documented compose lane, but the retained evidence set in this session only proves the server Docker path. Keep Telegram Docker wording as runnable and documented unless a specific run also retains its own logs and external validation artifacts.</note>
     <note>`telegram-live` is a real Telegram Bot API reachability check, not Docker parity proof by itself.</note>
-    <note>Launcher/profile verification wording is synchronized to the landed unit-test wave: V-M-PROFILE-*, V-M-LAUNCHER, and V-M-WINDOWS-LAUNCHER describe only behaviors evidenced by the listed launcher/profile unit suites.</note>
+    <note>Launcher/profile verification wording is synchronized to the landed unit-test wave: V-M-PROFILE-*, V-M-LAUNCHER, V-M-WINDOWS-LAUNCHER, V-M-MACOS-LAUNCHER, and V-M-LINUX-LAUNCHER describe only behaviors evidenced by the listed launcher/profile unit suites.</note>
   </AutomationNotes>
 
   <FailurePackets>
@@ -865,4 +891,3 @@
     </packet-template>
   </FailurePackets>
 </VerificationPlan>
-

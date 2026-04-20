@@ -114,6 +114,40 @@ powershell -ExecutionPolicy Bypass -File .\scripts\launch-windows.ps1
 - Для Piper используется задокументированный `piper.download_voices`, после чего файлы приводятся к именам `model.onnx` и `model.onnx.json`.
 - Для Telegram по-прежнему нужен реальный bot token; скрипт может запросить его только на текущий запуск.
 
+### Интерактивный launcher для macOS
+
+Для управляемого запуска на macOS с тем же profile-aware `launcher`, который используется в Windows flow, выполните:
+
+```bash
+bash ./scripts/launch-macos.sh
+```
+
+Скрипт сохраняет тот же верхнеуровневый сценарий, что и Windows launcher: выбор адаптера, выбор модели/family, создание или переиспользование `.envs/<family>`, проверка isolated environment, валидация локальных артефактов в `.models/`, при необходимости загрузка недостающих файлов и затем запуск выбранного адаптера.
+
+Важные детали для macOS:
+
+- Скрипт рассчитан только на macOS и ожидает `python3.11` и `ffmpeg` в `PATH`.
+- Если `python3.11` или `ffmpeg` отсутствуют, скрипт может предложить opt-in установку через Homebrew командой `brew install python@3.11 ffmpeg`, но не делает этого молча.
+- Для Qwen и OmniVoice используется тот же guided Hugging Face snapshot flow, а для Piper — тот же `piper.download_voices` с приведением имён к `model.onnx` и `model.onnx.json`.
+- HF token и Telegram bot token остаются process-local и не сохраняются launcher’ом на диск.
+
+### Интерактивный launcher для Linux
+
+Для аналогичного управляемого запуска на Linux выполните:
+
+```bash
+bash ./scripts/launch-linux.sh
+```
+
+Этот launcher повторяет ту же схему выбора сервиса/модели и подготовки окружения через `launcher`, что и Windows/macOS, но оставляет установку системных пакетов полностью ручной.
+
+Важные детали для Linux:
+
+- Скрипт рассчитан только на Linux и ожидает `python3.11` и `ffmpeg` в `PATH`.
+- Если системные зависимости отсутствуют, скрипт определяет распространённые package manager’ы (`apt`, `dnf`, `yum`, `pacman`, `zypper`) и печатает точные команды установки, но не выполняет их сам.
+- Поведение по загрузке моделей остаётся тем же: Hugging Face snapshot guidance для Qwen и OmniVoice и задокументированный `piper.download_voices` path для Piper.
+- HF token и Telegram bot token остаются process-local и не сохраняются launcher’ом на диск.
+
 ### Рекомендуемые схемы окружений
 
 #### Дефолтное общее runtime-окружение
