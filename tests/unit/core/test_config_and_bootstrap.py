@@ -69,6 +69,10 @@ def test_parse_core_settings_from_env_uses_local_job_backend_defaults():
     assert values["auth_mode"] == "off"
     assert values["auth_static_bearer_token"] is None
     assert values["mlx_models_dir"] == (DEFAULT_MODELS_DIR / "mlx").resolve()
+    assert values["active_family"] is None
+    assert values["default_custom_model"] is None
+    assert values["default_design_model"] is None
+    assert values["default_clone_model"] is None
     assert (
         values["model_manifest_path"]
         == (PROJECT_ROOT / "core" / "models" / "manifest.v1.json").resolve()
@@ -93,6 +97,10 @@ def test_parse_core_settings_from_env_reads_explicit_job_backends(tmp_path: Path
             "QWEN_TTS_VOICES_DIR": str(tmp_path / "voices"),
             "QWEN_TTS_UPLOAD_STAGING_DIR": str(tmp_path / "uploads"),
             "QWEN_TTS_MODEL_MANIFEST_PATH": str(manifest_path),
+            "QWEN_TTS_ACTIVE_FAMILY": "qwen",
+            "QWEN_TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+            "QWEN_TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+            "QWEN_TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
             "QWEN_TTS_QWEN_FAST_ENABLED": "false",
             "QWEN_TTS_MODEL_PRELOAD_POLICY": "listed",
             "QWEN_TTS_MODEL_PRELOAD_IDS": "model-a, model-b,model-a",
@@ -120,6 +128,10 @@ def test_parse_core_settings_from_env_reads_explicit_job_backends(tmp_path: Path
 
     assert values["model_manifest_path"] == manifest_path.resolve()
     assert values["mlx_models_dir"] == (tmp_path / "mlx-models").resolve()
+    assert values["active_family"] == "qwen"
+    assert values["default_custom_model"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    assert values["default_design_model"] == "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit"
+    assert values["default_clone_model"] == "Qwen3-TTS-12Hz-1.7B-Base-8bit"
     assert values["qwen_fast_enabled"] is False
     assert values["model_preload_policy"] == "listed"
     assert values["model_preload_ids"] == ("model-a", "model-b")
@@ -278,6 +290,12 @@ def test_build_runtime_passes_manifest_path_to_backend_registry(tmp_path: Path):
         tmp_path / "models"
     )
     assert runtime.backend_registry._backends["qwen_fast"].enabled is True
+    assert runtime.settings.runtime_capability_map() == {
+        "family": None,
+        "custom_model": None,
+        "design_model": None,
+        "clone_model": None,
+    }
     assert runtime.registry.readiness_report()["preload"]["policy"] == "listed"
     assert runtime.registry.readiness_report()["preload"]["requested_model_ids"] == [
         "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
@@ -287,3 +305,22 @@ def test_build_runtime_passes_manifest_path_to_backend_registry(tmp_path: Path):
     assert runtime.quota_guard is not None
 
     runtime.job_manager.stop()
+
+
+def test_core_settings_resolve_runtime_model_binding_by_mode():
+    settings = CoreSettings(
+        models_dir=DEFAULT_MODELS_DIR,
+        mlx_models_dir=DEFAULT_MODELS_DIR / "mlx",
+        outputs_dir=DEFAULT_OUTPUTS_DIR,
+        voices_dir=DEFAULT_VOICES_DIR,
+        upload_staging_dir=DEFAULT_UPLOAD_STAGING_DIR,
+        active_family="qwen",
+        default_custom_model="custom-model",
+        default_design_model="design-model",
+        default_clone_model="clone-model",
+    )
+
+    assert settings.resolve_runtime_model_binding("custom") == "custom-model"
+    assert settings.resolve_runtime_model_binding("design") == "design-model"
+    assert settings.resolve_runtime_model_binding("clone") == "clone-model"
+    assert settings.resolve_runtime_model_binding("unknown") is None

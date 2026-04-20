@@ -28,6 +28,13 @@ from pathlib import Path
 
 import pytest
 
+from core.config import (
+    CoreSettings,
+    DEFAULT_MODELS_DIR,
+    DEFAULT_OUTPUTS_DIR,
+    DEFAULT_UPLOAD_STAGING_DIR,
+    DEFAULT_VOICES_DIR,
+)
 from core.contracts.commands import (
     CustomVoiceCommand,
     VoiceCloneCommand,
@@ -39,7 +46,7 @@ from core.contracts.synthesis import (
     VoiceClonePayload,
     VoiceDesignPayload,
 )
-from core.errors import ModelCapabilityError
+from core.errors import ModelCapabilityError, RuntimeCapabilityNotConfiguredError
 from core.models.catalog import MODEL_SPECS
 from core.planning import SynthesisPlanner
 
@@ -83,6 +90,17 @@ class PlannerRegistryStub:
             "route_reason": self.route_reason,
             "execution_backend": self.route_backend_key,
         }
+
+
+def _settings(**overrides) -> CoreSettings:
+    return CoreSettings(
+        models_dir=DEFAULT_MODELS_DIR,
+        mlx_models_dir=DEFAULT_MODELS_DIR / "mlx",
+        outputs_dir=DEFAULT_OUTPUTS_DIR,
+        voices_dir=DEFAULT_VOICES_DIR,
+        upload_staging_dir=DEFAULT_UPLOAD_STAGING_DIR,
+        **overrides,
+    )
 
 
 def test_synthesis_request_from_custom_command_normalizes_to_preset_speaker_capability():
@@ -152,7 +170,10 @@ def test_synthesis_request_from_clone_command_normalizes_to_reference_clone_capa
 
 def test_synthesis_planner_resolves_execution_plan_for_current_backend_registry():
     registry = PlannerRegistryStub()
-    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+    planner = SynthesisPlanner(
+        registry=registry,
+        settings=_settings(default_custom_model="Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"),
+    )  # type: ignore[arg-type]
 
     plan = planner.plan(
         SynthesisRequest.from_command(CustomVoiceCommand(text="Hello", speaker="Ryan"))
@@ -170,7 +191,10 @@ def test_synthesis_planner_resolves_execution_plan_for_current_backend_registry(
 
 def test_synthesis_planner_honors_explicit_requested_model_identifier():
     registry = PlannerRegistryStub()
-    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+    planner = SynthesisPlanner(
+        registry=registry,
+        settings=_settings(default_clone_model="Qwen3-TTS-12Hz-1.7B-Base-8bit"),
+    )  # type: ignore[arg-type]
 
     plan = planner.plan_command(
         VoiceCloneCommand(
@@ -188,7 +212,10 @@ def test_synthesis_planner_honors_explicit_requested_model_identifier():
 
 def test_synthesis_planner_uses_registry_contract_as_single_resolution_path():
     registry = PlannerRegistryStub()
-    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+    planner = SynthesisPlanner(
+        registry=registry,
+        settings=_settings(default_custom_model="Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"),
+    )  # type: ignore[arg-type]
 
     plan = planner.plan_command(CustomVoiceCommand(text="Hello", speaker="Ryan"))
 
@@ -198,7 +225,10 @@ def test_synthesis_planner_uses_registry_contract_as_single_resolution_path():
 
 def test_synthesis_planner_rejects_unsupported_family_capability():
     registry = PlannerRegistryStub()
-    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+    planner = SynthesisPlanner(
+        registry=registry,
+        settings=_settings(default_design_model="Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit"),
+    )  # type: ignore[arg-type]
 
     with pytest.raises(ModelCapabilityError) as exc_info:
         planner.plan_command(
@@ -223,7 +253,10 @@ def test_synthesis_planner_surfaces_fast_backend_selection_reason():
     registry.route_backend_key = "qwen_fast"
     registry.route_backend_label = "Qwen Fast CUDA"
     registry.route_reason = "selected_backend_supports_model"
-    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+    planner = SynthesisPlanner(
+        registry=registry,
+        settings=_settings(default_custom_model="Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"),
+    )  # type: ignore[arg-type]
 
     plan = planner.plan_command(CustomVoiceCommand(text="Hello", speaker="Ryan"))
 
@@ -237,7 +270,10 @@ def test_synthesis_planner_surfaces_fast_backend_selection_reason_for_design():
     registry.route_backend_key = "qwen_fast"
     registry.route_backend_label = "Qwen Fast CUDA"
     registry.route_reason = "selected_backend_supports_model"
-    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+    planner = SynthesisPlanner(
+        registry=registry,
+        settings=_settings(default_design_model="Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit"),
+    )  # type: ignore[arg-type]
 
     plan = planner.plan_command(
         VoiceDesignCommand(text="Hello", voice_description="Warm narrator")
@@ -253,7 +289,10 @@ def test_synthesis_planner_surfaces_fast_backend_selection_reason_for_clone():
     registry.route_backend_key = "qwen_fast"
     registry.route_backend_label = "Qwen Fast CUDA"
     registry.route_reason = "selected_backend_supports_model"
-    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+    planner = SynthesisPlanner(
+        registry=registry,
+        settings=_settings(default_clone_model="Qwen3-TTS-12Hz-1.7B-Base-8bit"),
+    )  # type: ignore[arg-type]
 
     plan = planner.plan_command(
         VoiceCloneCommand(text="Hello", ref_audio_path=Path("reference.wav"))
@@ -266,7 +305,10 @@ def test_synthesis_planner_surfaces_fast_backend_selection_reason_for_clone():
 
 def test_synthesis_planner_resolves_omnivoice_family_key_from_manifest():
     registry = PlannerRegistryStub()
-    planner = SynthesisPlanner(registry=registry)  # type: ignore[arg-type]
+    planner = SynthesisPlanner(
+        registry=registry,
+        settings=_settings(default_design_model="omnivoice-design-1"),
+    )  # type: ignore[arg-type]
 
     plan = planner.plan_command(
         VoiceDesignCommand(
@@ -278,3 +320,32 @@ def test_synthesis_planner_resolves_omnivoice_family_key_from_manifest():
 
     assert plan.family_key == "omnivoice"
     assert plan.family_label == "OmniVoice"
+
+
+def test_synthesis_planner_uses_runtime_binding_when_model_is_omitted():
+    registry = PlannerRegistryStub()
+    planner = SynthesisPlanner(
+        registry=registry,
+        settings=_settings(default_clone_model="Qwen3-TTS-12Hz-1.7B-Base-8bit"),
+    )  # type: ignore[arg-type]
+
+    plan = planner.plan_command(
+        VoiceCloneCommand(text="Clone this", ref_audio_path=Path("reference.wav"))
+    )
+
+    assert registry.last_model_name == "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+    assert plan.model_spec.model_id == "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+
+
+def test_synthesis_planner_rejects_unbound_runtime_capability():
+    registry = PlannerRegistryStub()
+    planner = SynthesisPlanner(registry=registry, settings=_settings())  # type: ignore[arg-type]
+
+    with pytest.raises(RuntimeCapabilityNotConfiguredError) as exc_info:
+        planner.plan_command(CustomVoiceCommand(text="Hello", speaker="Ryan"))
+
+    assert exc_info.value.context.to_dict() == {
+        "reason": "Runtime capability 'preset_speaker_tts' is not configured for execution mode 'custom'",
+        "capability": "preset_speaker_tts",
+        "execution_mode": "custom",
+    }

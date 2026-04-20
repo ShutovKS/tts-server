@@ -121,6 +121,14 @@ def test_build_readiness_report_returns_deep_diagnostics(
     assert report.checks["runtime"]["streaming_enabled"] is True
     assert report.checks["runtime"]["configured_backend"] is None
     assert report.checks["runtime"]["backend_autoselect"] is True
+    assert report.checks["runtime"]["runtime_capability_map"] == {
+        "family": None,
+        "custom_model": None,
+        "design_model": None,
+        "clone_model": None,
+    }
+    assert report.checks["capabilities"]["capability_status"]["clone"]["bound"] is False
+    assert report.checks["capabilities"]["capability_status"]["clone"]["reason"] == "runtime_binding_missing"
     assert any(
         candidate["key"] == "qwen_fast"
         for item in report.checks["models"]["items"]
@@ -153,3 +161,4 @@ def test_build_readiness_report_returns_degraded_status_when_runtime_not_ready(
     assert report.checks["models"]["preload"]["status"] == "failed"
     assert report.checks["ffmpeg"]["available"] is False
     assert report.checks["models"]["items"][0]["missing_artifacts"] == ["config.json"]
+    assert report.checks["capabilities"]["capability_status"]["custom"]["bound"] is False

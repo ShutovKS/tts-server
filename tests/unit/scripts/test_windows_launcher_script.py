@@ -56,7 +56,11 @@ def test_windows_launcher_script_reuses_profile_aware_launcher_and_family_downlo
     assert "/health/live" in contents
     assert "127.0.0.1" in contents
     assert "Selected family:" in contents
-    assert "Selected model folder:" in contents
+    assert "Runtime capability bindings:" in contents
+    assert "QWEN_TTS_ACTIVE_FAMILY" in contents
+    assert "QWEN_TTS_DEFAULT_CUSTOM_MODEL" in contents
+    assert "QWEN_TTS_DEFAULT_DESIGN_MODEL" in contents
+    assert "QWEN_TTS_DEFAULT_CLONE_MODEL" in contents
     assert "snapshot_download" in contents
     assert "piper.download_voices" in contents
     assert "HF_TOKEN" in contents

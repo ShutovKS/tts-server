@@ -365,7 +365,7 @@ class TTSService:
         self.registry = registry
         self.settings = settings
         self.inference_guard = inference_guard or InferenceGuard()
-        self.planner = SynthesisPlanner(registry)
+        self.planner = SynthesisPlanner(registry, settings)
         self._family_adapters = {
             "qwen3_tts": Qwen3FamilyAdapter(),
             "omnivoice": OmniVoiceFamilyAdapter(),

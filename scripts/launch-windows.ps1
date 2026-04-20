@@ -24,6 +24,8 @@
 #   Ensure-FamilyEnvironment - Create and verify the dedicated family environment through launcher create-env/check-env flows.
 #   Ensure-ModelAvailability - Validate local model artifacts and optionally download missing assets through family-aware strategies.
 #   Configure-ServiceEnvironment - Apply transient QWEN_TTS_* and Telegram settings for the selected launch contour.
+#   Get-RuntimeCapabilityBindings - Derive runtime capability bindings from ensured models and selected family.
+#   Show-RuntimeCapabilityBindings - Print the final runtime capability binding summary before launch.
 #   Wait-HttpHealthCheck - Probe the configured HTTP server until /health/live responds or timeout elapses.
 #   Start-SelectedService - Launch the selected adapter through the profile-aware launcher exec command.
 #   Main - Run the interactive launcher flow end-to-end.
@@ -43,14 +45,14 @@ $SCRIPT:FAMILY_OPTIONS = @(
 )
 
 $SCRIPT:MODEL_OPTIONS = @(
-    [pscustomobject]@{ Key = 'qwen-custom-17b'; Label = 'Qwen Custom 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-design-17b'; Label = 'Qwen Design 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-clone-17b'; Label = 'Qwen Clone 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-Base-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-custom-06b'; Label = 'Qwen Custom 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-design-06b'; Label = 'Qwen Design 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-clone-06b'; Label = 'Qwen Clone 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-Base-8bit'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'omnivoice'; Label = 'OmniVoice'; Family = 'omnivoice'; Folder = 'OmniVoice'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('tokenizer_config.json', 'tokenizer.json'), @('audio_tokenizer/config.json'), @('audio_tokenizer/model.safetensors'), @('audio_tokenizer/preprocessor_config.json')) },
-    [pscustomobject]@{ Key = 'piper-lessac'; Label = 'Piper en_US lessac medium'; Family = 'piper'; Folder = 'Piper-en_US-lessac-medium'; DownloadStrategy = 'piper'; PiperVoice = 'en_US-lessac-medium'; ArtifactGroups = @(@('model.onnx'), @('model.onnx.json')) }
+    [pscustomobject]@{ Key = 'qwen-custom-17b'; Label = 'Qwen Custom 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit'; Mode = 'custom'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-design-17b'; Label = 'Qwen Design 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit'; Mode = 'design'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-clone-17b'; Label = 'Qwen Clone 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-Base-8bit'; Mode = 'clone'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-custom-06b'; Label = 'Qwen Custom 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit'; Mode = 'custom'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-design-06b'; Label = 'Qwen Design 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit'; Mode = 'design'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-clone-06b'; Label = 'Qwen Clone 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-Base-8bit'; Mode = 'clone'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'omnivoice'; Label = 'OmniVoice'; Family = 'omnivoice'; Folder = 'OmniVoice'; Mode = 'all'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('tokenizer_config.json', 'tokenizer.json'), @('audio_tokenizer/config.json'), @('audio_tokenizer/model.safetensors'), @('audio_tokenizer/preprocessor_config.json')) },
+    [pscustomobject]@{ Key = 'piper-lessac'; Label = 'Piper en_US lessac medium'; Family = 'piper'; Folder = 'Piper-en_US-lessac-medium'; Mode = 'custom'; DownloadStrategy = 'piper'; PiperVoice = 'en_US-lessac-medium'; ArtifactGroups = @(@('model.onnx'), @('model.onnx.json')) }
 )
 
 function Get-ProjectRoot {
@@ -352,17 +354,62 @@ function Ensure-ModelAvailability {
     return $afterDownload.ResolvedPath
 }
 
+function Get-RuntimeCapabilityBindings {
+    param(
+        [Parameter(Mandatory = $true)][string]$Family,
+        [Parameter(Mandatory = $true)][object[]]$Models
+    )
+
+    $bindings = [ordered]@{
+        family = $Family
+        custom_model = $null
+        design_model = $null
+        clone_model = $null
+    }
+
+    foreach ($model in $Models) {
+        if ($model.Mode -eq 'all') {
+            $bindings.custom_model = $model.Folder
+            $bindings.design_model = $model.Folder
+            $bindings.clone_model = $model.Folder
+            continue
+        }
+
+        if ($model.Mode -eq 'custom') { $bindings.custom_model = $model.Folder }
+        elseif ($model.Mode -eq 'design') { $bindings.design_model = $model.Folder }
+        elseif ($model.Mode -eq 'clone') { $bindings.clone_model = $model.Folder }
+    }
+
+    return [pscustomobject]$bindings
+}
+
+function Show-RuntimeCapabilityBindings {
+    param([Parameter(Mandatory = $true)][object]$Bindings)
+
+    Write-Host ''
+    Write-Host 'Runtime capability bindings:' -ForegroundColor Cyan
+    Write-Host ('  QWEN_TTS_ACTIVE_FAMILY={0}' -f $Bindings.family)
+    Write-Host ('  QWEN_TTS_DEFAULT_CUSTOM_MODEL={0}' -f ($(if ($Bindings.custom_model) { $Bindings.custom_model } else { '<unbound>' })))
+    Write-Host ('  QWEN_TTS_DEFAULT_DESIGN_MODEL={0}' -f ($(if ($Bindings.design_model) { $Bindings.design_model } else { '<unbound>' })))
+    Write-Host ('  QWEN_TTS_DEFAULT_CLONE_MODEL={0}' -f ($(if ($Bindings.clone_model) { $Bindings.clone_model } else { '<unbound>' })))
+}
+
 function Configure-ServiceEnvironment {
     param(
         [Parameter(Mandatory = $true)][string]$ProjectRoot,
         [Parameter(Mandatory = $true)][object]$InspectPayload,
-        [Parameter(Mandatory = $true)][object]$Service
+        [Parameter(Mandatory = $true)][object]$Service,
+        [Parameter(Mandatory = $true)][object]$Bindings
     )
 
     $env:QWEN_TTS_MODELS_DIR = Join-Path $ProjectRoot '.models'
     $env:QWEN_TTS_OUTPUTS_DIR = Join-Path $ProjectRoot '.outputs'
     $env:QWEN_TTS_VOICES_DIR = Join-Path $ProjectRoot '.voices'
     $env:QWEN_TTS_UPLOAD_STAGING_DIR = Join-Path $ProjectRoot '.uploads'
+    $env:QWEN_TTS_ACTIVE_FAMILY = [string]$Bindings.family
+    if ($Bindings.custom_model) { $env:QWEN_TTS_DEFAULT_CUSTOM_MODEL = [string]$Bindings.custom_model } else { Remove-Item Env:QWEN_TTS_DEFAULT_CUSTOM_MODEL -ErrorAction SilentlyContinue }
+    if ($Bindings.design_model) { $env:QWEN_TTS_DEFAULT_DESIGN_MODEL = [string]$Bindings.design_model } else { Remove-Item Env:QWEN_TTS_DEFAULT_DESIGN_MODEL -ErrorAction SilentlyContinue }
+    if ($Bindings.clone_model) { $env:QWEN_TTS_DEFAULT_CLONE_MODEL = [string]$Bindings.clone_model } else { Remove-Item Env:QWEN_TTS_DEFAULT_CLONE_MODEL -ErrorAction SilentlyContinue }
     if ($InspectPayload.selected_backend) {
         $env:QWEN_TTS_BACKEND = [string]$InspectPayload.selected_backend
         $env:QWEN_TTS_BACKEND_AUTOSELECT = 'false'
@@ -485,7 +532,9 @@ function Main {
         Write-Host ('Ensuring model: {0}' -f $model.Label) -ForegroundColor Cyan
         Ensure-ModelAvailability -PythonPath $familyPython -Model $model -ModelsDir $modelsDir | Out-Null
     }
-    Configure-ServiceEnvironment -ProjectRoot $projectRoot -InspectPayload $inspectResult.Payload -Service $service
+    $runtimeBindings = Get-RuntimeCapabilityBindings -Family $family.Key -Models $modelsToEnsure
+    Show-RuntimeCapabilityBindings -Bindings $runtimeBindings
+    Configure-ServiceEnvironment -ProjectRoot $projectRoot -InspectPayload $inspectResult.Payload -Service $service -Bindings $runtimeBindings
     Start-SelectedService -ProjectRoot $projectRoot -Family $family.Key -Module $service.Key -Service $service
 }
 

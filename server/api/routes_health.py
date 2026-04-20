@@ -28,6 +28,42 @@ from server.api.policies import enforce_control_plane_admission
 from server.schemas.audio import HealthResponse
 
 
+def _build_capability_status(settings, registry_report: dict[str, object]) -> dict[str, object]:
+    models_items = registry_report.get("items", [])
+    capability_status: dict[str, object] = {}
+    capability_labels = {
+        "custom": "preset_speaker_tts",
+        "design": "voice_description_tts",
+        "clone": "reference_voice_clone",
+    }
+    runtime_capability_map = settings.runtime_capability_map()
+
+    for mode, capability in capability_labels.items():
+        bound_model = settings.resolve_runtime_model_binding(mode)
+        matching_item = next(
+            (
+                item
+                for item in models_items
+                if item.get("id") == bound_model or item.get("folder") == bound_model
+            ),
+            None,
+        )
+        capability_status[mode] = {
+            "capability": capability,
+            "bound": bound_model is not None,
+            "bound_model": bound_model,
+            "available": matching_item is not None,
+            "runtime_ready": bool(matching_item.get("runtime_ready")) if matching_item else False,
+            "missing_artifacts": list(matching_item.get("missing_artifacts", [])) if matching_item else [],
+            "reason": "runtime_binding_missing" if bound_model is None else "runtime_binding_configured",
+        }
+
+    return {
+        "runtime_capability_map": runtime_capability_map,
+        "capability_status": capability_status,
+    }
+
+
 # START_CONTRACT: register_health_routes
 #   PURPOSE: Register liveness and readiness HTTP endpoints on the FastAPI application.
 #   INPUTS: { app: FastAPI - application to attach routes to, logger: Any - structured logger used by endpoint handlers }
@@ -85,6 +121,7 @@ def build_readiness_report(request: Request) -> HealthResponse:
     registry_report = request.app.state.registry.readiness_report()
     ffmpeg_ready = check_ffmpeg_available()
     settings = request.app.state.settings
+    capability_report = _build_capability_status(settings, registry_report)
     config = {
         "models_dir": str(settings.models_dir),
         "models_dir_exists": settings.models_dir.exists(),
@@ -105,6 +142,8 @@ def build_readiness_report(request: Request) -> HealthResponse:
         "configured_backend": settings.backend,
         "backend_autoselect": settings.backend_autoselect,
         "metrics": request.app.state.metrics.readiness_summary(),
+        "runtime_capability_map": capability_report["runtime_capability_map"],
+        "capability_status": capability_report["capability_status"],
     }
     status = (
         "ok"
@@ -120,6 +159,7 @@ def build_readiness_report(request: Request) -> HealthResponse:
             "ffmpeg": {"available": ffmpeg_ready},
             "config": config,
             "runtime": runtime,
+            "capabilities": capability_report,
         },
     )
 

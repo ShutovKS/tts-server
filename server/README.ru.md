@@ -91,6 +91,8 @@ Async submit endpoint'ы принимают заголовок `Idempotency-Key`
 - Слишком длинные текстовые запросы завершаются стандартной validation error.
 - При превышении таймаута inference возвращается `request_timeout` с HTTP `504`.
 - Unsupported model/family combinations теперь возвращают controlled error `model_capability_not_supported` с явными capability details.
+- Runtime capability bindings ожидаются из `QWEN_TTS_ACTIVE_FAMILY`, `QWEN_TTS_DEFAULT_CUSTOM_MODEL`, `QWEN_TTS_DEFAULT_DESIGN_MODEL` и `QWEN_TTS_DEFAULT_CLONE_MODEL`, а не из неявной инспекции `.models/`.
+- Если для режима нет активной runtime binding, ожидаемое API behavior — controlled unsupported-mode response, а не internal failure.
 - `GET /health/ready` теперь включает host snapshot и mixed-backend routing summary, чтобы оператор видел, почему Piper может маршрутизироваться в ONNX даже при глобально выбранном MLX.
 - Ускоренный `qwen_fast` lane остаётся additive и optional; readiness/model payload'ы могут показывать его как отклонённого route candidate с явной причиной отклонения, а не как автоматическое переключение на другой backend.
 
@@ -103,6 +105,10 @@ Server-specific настройки расширяют [`CoreSettings`](../core/c
 - `QWEN_TTS_HOST`
 - `QWEN_TTS_PORT`
 - `QWEN_TTS_LOG_LEVEL`
+- `QWEN_TTS_ACTIVE_FAMILY`
+- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
+- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
+- `QWEN_TTS_DEFAULT_CLONE_MODEL`
 - `QWEN_TTS_DEFAULT_SAVE_OUTPUT`
 - `QWEN_TTS_ENABLE_STREAMING`
 - `QWEN_TTS_MAX_UPLOAD_SIZE_BYTES`

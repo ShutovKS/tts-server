@@ -33,9 +33,11 @@ from __future__ import annotations
 import argparse
 import tempfile
 import json
+import os
 from pathlib import Path
 import subprocess
 
+from core.models.catalog import MODEL_SPECS
 from profiles import ProfileResolver
 
 
@@ -43,6 +45,12 @@ FAMILY_IMPORT_CHECKS = {
     "qwen": ("import importlib.util; import json; print(json.dumps({'torch': importlib.util.find_spec('torch') is not None, 'qwen_tts': importlib.util.find_spec('qwen_tts') is not None}))",),
     "piper": ("import importlib.util; import json; print(json.dumps({'onnxruntime': importlib.util.find_spec('onnxruntime') is not None, 'piper': importlib.util.find_spec('piper') is not None or importlib.util.find_spec('piper_tts') is not None}))",),
     "omnivoice": ("import importlib.util; import json; print(json.dumps({'torch': importlib.util.find_spec('torch') is not None, 'omnivoice': importlib.util.find_spec('omnivoice') is not None}))",),
+}
+
+RUNTIME_BINDING_ENV_BY_MODE = {
+    "custom": "QWEN_TTS_DEFAULT_CUSTOM_MODEL",
+    "design": "QWEN_TTS_DEFAULT_DESIGN_MODEL",
+    "clone": "QWEN_TTS_DEFAULT_CLONE_MODEL",
 }
 
 
@@ -239,6 +247,52 @@ def _write_compiled_requirements_file(resolved: object) -> str:
     return handle.name
 
 
+def _runtime_bindings_payload(resolved: object) -> dict[str, object]:
+    default_bindings_by_family = {
+        "piper": {
+            "custom_model": next(
+                (spec.model_id for spec in MODEL_SPECS.values() if spec.family == "Piper" and spec.mode == "custom"),
+                None,
+            ),
+            "design_model": None,
+            "clone_model": None,
+        },
+        "omnivoice": {
+            "custom_model": next(
+                (spec.model_id for spec in MODEL_SPECS.values() if spec.family == "OmniVoice" and spec.mode == "custom"),
+                None,
+            ),
+            "design_model": next(
+                (spec.model_id for spec in MODEL_SPECS.values() if spec.family == "OmniVoice" and spec.mode == "design"),
+                None,
+            ),
+            "clone_model": next(
+                (spec.model_id for spec in MODEL_SPECS.values() if spec.family == "OmniVoice" and spec.mode == "clone"),
+                None,
+            ),
+        },
+    }.get(resolved.family.key, {})
+
+    bindings = {
+        "family": os.environ.get("QWEN_TTS_ACTIVE_FAMILY") or resolved.family.key,
+        "custom_model": os.environ.get("QWEN_TTS_DEFAULT_CUSTOM_MODEL") or default_bindings_by_family.get("custom_model"),
+        "design_model": os.environ.get("QWEN_TTS_DEFAULT_DESIGN_MODEL") or default_bindings_by_family.get("design_model"),
+        "clone_model": os.environ.get("QWEN_TTS_DEFAULT_CLONE_MODEL") or default_bindings_by_family.get("clone_model"),
+    }
+    capability_status = {}
+    for mode, env_name in RUNTIME_BINDING_ENV_BY_MODE.items():
+        bound_model = bindings[f"{mode}_model"]
+        capability_status[mode] = {
+            "bound": bound_model is not None,
+            "model": bound_model,
+            "env_var": env_name,
+        }
+    return {
+        "bindings": bindings,
+        "capability_status": capability_status,
+    }
+
+
 # START_CONTRACT: parse_args
 #   PURPOSE: Parse launcher CLI arguments and select the requested profile-aware command.
 #   INPUTS: none
@@ -326,12 +380,15 @@ def main() -> int:
 
     # START_BLOCK_DISPATCH_COMMAND
     if args.command == "inspect":
-        payload = resolver.resolve(family=args.family, module=args.module).to_dict()
+        resolved = resolver.resolve(family=args.family, module=args.module)
+        payload = resolved.to_dict()
+        payload["runtime_bindings"] = _runtime_bindings_payload(resolved)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
     if args.command == "plan-run":
         resolved = resolver.resolve(family=args.family, module=args.module)
         payload = resolved.to_dict()
+        payload["runtime_bindings"] = _runtime_bindings_payload(resolved)
         payload["launch_plan"] = {
             "family": resolved.family.key,
             "module": resolved.module.key,
@@ -343,6 +400,7 @@ def main() -> int:
             "backend_candidates": list(resolved.backend_candidates),
             "compatible": resolved.compatible,
             "reasons": list(resolved.reasons),
+            "runtime_bindings": payload["runtime_bindings"],
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
@@ -365,6 +423,7 @@ def main() -> int:
         if checks["expected_env_root_exists"] and not checks["expected_python_exists"]:
             missing_steps.append(f"python_missing_in_env:{expected_python}")
         payload = resolved.to_dict()
+        payload["runtime_bindings"] = _runtime_bindings_payload(resolved)
         payload["doctor"] = {
             "family": resolved.family.key,
             "module": resolved.module.key,
@@ -399,6 +458,7 @@ def main() -> int:
             },
         }
         payload = resolved.to_dict()
+        payload["runtime_bindings"] = _runtime_bindings_payload(resolved)
         payload["bootstrap_env"] = bootstrap
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
@@ -423,6 +483,7 @@ def main() -> int:
                 "stderr": completed.stderr.strip(),
             }
         payload = resolved.to_dict()
+        payload["runtime_bindings"] = _runtime_bindings_payload(resolved)
         payload["check_env"] = {
             "family": resolved.family.key,
             "module": resolved.module.key,
@@ -441,12 +502,14 @@ def main() -> int:
         expected_python = Path(resolved.expected_python_path or "")
         command = _entrypoint_to_command(resolved.module.entrypoint, str(expected_python))
         payload = resolved.to_dict()
+        payload["runtime_bindings"] = _runtime_bindings_payload(resolved)
         payload["exec"] = {
             "family": resolved.family.key,
             "module": resolved.module.key,
             "command": command,
             "dry_run": bool(args.dry_run),
             "python_exists": expected_python.exists(),
+            "runtime_bindings": payload["runtime_bindings"],
         }
         if args.dry_run:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -462,6 +525,7 @@ def main() -> int:
         expected_python = Path(resolved.expected_python_path or "")
         env_root = expected_python.parent.parent
         payload = resolved.to_dict()
+        payload["runtime_bindings"] = _runtime_bindings_payload(resolved)
         compiled_requirements_path = _write_compiled_requirements_file(resolved)
         runtime_bootstrap_steps = _build_runtime_bootstrap_steps(resolved, str(expected_python))
         payload["create_env"] = {
@@ -473,6 +537,7 @@ def main() -> int:
             "compiled_requirements_path": compiled_requirements_path,
             "compiled_requirements": _compiled_requirements_payload(resolved),
             "runtime_bootstrap_steps": runtime_bootstrap_steps,
+            "runtime_bindings": payload["runtime_bindings"],
             "steps": [
                 ["py", "-3.11", "-m", "venv", str(env_root)],
                 [str(expected_python), "-m", "pip", "install", "--upgrade", "pip"],

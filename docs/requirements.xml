@@ -17,7 +17,7 @@
       <Actor>APIClient</Actor>
       <Action>Submits a text-to-speech request with a named speaker</Action>
       <Goal>To receive synthesized audio in WAV format via HTTP response</Goal>
-      <Preconditions>Server is running, at least one model is available</Preconditions>
+      <Preconditions>Server is running and the active runtime has a bound custom capability</Preconditions>
       <AcceptanceCriteria>Audio bytes returned with correct Content-Type, generation log markers emitted</AcceptanceCriteria>
       <Priority>high</Priority>
       <RelatedFlows>DF-SYNC-TTS</RelatedFlows>
@@ -27,7 +27,7 @@
       <Actor>APIClient</Actor>
       <Action>Submits a voice design request with a natural-language voice description</Action>
       <Goal>To receive audio synthesized with a dynamically designed voice</Goal>
-      <Preconditions>Server is running, VoiceDesign model is available</Preconditions>
+      <Preconditions>Server is running and the active runtime has a bound design capability</Preconditions>
       <AcceptanceCriteria>Audio bytes returned, design-mode log markers emitted</AcceptanceCriteria>
       <Priority>high</Priority>
       <RelatedFlows>DF-SYNC-TTS</RelatedFlows>
@@ -37,7 +37,7 @@
       <Actor>APIClient</Actor>
       <Action>Submits a voice clone request with reference audio</Action>
       <Goal>To receive audio synthesized in the cloned voice</Goal>
-      <Preconditions>Server is running, CustomVoice model is available, reference audio is valid</Preconditions>
+      <Preconditions>Server is running, the active runtime has a bound clone capability, and reference audio is valid</Preconditions>
       <AcceptanceCriteria>Audio returned, reference audio converted if needed, clone-mode log markers emitted</AcceptanceCriteria>
       <Priority>high</Priority>
       <RelatedFlows>DF-CLONE-TTS</RelatedFlows>
@@ -77,7 +77,7 @@
       <Actor>CLIUser</Actor>
       <Action>Runs interactive CLI and enters synthesis commands</Action>
       <Goal>To synthesize and optionally play audio locally</Goal>
-      <Preconditions>Python environment active, model files present in .models/</Preconditions>
+      <Preconditions>Python environment active and the CLI process has runtime capability bindings for the selected flow</Preconditions>
       <AcceptanceCriteria>Audio generated and optionally played via sounddevice</AcceptanceCriteria>
       <Priority>medium</Priority>
       <RelatedFlows>DF-CLI-TTS</RelatedFlows>
@@ -88,7 +88,7 @@
       <Action>Selects and loads the appropriate backend (MLX or Torch) at startup</Action>
       <Goal>To provide a ready inference backend without manual configuration</Goal>
       <Preconditions>At least one backend runtime is installed</Preconditions>
-      <AcceptanceCriteria>Backend selected, readiness report shows available models</AcceptanceCriteria>
+      <AcceptanceCriteria>Backend selected, readiness report shows available models and runtime-bound capability status separately</AcceptanceCriteria>
       <Priority>high</Priority>
       <RelatedFlows>DF-BACKEND-SELECTION</RelatedFlows>
     </UC-008>

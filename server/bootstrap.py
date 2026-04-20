@@ -28,6 +28,10 @@ from typing import Mapping, Optional
 
 from core.bootstrap import CoreRuntime, build_runtime
 from core.config import CoreSettings, env_int, env_text, parse_core_settings_from_env
+from core.observability import get_logger, log_event
+
+
+LOGGER = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,14 @@ def build_server_runtime(settings: Optional[ServerSettings] = None) -> ServerRun
     # END_BLOCK_PARSE_SERVER_SETTINGS
     # START_BLOCK_BUILD_SERVER_RUNTIME
     core_runtime = build_runtime(resolved_settings)
+    log_event(
+        LOGGER,
+        level=20,
+        event="[ServerBootstrap][build_server_runtime][BUILD_SERVER_RUNTIME]",
+        message="Server runtime bindings resolved",
+        active_family=resolved_settings.active_family,
+        runtime_capability_map=resolved_settings.runtime_capability_map(),
+    )
     return ServerRuntime(settings=resolved_settings, core=core_runtime)
     # END_BLOCK_BUILD_SERVER_RUNTIME
 

@@ -115,7 +115,9 @@ Async submission endpoints accept the `Idempotency-Key` header.
 - Oversized text requests fail with the standard validation error.
 - Inference timeouts return `request_timeout` with HTTP `504`.
 - Unsupported model/family combinations now return controlled `model_capability_not_supported` errors with explicit capability metadata.
-- `GET /health/ready` now includes host snapshot and mixed-backend routing summaries so operators can see why a Piper model may route to ONNX while MLX remains globally selected.
+- Runtime capability bindings are now expected to come from `QWEN_TTS_ACTIVE_FAMILY`, `QWEN_TTS_DEFAULT_CUSTOM_MODEL`, `QWEN_TTS_DEFAULT_DESIGN_MODEL`, and `QWEN_TTS_DEFAULT_CLONE_MODEL` rather than from implicit `.models/` inspection.
+- When a requested mode has no active runtime binding, the expected API behavior is a controlled unsupported-mode response rather than an internal failure.
+- `GET /health/ready` now includes host snapshot, mixed-backend routing summaries, `runtime_capability_map`, and per-mode `capability_status` so operators and thin adapters can distinguish artifact availability from runtime-bound capability availability.
 - The accelerated `qwen_fast` lane is additive and optional; readiness and model payloads may show it as a rejected route candidate with an explicit rejection reason when the selected fast lane is unavailable.
 - Qwen clone requests are sensitive to reference-audio quality and transcript alignment. Provide `ref_text` only when it exactly matches the spoken content of the uploaded reference audio. The server rejects implausibly short clone outputs instead of returning a misleading near-empty WAV.
 
@@ -154,6 +156,10 @@ Important variables:
 - `QWEN_TTS_HOST`
 - `QWEN_TTS_PORT`
 - `QWEN_TTS_LOG_LEVEL`
+- `QWEN_TTS_ACTIVE_FAMILY`
+- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
+- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
+- `QWEN_TTS_DEFAULT_CLONE_MODEL`
 - `QWEN_TTS_DEFAULT_SAVE_OUTPUT`
 - `QWEN_TTS_ENABLE_STREAMING`
 - `QWEN_TTS_MAX_UPLOAD_SIZE_BYTES`

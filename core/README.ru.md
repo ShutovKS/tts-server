@@ -87,6 +87,10 @@ runtime = build_runtime(settings)
 - `QWEN_TTS_OUTPUTS_DIR`
 - `QWEN_TTS_VOICES_DIR`
 - `QWEN_TTS_UPLOAD_STAGING_DIR`
+- `QWEN_TTS_ACTIVE_FAMILY`
+- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
+- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
+- `QWEN_TTS_DEFAULT_CLONE_MODEL`
 - `QWEN_TTS_BACKEND`
 - `QWEN_TTS_BACKEND_AUTOSELECT`
 - `QWEN_TTS_QWEN_FAST_ENABLED`
@@ -99,6 +103,15 @@ runtime = build_runtime(settings)
 - `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
 
 Transport-specific настройки описаны в [../server/README.ru.md](../server/README.ru.md), [../telegram_bot/README.ru.md](../telegram_bot/README.ru.md) и [../cli/README.ru.md](../cli/README.ru.md).
+
+Shared runtime contract теперь также включает явную runtime capability map, доступную через `CoreSettings.runtime_capability_map()`:
+
+- `family`
+- `custom_model`
+- `design_model`
+- `clone_model`
+
+Эти значения являются активными runtime-привязками, а не прокси для того, какие артефакты просто лежат на диске. Само наличие папки модели в `.models/` не делает режим доступным. Режим становится доступным только тогда, когда runtime запущен с соответствующей capability binding.
 
 ## Runtime readiness и self-check
 
