@@ -492,5 +492,35 @@
       <CrossLink from="M-WINDOWS-LAUNCHER-CMD" to="M-WINDOWS-LAUNCHER" relation="delegates-to-existing-interactive-powershell-orchestration" />
     </M-WINDOWS-LAUNCHER-CMD>
 
+    <M-MACOS-LAUNCHER NAME="MacOSInteractiveLauncher" TYPE="SCRIPT" STATUS="implemented">
+      <purpose>Provide a macOS-only interactive shell launcher that orchestrates profile-aware family environments, optional model downloads, and adapter startup.</purpose>
+      <path>scripts/launch-macos.sh</path>
+      <depends>M-LAUNCHER, M-PROFILE-RESOLVER, M-CONFIG</depends>
+      <verification-ref>V-M-MACOS-LAUNCHER</verification-ref>
+      <annotations>
+        <fn-main PURPOSE="Interactive macOS launcher entry point that prompts for service and model, prepares the family env, and starts the selected adapter" />
+        <fn-assert-macos-preflight PURPOSE="Validate macOS host prerequisites and offer bounded Homebrew install guidance for required system dependencies" />
+        <fn-ensure-model-availability PURPOSE="Validate local model artifacts and run guided Hugging Face or Piper download flows when assets are missing" />
+      </annotations>
+      <CrossLink from="M-MACOS-LAUNCHER" to="M-LAUNCHER" relation="delegates-profile-aware-env-and-exec-commands" />
+      <CrossLink from="M-MACOS-LAUNCHER" to="M-PROFILE-RESOLVER" relation="consumes-resolved-family-module-contours" />
+      <CrossLink from="M-MACOS-LAUNCHER" to="M-CONFIG" relation="projects-qwen-tts-env-variables-into-launch-process" />
+    </M-MACOS-LAUNCHER>
+
+    <M-LINUX-LAUNCHER NAME="LinuxInteractiveLauncher" TYPE="SCRIPT" STATUS="implemented">
+      <purpose>Provide a Linux-only interactive shell launcher that orchestrates profile-aware family environments, optional model downloads, and adapter startup.</purpose>
+      <path>scripts/launch-linux.sh</path>
+      <depends>M-LAUNCHER, M-PROFILE-RESOLVER, M-CONFIG</depends>
+      <verification-ref>V-M-LINUX-LAUNCHER</verification-ref>
+      <annotations>
+        <fn-main PURPOSE="Interactive Linux launcher entry point that prompts for service and model, prepares the family env, and starts the selected adapter" />
+        <fn-print-linux-install-guidance PURPOSE="Emit package-manager-specific install commands for missing system dependencies without executing them" />
+        <fn-ensure-model-availability PURPOSE="Validate local model artifacts and run guided Hugging Face or Piper download flows when assets are missing" />
+      </annotations>
+      <CrossLink from="M-LINUX-LAUNCHER" to="M-LAUNCHER" relation="delegates-profile-aware-env-and-exec-commands" />
+      <CrossLink from="M-LINUX-LAUNCHER" to="M-PROFILE-RESOLVER" relation="consumes-resolved-family-module-contours" />
+      <CrossLink from="M-LINUX-LAUNCHER" to="M-CONFIG" relation="projects-qwen-tts-env-variables-into-launch-process" />
+    </M-LINUX-LAUNCHER>
+
   </Project>
 </KnowledgeGraph>
