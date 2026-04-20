@@ -25,6 +25,10 @@ from typing import Optional
 
 from cli.runtime_config import CliSettings, get_cli_settings
 from core.bootstrap import CoreRuntime, build_runtime
+from core.observability import get_logger, log_event
+
+
+LOGGER = get_logger(__name__)
 
 
 # START_CONTRACT: CliRuntimeBootstrap
@@ -50,6 +54,14 @@ class CliRuntimeBootstrap:
 def build_cli_runtime(settings: Optional[CliSettings] = None) -> CliRuntimeBootstrap:
     resolved_settings = settings or get_cli_settings()
     core_runtime = build_runtime(resolved_settings)
+    log_event(
+        LOGGER,
+        level=20,
+        event="[CliBootstrap][build_cli_runtime][BUILD_CLI_RUNTIME]",
+        message="CLI runtime bindings resolved",
+        active_family=resolved_settings.active_family,
+        runtime_capability_map=resolved_settings.runtime_capability_map(),
+    )
     return CliRuntimeBootstrap(settings=resolved_settings, core=core_runtime)
 
 __all__ = [

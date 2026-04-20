@@ -36,7 +36,6 @@ from telegram_bot.handlers.dispatcher import (
     CommandDispatcher,
     MessageSender,
 )
-from telegram_bot.handlers.commands import CommandType
 
 
 class TestHelpMessage:
@@ -195,7 +194,7 @@ class TestMessageSenderProtocol:
 class TestDispatcherRouting:
     """Tests for dispatcher command routing via handle_update."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_ignores_non_private_chat(self):
         """Test that dispatcher ignores non-private chats."""
         mock_synth = MagicMock()
@@ -220,7 +219,7 @@ class TestDispatcherRouting:
         # Should not send any message
         mock_sender.send_text.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_denies_unauthorized_user(self):
         """Test that dispatcher denies unauthorized users."""
         mock_synth = MagicMock()
@@ -248,7 +247,7 @@ class TestDispatcherRouting:
         args = mock_sender.send_text.call_args[0]
         assert "denied" in args[1].lower() or "not authorized" in args[1].lower()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_allows_authorized_user(self):
         """Test that dispatcher allows authorized users."""
         mock_synth = MagicMock()
@@ -275,7 +274,7 @@ class TestDispatcherRouting:
         # Should send help message
         mock_sender.send_text.assert_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_rejects_rate_limited_user(self):
         """Test dispatcher rejects commands when rate limit is exceeded."""
         mock_synth = MagicMock()
@@ -312,7 +311,7 @@ class TestDispatcherRouting:
         assert "слишком много запросов" in args[1].lower()
         assert "4" in args[1]
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_ignores_non_command_text(self):
         """Test dispatcher ignores non-command text."""
         mock_synth = MagicMock()
@@ -337,7 +336,7 @@ class TestDispatcherRouting:
         # Should not send any response
         mock_sender.send_text.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_ignores_empty_text(self):
         """Test dispatcher ignores empty text."""
         mock_synth = MagicMock()
@@ -366,7 +365,7 @@ class TestDispatcherRouting:
 class TestDispatcherTTSHandling:
     """Tests for dispatcher /tts handling with new syntax."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_processes_basic_tts(self):
         """Test dispatcher processes basic /tts command."""
         mock_synth = MagicMock()
@@ -402,7 +401,7 @@ class TestDispatcherTTSHandling:
         # Should send voice message
         assert mock_sender.send_voice.called
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_with_speaker_param(self):
         """Test dispatcher handles /tts with speaker parameter."""
         mock_synth = MagicMock()
@@ -436,7 +435,7 @@ class TestDispatcherTTSHandling:
         # Should process the command
         assert mock_sender.send_voice.called or mock_sender.send_text.called
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_with_speed_param(self):
         """Test dispatcher handles /tts with speed parameter."""
         mock_synth = MagicMock()
@@ -469,7 +468,7 @@ class TestDispatcherTTSHandling:
 
         assert mock_sender.send_voice.called or mock_sender.send_text.called
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_with_both_params(self):
         """Test dispatcher handles /tts with both speaker and speed."""
         mock_synth = MagicMock()
@@ -506,7 +505,7 @@ class TestDispatcherTTSHandling:
 class TestDispatcherErrorHandling:
     """Tests for dispatcher error handling."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_handles_invalid_speaker(self):
         """Test dispatcher handles invalid speaker gracefully."""
         mock_synth = MagicMock()
@@ -534,7 +533,7 @@ class TestDispatcherErrorHandling:
         args = mock_sender.send_text.call_args[0]
         assert "speaker" in args[1].lower() or "unknown" in args[1].lower()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_handles_invalid_speed(self):
         """Test dispatcher handles invalid speed gracefully."""
         mock_synth = MagicMock()
@@ -562,7 +561,7 @@ class TestDispatcherErrorHandling:
         args = mock_sender.send_text.call_args[0]
         assert "speed" in args[1].lower() or "between" in args[1].lower()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_handles_empty_text(self):
         """Test dispatcher handles empty TTS text."""
         mock_synth = MagicMock()
@@ -614,7 +613,7 @@ class TestDispatcherDesignHandling:
         )
         assert "запрос принят" in CommandDispatcher.DESIGN_ACCEPTED_MESSAGE.lower()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_processes_basic_design(self):
         """Test dispatcher processes basic /design command."""
         mock_synth = MagicMock()
@@ -652,7 +651,7 @@ class TestDispatcherDesignHandling:
 
 
 class TestCloneJobDelivery:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_clone_duplicate_requeues_delivery_metadata(self):
         mock_synth = MagicMock()
         mock_settings = MagicMock()
@@ -693,7 +692,7 @@ class TestCloneJobDelivery:
 
 
 class TestCloneMediaPreparation:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_clone_stage_failure_sends_user_error(self):
         mock_synth = MagicMock()
         mock_settings = MagicMock()
@@ -740,7 +739,7 @@ class TestCloneMediaPreparation:
         assert "reference audio" in args[1]
         mock_orchestrator.submit_clone_job.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_clone_uses_command_message_id_for_job_submission(self):
         mock_synth = MagicMock()
         mock_settings = MagicMock()
@@ -800,7 +799,7 @@ class TestCloneMediaPreparation:
         mock_orchestrator.submit_clone_job.assert_called_once()
         assert mock_orchestrator.submit_clone_job.call_args.kwargs["message_id"] == 777
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_rejects_design_missing_separator(self):
         """Test dispatcher rejects /design without separator."""
         mock_synth = MagicMock()
@@ -828,7 +827,7 @@ class TestCloneMediaPreparation:
         args = mock_sender.send_text.call_args[0]
         assert "design" in args[1].lower()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_rejects_design_empty_args(self):
         """Test dispatcher rejects /design without arguments."""
         mock_synth = MagicMock()
@@ -856,7 +855,7 @@ class TestCloneMediaPreparation:
         args = mock_sender.send_text.call_args[0]
         assert "design" in args[1].lower()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_rejects_design_empty_text(self):
         """Test dispatcher rejects /design with empty text."""
         mock_synth = MagicMock()
@@ -884,7 +883,7 @@ class TestCloneMediaPreparation:
         args = mock_sender.send_text.call_args[0]
         assert "design" in args[1].lower() or "text" in args[1].lower()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_rejects_design_short_voice_description(self):
         """Test dispatcher rejects /design with too short voice description."""
         mock_synth = MagicMock()
@@ -912,7 +911,7 @@ class TestCloneMediaPreparation:
         args = mock_sender.send_text.call_args[0]
         assert "design" in args[1].lower() or "voice" in args[1].lower()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_dispatcher_handles_design_with_cyrillic_text(self):
         """Test dispatcher handles /design with Cyrillic text."""
         mock_synth = MagicMock()

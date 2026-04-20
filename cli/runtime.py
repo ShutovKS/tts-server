@@ -70,6 +70,14 @@ class CliRuntime:
         self.backend_registry = runtime.core.backend_registry
         self._family_menu_order = ("qwen", "piper", "omnivoice")
 
+    def _runtime_bound_family(self) -> str | None:
+        if not self.settings.active_family:
+            return None
+        return self._normalize_family(self.settings.active_family)
+
+    def _runtime_bound_model(self, mode: str) -> str | None:
+        return self.settings.resolve_runtime_model_binding(mode)
+
     # START_CONTRACT: flush_input
     #   PURPOSE: Clear pending terminal input to avoid accidental buffered responses.
     #   INPUTS: {}
@@ -135,44 +143,21 @@ class CliRuntime:
             ("reference_voice_clone", "Voice Clone", "clone"),
         ]
         actions: list[tuple[str, str, str]] = []
+        runtime_family = self._runtime_bound_family()
+        if runtime_family != family_key:
+            return actions
         for capability, label, mode in action_catalog:
-            if self._family_specs_for_capability(family_key, capability):
+            if self._runtime_bound_model(mode):
                 actions.append((capability, label, mode))
         return actions
 
     def _pick_family(self) -> Optional[str]:
-        available_families = [
-            family_key
-            for family_key in self._family_menu_order
-            if self._family_specs(family_key)
-        ]
-        if not available_families:
-            print("No runtime-ready CLI families found in the local models directory.")
-            return None
-
-        print("\n" + "=" * 40)
-        print(" Multi-Family TTS CLI")
-        print("=" * 40)
-        for index, family_key in enumerate(available_families, start=1):
-            label = self._family_label(family_key)
-            capabilities = ", ".join(label for _, label, _ in self._family_actions(family_key))
-            print(f"  {index}. {label} — {capabilities}")
-        print("\n  q. Exit")
-
-        choice = input("\nSelect family: ").strip().lower()
-        if choice == "q":
-            raise SystemExit()
-        try:
-            selected_index = int(choice) - 1
-        except ValueError:
-            print("Invalid selection.")
-            self.flush_input()
-            return None
-        if selected_index < 0 or selected_index >= len(available_families):
-            print("Invalid selection.")
-            self.flush_input()
-            return None
-        return available_families[selected_index]
+        runtime_family = self._runtime_bound_family()
+        if runtime_family is not None:
+            return runtime_family
+        print("Runtime capability bindings are not configured for this CLI process.")
+        print("Launch the CLI through the runtime-bound launcher flow first.")
+        return None
 
     def _pick_spec_from_list(self, specs: Iterable, *, prompt: str) -> Optional[str]:
         spec_list = list(specs)
@@ -476,14 +461,14 @@ class CliRuntime:
     #   SIDE_EFFECTS: Prompts the user, submits synthesis requests, and may save or play audio.
     #   LINKS: M-CLI
     # END_CONTRACT: run_custom_session
-    def run_custom_session(self, model_key: str) -> None:
-        spec = CLI_MODELS[model_key]
-        if not (self.settings.models_dir / spec.folder).exists():
+    def run_custom_session(self, model_key: str | None) -> None:
+        spec = CLI_MODELS[model_key] if model_key is not None else None
+        if spec is not None and not (self.settings.models_dir / spec.folder).exists():
             print("Error: Model not found.")
             return
 
-        print(f"\n--- {spec.public_name} ---")
-        family_key = self._normalize_family(spec.family)
+        print(f"\n--- {spec.public_name if spec is not None else 'Runtime-bound Custom Voice'} ---")
+        family_key = self._runtime_bound_family() or self._normalize_family(spec.family)
         speaker = self._prompt_speaker(family_key=family_key)
         base_instruct = self._prompt_instruct(
             family_key=family_key,
@@ -501,7 +486,7 @@ class CliRuntime:
                 result = self.service.synthesize_custom(
                     CustomVoiceCommand(
                         text=text,
-                        model=spec.metadata_id,
+                        model=spec.metadata_id if spec is not None else None,
                         save_output=True,
                         language=language,
                         speaker=speaker,
@@ -521,15 +506,15 @@ class CliRuntime:
     #   SIDE_EFFECTS: Prompts the user, submits synthesis requests, and may save or play audio.
     #   LINKS: M-CLI
     # END_CONTRACT: run_design_session
-    def run_design_session(self, model_key: str) -> None:
-        spec = CLI_MODELS[model_key]
-        if not (self.settings.models_dir / spec.folder).exists():
+    def run_design_session(self, model_key: str | None) -> None:
+        spec = CLI_MODELS[model_key] if model_key is not None else None
+        if spec is not None and not (self.settings.models_dir / spec.folder).exists():
             print("Error: Model not found.")
             return
 
-        print(f"\n--- {spec.public_name} ---")
+        print(f"\n--- {spec.public_name if spec is not None else 'Runtime-bound Voice Design'} ---")
         instruct = self._prompt_instruct(
-            family_key=self._normalize_family(spec.family),
+            family_key=self._runtime_bound_family() or self._normalize_family(spec.family),
             capability="voice_description_tts",
         )
         if not instruct:
@@ -546,7 +531,7 @@ class CliRuntime:
                 result = self.service.synthesize_design(
                     VoiceDesignCommand(
                         text=text,
-                        model=spec.metadata_id,
+                        model=spec.metadata_id if spec is not None else None,
                         save_output=True,
                         language=language,
                         voice_description=instruct,
@@ -564,7 +549,7 @@ class CliRuntime:
     #   SIDE_EFFECTS: Prompts the user, reads or writes voice assets, and may save or play audio.
     #   LINKS: M-CLI
     # END_CONTRACT: run_clone_manager
-    def run_clone_manager(self, model_key: str) -> None:
+    def run_clone_manager(self, model_key: str | None) -> None:
         print("\n--- Voice Cloning Manager ---")
         print("  1. Pick from Saved Voices")
         print("  2. Enroll New Voice")
@@ -578,8 +563,8 @@ class CliRuntime:
         if sub_choice == "4":
             return
 
-        spec = CLI_MODELS[model_key]
-        if not (self.settings.models_dir / spec.folder).exists():
+        spec = CLI_MODELS[model_key] if model_key is not None else None
+        if spec is not None and not (self.settings.models_dir / spec.folder).exists():
             print("Error: Model not found.")
             return
 
@@ -635,7 +620,7 @@ class CliRuntime:
                 result = self.service.synthesize_clone(
                     VoiceCloneCommand(
                         text=text,
-                        model=spec.metadata_id,
+                        model=spec.metadata_id if spec is not None else None,
                         save_output=True,
                         language=language,
                         ref_audio_path=ref_audio,
@@ -661,6 +646,15 @@ class CliRuntime:
     def run_family_action(self, family_key: str, capability: str, mode: str) -> None:
         if family_key == "piper":
             self.run_piper_session()
+            return
+
+        if self._runtime_bound_family() == family_key and self._runtime_bound_model(mode):
+            if mode == "custom":
+                self.run_custom_session(None)
+            elif mode == "design":
+                self.run_design_session(None)
+            elif mode == "clone":
+                self.run_clone_manager(None)
             return
 
         model_key = self._pick_spec_from_list(

@@ -216,6 +216,15 @@ def build_telegram_runtime(
         LOGGER,
         level=logging.INFO,
         event="[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]",
+        message="Telegram runtime bindings resolved",
+        active_family=resolved_settings.active_family,
+        runtime_capability_map=resolved_settings.runtime_capability_map(),
+    )
+
+    log_event(
+        LOGGER,
+        level=logging.INFO,
+        event="[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]",
         message="Telegram runtime built successfully",
     )
 

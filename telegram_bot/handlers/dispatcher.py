@@ -36,19 +36,16 @@ import logging
 import math
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Protocol
 
-from core.observability import get_logger, log_event
+from core.observability import get_logger
 from telegram_bot.handlers.commands import (
     CommandType,
     ParsedCommand,
-    ParsedTTSArgs,
     get_valid_speakers,
     is_private_chat,
     parse_command,
     parse_design_args,
     parse_tts_args,
-    validate_design_args,
     validate_design_command,
-    validate_tts_args,
     validate_tts_command,
     parse_clone_args,
     validate_clone_command,
@@ -58,7 +55,6 @@ from telegram_bot.handlers.tts_handler import TTSSynthesizer
 from telegram_bot.media import DownloadError, MediaValidationError, stage_clone_media
 from telegram_bot.observability import (
     METRICS,
-    TelegramCorrelationContext,
     log_telegram_event,
 )
 
@@ -67,7 +63,6 @@ if TYPE_CHECKING:
     from telegram_bot.config import TelegramSettings
     from telegram_bot.polling import TelegramClient
     from telegram_bot.rate_limiter import TelegramRateLimiter
-    from telegram_bot.sender import TelegramSender
 
 
 LOGGER = get_logger(__name__)
@@ -252,7 +247,20 @@ class CommandDispatcher:
     def _get_help_message(self) -> str:
         """Get formatted help message with available speakers."""
         speakers = ", ".join(get_valid_speakers())
-        return self.HELP_MESSAGE.format(speakers=speakers)
+        return self.HELP_MESSAGE.format(speakers=speakers) + self._runtime_capability_summary()
+
+    def _runtime_capability_available(self, mode: str) -> bool:
+        return self._settings.resolve_runtime_model_binding(mode) is not None
+
+    def _runtime_capability_summary(self) -> str:
+        family = self._settings.active_family or "unbound"
+        return (
+            "\n\n*Runtime bindings:*\n"
+            f"• family: `{family}`\n"
+            f"• custom: `{'on' if self._runtime_capability_available('custom') else 'off'}`\n"
+            f"• design: `{'on' if self._runtime_capability_available('design') else 'off'}`\n"
+            f"• clone: `{'on' if self._runtime_capability_available('clone') else 'off'}`"
+        )
 
     # START_CONTRACT: handle_update
     #   PURPOSE: Validate and route a Telegram update to the correct command handler.
@@ -411,7 +419,9 @@ class CommandDispatcher:
             chat_id=parsed.chat_id,
         )
 
-        await self._sender.send_text(parsed.chat_id, self.START_MESSAGE)
+        await self._sender.send_text(
+            parsed.chat_id, self.START_MESSAGE + self._runtime_capability_summary()
+        )
 
     async def _handle_help(self, parsed: ParsedCommand) -> None:
         """Handle /help command."""
@@ -428,6 +438,14 @@ class CommandDispatcher:
 
     async def _handle_tts(self, parsed: ParsedCommand) -> None:
         """Handle /tts command with async UX."""
+        if not self._runtime_capability_available("custom"):
+            await self._sender.send_text(
+                parsed.chat_id,
+                self.ERROR_TEMPLATE.format(
+                    error="Обычный синтез недоступен: custom capability не привязана к текущему runtime."
+                ),
+            )
+            return
         # START_BLOCK_LOG_TTS_COMMAND
         command_name = parsed.command.value
 
@@ -740,6 +758,14 @@ class CommandDispatcher:
         Creates a job for voice design synthesis and delivery metadata.
         Job completion and delivery is handled by TelegramJobPoller.
         """
+        if not self._runtime_capability_available("design"):
+            await self._sender.send_text(
+                parsed.chat_id,
+                self.ERROR_TEMPLATE.format(
+                    error="Voice Design недоступен: design capability не привязана к текущему runtime."
+                ),
+            )
+            return
         from telegram_bot.handlers.commands import (
             MAX_TEXT_LENGTH,
             MAX_VOICE_DESCRIPTION_LENGTH,
@@ -1042,6 +1068,14 @@ class CommandDispatcher:
         Creates a job for voice cloning synthesis and delivery metadata.
         Job completion and delivery is handled by TelegramJobPoller.
         """
+        if not self._runtime_capability_available("clone"):
+            await self._sender.send_text(
+                parsed.chat_id,
+                self.ERROR_TEMPLATE.format(
+                    error="Voice cloning недоступен: clone capability не привязана к текущему runtime."
+                ),
+            )
+            return
         # START_BLOCK_LOG_CLONE_COMMAND
         command_name = parsed.command.value
 

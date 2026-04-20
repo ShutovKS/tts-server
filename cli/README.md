@@ -110,10 +110,16 @@ Useful variables include:
 - `QWEN_TTS_OUTPUTS_DIR`
 - `QWEN_TTS_VOICES_DIR`
 - `QWEN_TTS_UPLOAD_STAGING_DIR`
+- `QWEN_TTS_ACTIVE_FAMILY`
+- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
+- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
+- `QWEN_TTS_DEFAULT_CLONE_MODEL`
 - `QWEN_TTS_BACKEND`
 - `QWEN_TTS_BACKEND_AUTOSELECT`
 - `QWEN_TTS_QWEN_FAST_ENABLED`
 - `QWEN_TTS_AUTO_PLAY_CLI`
+
+When runtime bindings are configured, the CLI treats them as the source of truth for which family actions are available. That means `custom`, `design`, and `clone` can appear from the active runtime contour even when the user is not manually selecting an explicit model id for the session.
 
 ## Operational notes
 
@@ -124,6 +130,7 @@ Useful variables include:
 - If the shared runtime selects `qwen_fast`, that accelerated lane can serve Qwen custom, design, and clone synthesis on supported CUDA hosts and still falls back safely to `torch` when unavailable.
 - `Piper` is intentionally limited to preset-speaker synthesis in the CLI because its family adapter exposes only `preset_speaker_tts` capability.
 - `OmniVoice` reuses the shared custom/design/clone interaction model, but its availability still depends on a runtime-ready OmniVoice family environment.
+- Runtime-bound capability availability is distinct from local model folders. A model can exist on disk and still remain unavailable in the CLI if the current process was not launched with the corresponding runtime binding.
 
 ## V1 validation lane
 

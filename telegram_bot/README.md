@@ -100,6 +100,8 @@ Skip the Docker Telegram lane only when Docker is unavailable, the bot token is 
 
 The bot command surface still targets Qwen-oriented `/tts`, `/design`, and `/clone` workflows. Families that do not support design or clone operations should be surfaced through controlled capability errors rather than ambiguous runtime failures.
 
+The running bot now also treats `QWEN_TTS_ACTIVE_FAMILY` and `QWEN_TTS_DEFAULT_*_MODEL` bindings as the source of truth for whether `custom`, `design`, or `clone` are operational in this process. Command syntax remains visible, but unbound modes are rejected explicitly as runtime capability configuration errors instead of failing later with implicit transport-level behavior.
+
 ### `/tts` syntax
 
 ```text
@@ -153,6 +155,13 @@ Important environment variables:
 - `QWEN_TTS_TELEGRAM_MAX_RETRIES`
 
 Shared core variables from [../core/README.md](../core/README.md) also apply.
+
+Important runtime binding variables from the shared contract:
+
+- `QWEN_TTS_ACTIVE_FAMILY`
+- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
+- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
+- `QWEN_TTS_DEFAULT_CLONE_MODEL`
 
 ## Operational notes
 
