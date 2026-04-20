@@ -1,8 +1,8 @@
 # FILE: tests/unit/scripts/test_unix_launcher_scripts.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the macOS and Linux launcher entrypoints stay aligned with the documented profile-aware guided launch flow.
-#   SCOPE: launcher-script presence, shell orchestration markers, curated model menu anchors, platform-specific dependency guidance, and bounded secret-handling command references
+#   SCOPE: launcher-script presence, shell orchestration markers, curated family/model menu anchors, runtime capability binding markers, platform-specific dependency guidance, and bounded secret-handling command references
 #   DEPENDS: M-MACOS-LAUNCHER, M-LINUX-LAUNCHER
 #   LINKS: V-M-MACOS-LAUNCHER, V-M-LINUX-LAUNCHER
 #   ROLE: TEST
@@ -19,7 +19,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added deterministic coverage for thin interactive macOS and Linux launcher scripts built on top of the shared launcher package]
+#   LAST_CHANGE: [v1.1.0 - Expanded Unix launcher coverage to assert Windows-flow parity for family-first selection, multi-model preparation, and runtime capability bindings]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ def test_macos_launcher_script_exists_with_grace_contract():
     assert MACOS_SCRIPT_PATH.exists()
     assert "# START_MODULE_CONTRACT" in contents
     assert "#   PURPOSE: Provide an interactive macOS launcher" in contents
+    assert "FAMILY_OPTIONS_DATA" in contents
     assert "MODEL_OPTIONS_DATA" in contents
     assert "assert_macos_preflight" in contents
     assert "brew install" in contents
@@ -56,6 +57,14 @@ def test_macos_launcher_script_reuses_profile_aware_launcher_and_brew_guidance()
     assert "exec --family" in contents
     assert "expected_python_path" in contents
     assert "/health/live" in contents
+    assert "Select family to prepare" in contents
+    assert "select_multiple_menu_options" in contents
+    assert "QWEN_TTS_ACTIVE_FAMILY" in contents
+    assert "QWEN_TTS_DEFAULT_CUSTOM_MODEL" in contents
+    assert "QWEN_TTS_DEFAULT_DESIGN_MODEL" in contents
+    assert "QWEN_TTS_DEFAULT_CLONE_MODEL" in contents
+    assert "Runtime capability bindings:" in contents
+    assert "Automatically preparing the only model" in contents
     assert "snapshot_download" in contents
     assert "piper.download_voices" in contents
     assert "HF_TOKEN" in contents
@@ -73,6 +82,7 @@ def test_linux_launcher_script_exists_with_grace_contract():
     assert LINUX_SCRIPT_PATH.exists()
     assert "# START_MODULE_CONTRACT" in contents
     assert "#   PURPOSE: Provide an interactive Linux launcher" in contents
+    assert "FAMILY_OPTIONS_DATA" in contents
     assert "MODEL_OPTIONS_DATA" in contents
     assert "detect_package_manager" in contents
     assert "print_linux_install_guidance" in contents
@@ -87,6 +97,14 @@ def test_linux_launcher_script_reuses_profile_aware_launcher_and_manual_package_
     assert "exec --family" in contents
     assert "expected_python_path" in contents
     assert "/health/live" in contents
+    assert "Select family to prepare" in contents
+    assert "select_multiple_menu_options" in contents
+    assert "QWEN_TTS_ACTIVE_FAMILY" in contents
+    assert "QWEN_TTS_DEFAULT_CUSTOM_MODEL" in contents
+    assert "QWEN_TTS_DEFAULT_DESIGN_MODEL" in contents
+    assert "QWEN_TTS_DEFAULT_CLONE_MODEL" in contents
+    assert "Runtime capability bindings:" in contents
+    assert "Automatically preparing the only model" in contents
     assert "snapshot_download" in contents
     assert "piper.download_voices" in contents
     assert "HF_TOKEN" in contents

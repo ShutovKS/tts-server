@@ -702,9 +702,10 @@
         <check-1>python -m pytest tests/unit/scripts/test_unix_launcher_scripts.py -m unit</check-1>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">The macOS launcher script remains a thin orchestrator over the profile-aware Python launcher by reusing create-env, check-env, and exec flows instead of duplicating runtime resolution logic.</scenario-1>
-        <scenario-2 kind="success">The macOS launcher keeps system dependency mutation bounded to explicit opt-in Homebrew guidance while preserving the guided Hugging Face and Piper download paths for missing model assets.</scenario-2>
-        <scenario-3 kind="success">The macOS launcher keeps transient secret handling bounded to process-local HF and Telegram token prompts instead of persisting credentials to repository files.</scenario-3>
+        <scenario-1 kind="success">The macOS launcher script remains a thin orchestrator over the profile-aware Python launcher by reusing create-env, check-env, inspect, and exec flows instead of duplicating runtime resolution logic.</scenario-1>
+        <scenario-2 kind="success">The macOS launcher preserves Windows-flow parity by selecting the family first, supporting multi-model preparation inside that family, and exporting explicit runtime capability bindings for custom, design, and clone lanes before launch.</scenario-2>
+        <scenario-3 kind="success">The macOS launcher keeps system dependency mutation bounded to explicit opt-in Homebrew guidance while preserving the guided Hugging Face and Piper download paths for missing model assets.</scenario-3>
+        <scenario-4 kind="success">The macOS launcher keeps transient secret handling bounded to process-local HF and Telegram token prompts instead of persisting credentials to repository files.</scenario-4>
       </scenarios>
     </V-M-MACOS-LAUNCHER>
     <V-M-LINUX-LAUNCHER MODULE="M-LINUX-LAUNCHER" PRIORITY="medium">
@@ -715,9 +716,10 @@
         <check-1>python -m pytest tests/unit/scripts/test_unix_launcher_scripts.py -m unit</check-1>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">The Linux launcher script remains a thin orchestrator over the profile-aware Python launcher by reusing create-env, check-env, and exec flows instead of duplicating runtime resolution logic.</scenario-1>
-        <scenario-2 kind="success">The Linux launcher keeps package-manager-specific install guidance manual-only and does not execute apt, dnf, yum, pacman, or zypper commands on the operator host.</scenario-2>
-        <scenario-3 kind="success">The Linux launcher keeps transient secret handling bounded to process-local HF and Telegram token prompts instead of persisting credentials to repository files.</scenario-3>
+        <scenario-1 kind="success">The Linux launcher script remains a thin orchestrator over the profile-aware Python launcher by reusing create-env, check-env, inspect, and exec flows instead of duplicating runtime resolution logic.</scenario-1>
+        <scenario-2 kind="success">The Linux launcher preserves Windows-flow parity by selecting the family first, supporting multi-model preparation inside that family, and exporting explicit runtime capability bindings for custom, design, and clone lanes before launch.</scenario-2>
+        <scenario-3 kind="success">The Linux launcher keeps package-manager-specific install guidance manual-only and does not execute apt, dnf, yum, pacman, or zypper commands on the operator host.</scenario-3>
+        <scenario-4 kind="success">The Linux launcher keeps transient secret handling bounded to process-local HF and Telegram token prompts instead of persisting credentials to repository files.</scenario-4>
       </scenarios>
     </V-M-LINUX-LAUNCHER>
   </ModuleVerification>

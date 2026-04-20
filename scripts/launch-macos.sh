@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FILE: scripts/launch-macos.sh
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide an interactive macOS launcher that orchestrates profile-aware environment setup, optional model downloads, and adapter startup.
 #   SCOPE: macOS-only preflight checks, optional Homebrew-assisted system dependency installs, service/model prompts, launcher CLI orchestration, family-env bootstrap, model artifact validation, optional Hugging Face and Piper downloads, and final adapter execution.
@@ -11,26 +11,38 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
+#   FAMILY_OPTIONS_DATA - Curated family menu entries mapped to runtime contours.
 #   MODEL_OPTIONS_DATA - Curated model menu entries mapped to runtime family contours and local artifact folders.
 #   get_project_root - Resolve the repository root relative to the script location.
 #   read_trimmed_input - Read one prompt and normalize surrounding whitespace.
 #   read_secret_input - Read a transient secret without echoing it to the terminal.
 #   select_menu_option - Prompt for a numbered menu selection and return the chosen record.
+#   select_multiple_menu_options - Prompt for one or more numbered menu selections and return the chosen records.
 #   invoke_launcher_json - Execute the profile-aware Python launcher and capture its JSON payload.
 #   assert_macos_preflight - Validate macOS host expectations, launcher package presence, and optionally install missing system dependencies via Homebrew.
 #   ensure_family_environment - Create and verify the dedicated family environment through launcher create-env/check-env flows.
 #   ensure_model_availability - Validate a model folder or Hugging Face snapshot layout and optionally download missing assets.
-#   configure_service_environment - Apply transient QWEN_TTS_* and Telegram settings for the selected launch contour.
+#   get_model_mode - Derive the runtime lane mode for a selected model key.
+#   get_runtime_capability_bindings - Derive runtime capability bindings from ensured models and selected family.
+#   show_runtime_capability_bindings - Print the final runtime capability binding summary before launch.
+#   configure_service_environment - Apply transient QWEN_TTS_* and Telegram settings for the selected launch contour and runtime capability bindings.
 #   wait_http_health_check - Probe the configured HTTP server until /health/live responds or timeout elapses.
 #   start_selected_service - Launch the selected adapter through the profile-aware launcher exec command.
 #   main - Run the interactive launcher flow end-to-end.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added a thin interactive macOS launcher that mirrors the Windows guided flow on top of the shared launcher package while keeping system dependency installs opt-in through Homebrew]
+#   LAST_CHANGE: [v1.1.0 - Restored Windows flow parity by making macOS choose family first, support multi-model preparation per family, and export runtime capability bindings before launch]
 # END_CHANGE_SUMMARY
 
 set -euo pipefail
+
+FAMILY_OPTIONS_DATA=$(cat <<'EOF'
+qwen|Qwen3
+omnivoice|OmniVoice
+piper|Piper
+EOF
+)
 
 MODEL_OPTIONS_DATA=$(cat <<'EOF'
 qwen-custom-17b|Qwen Custom 1.7B|qwen|Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|
@@ -160,6 +172,86 @@ select_menu_option() {
             done <<< "$options_data"
         fi
         printf 'Enter a number from the menu.\n' >&2
+    done
+}
+
+select_multiple_menu_options() {
+    local prompt="$1"
+    local options_data="$2"
+    local count=0
+    local line
+    local raw
+    local selection_output=""
+
+    printf '\n%s\n' "$prompt"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        count=$((count + 1))
+        IFS='|' read -r _key label _rest <<<"$line"
+        printf '[%d] %s\n' "$count" "$label"
+    done <<< "$options_data"
+
+    if (( count == 0 )); then
+        printf 'No options are available for selection.\n' >&2
+        return 1
+    fi
+
+    while true; do
+        local valid="true"
+        local selected_indexes=()
+        raw="$(read_trimmed_input 'Enter one or more option numbers separated by comma: ')"
+        if [[ -z "$raw" ]]; then
+            printf 'Select at least one option from the menu.\n' >&2
+            continue
+        fi
+
+        local old_ifs="$IFS"
+        IFS=','
+        read -r -a tokens <<< "$raw"
+        IFS="$old_ifs"
+        for token in "${tokens[@]}"; do
+            local trimmed choice duplicate="false"
+            trimmed="$(trim_string "$token")"
+            if [[ ! "$trimmed" =~ ^[0-9]+$ ]] || (( trimmed < 1 || trimmed > count )); then
+                valid="false"
+                break
+            fi
+            for choice in "${selected_indexes[@]:-}"; do
+                if [[ "$choice" == "$trimmed" ]]; then
+                    duplicate="true"
+                    break
+                fi
+            done
+            if [[ "$duplicate" == "false" ]]; then
+                selected_indexes+=("$trimmed")
+            fi
+        done
+
+        if [[ "$valid" != "true" || ${#selected_indexes[@]} -eq 0 ]]; then
+            printf 'Enter one or more valid menu numbers separated by commas.\n' >&2
+            continue
+        fi
+
+        selection_output=""
+        local position=0
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            position=$((position + 1))
+            for choice in "${selected_indexes[@]}"; do
+                if (( position == choice )); then
+                    if [[ -n "$selection_output" ]]; then
+                        selection_output+=$'\n'
+                    fi
+                    selection_output+="$line"
+                    break
+                fi
+            done
+        done <<< "$options_data"
+
+        if [[ -n "$selection_output" ]]; then
+            printf '%s' "$selection_output"
+            return 0
+        fi
     done
 }
 
@@ -410,15 +502,89 @@ ensure_model_availability() {
     printf 'Model is ready: %s\n' "$resolved_path"
 }
 
+get_model_mode() {
+    local model_key="$1"
+    case "$model_key" in
+        qwen-custom-*|piper-*) printf 'custom' ;;
+        qwen-design-*) printf 'design' ;;
+        qwen-clone-*) printf 'clone' ;;
+        omnivoice) printf 'all' ;;
+        *) printf '' ;;
+    esac
+}
+
+get_runtime_capability_bindings() {
+    local family="$1"
+    shift
+    local custom_model=""
+    local design_model=""
+    local clone_model=""
+    local model_record model_key folder inferred_mode
+
+    for model_record in "$@"; do
+        IFS='|' read -r model_key _model_label _model_family folder _download_strategy _artifact_groups _maybe_voice <<< "$model_record"
+        inferred_mode="$(get_model_mode "$model_key")"
+
+        if [[ "$inferred_mode" == "all" ]]; then
+            custom_model="$folder"
+            design_model="$folder"
+            clone_model="$folder"
+            continue
+        fi
+        if [[ "$inferred_mode" == "custom" ]]; then
+            custom_model="$folder"
+        elif [[ "$inferred_mode" == "design" ]]; then
+            design_model="$folder"
+        elif [[ "$inferred_mode" == "clone" ]]; then
+            clone_model="$folder"
+        fi
+    done
+
+    printf '%s|%s|%s|%s' "$family" "$custom_model" "$design_model" "$clone_model"
+}
+
+show_runtime_capability_bindings() {
+    local family="$1"
+    local custom_model="$2"
+    local design_model="$3"
+    local clone_model="$4"
+
+    printf '\nRuntime capability bindings:\n'
+    printf '  QWEN_TTS_ACTIVE_FAMILY=%s\n' "$family"
+    printf '  QWEN_TTS_DEFAULT_CUSTOM_MODEL=%s\n' "${custom_model:-<unbound>}"
+    printf '  QWEN_TTS_DEFAULT_DESIGN_MODEL=%s\n' "${design_model:-<unbound>}"
+    printf '  QWEN_TTS_DEFAULT_CLONE_MODEL=%s\n' "${clone_model:-<unbound>}"
+}
+
 configure_service_environment() {
     local project_root="$1"
     local inspect_payload="$2"
     local service_key="$3"
+    local bindings_family="$4"
+    local custom_model="$5"
+    local design_model="$6"
+    local clone_model="$7"
 
     export QWEN_TTS_MODELS_DIR="$project_root/.models"
     export QWEN_TTS_OUTPUTS_DIR="$project_root/.outputs"
     export QWEN_TTS_VOICES_DIR="$project_root/.voices"
     export QWEN_TTS_UPLOAD_STAGING_DIR="$project_root/.uploads"
+    export QWEN_TTS_ACTIVE_FAMILY="$bindings_family"
+    if [[ -n "$custom_model" ]]; then
+        export QWEN_TTS_DEFAULT_CUSTOM_MODEL="$custom_model"
+    else
+        unset QWEN_TTS_DEFAULT_CUSTOM_MODEL 2>/dev/null || true
+    fi
+    if [[ -n "$design_model" ]]; then
+        export QWEN_TTS_DEFAULT_DESIGN_MODEL="$design_model"
+    else
+        unset QWEN_TTS_DEFAULT_DESIGN_MODEL 2>/dev/null || true
+    fi
+    if [[ -n "$clone_model" ]]; then
+        export QWEN_TTS_DEFAULT_CLONE_MODEL="$clone_model"
+    else
+        unset QWEN_TTS_DEFAULT_CLONE_MODEL 2>/dev/null || true
+    fi
     local selected_backend
     selected_backend="$(json_query "$inspect_payload" 'selected_backend')"
     if [[ -n "$selected_backend" ]]; then
@@ -517,7 +683,7 @@ main() {
     project_root="$(get_project_root)"
     assert_macos_preflight "$project_root"
 
-    local service_options model_record service_record service_key service_label
+    local service_options family_record service_record service_key family_key family_label family_models model_record
     service_options=$(cat <<'EOF'
 server|HTTP Server
 cli|CLI
@@ -527,23 +693,52 @@ EOF
 
     printf 'Interactive macOS launcher for tts-server\n'
     service_record="$(select_menu_option 'Select service to launch' "$service_options")"
-    model_record="$(select_menu_option 'Select model/family to prepare' "$MODEL_OPTIONS_DATA")"
+    family_record="$(select_menu_option 'Select family to prepare' "$FAMILY_OPTIONS_DATA")"
 
-    IFS='|' read -r service_key service_label <<< "$service_record"
-    local model_key model_label model_family model_folder download_strategy artifact_groups piper_voice
-    IFS='|' read -r model_key model_label model_family model_folder download_strategy artifact_groups piper_voice <<< "$model_record"
+    IFS='|' read -r service_key _service_label <<< "$service_record"
+    IFS='|' read -r family_key family_label <<< "$family_record"
 
-    local family_python inspect_payload compatible models_dir
-    family_python="$(ensure_family_environment "$project_root" "$model_family" "$service_key")"
-    invoke_launcher_json "$project_root" inspect --family "$model_family" --module "$service_key"
+    family_models="$(printf '%s\n' "$MODEL_OPTIONS_DATA" | while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        IFS='|' read -r _model_key _model_label model_family _rest <<< "$line"
+        if [[ "$model_family" == "$family_key" ]]; then
+            printf '%s\n' "$line"
+        fi
+    done)"
+
+    if [[ -z "$family_models" ]]; then
+        printf 'No model options are configured for family %s.\n' "$family_key" >&2
+        return 1
+    fi
+
+    local models_to_ensure=()
+    local family_model_count=0
+    while IFS= read -r model_record; do
+        [[ -z "$model_record" ]] && continue
+        family_model_count=$((family_model_count + 1))
+    done <<< "$family_models"
+
+    if (( family_model_count == 1 )); then
+        models_to_ensure=("$family_models")
+        IFS='|' read -r _single_key single_label _single_family _single_folder _single_strategy _single_groups _single_voice <<< "$family_models"
+        printf '\nAutomatically preparing the only model for %s: %s\n' "$family_label" "$single_label"
+    else
+        while IFS= read -r model_record; do
+            [[ -z "$model_record" ]] && continue
+            models_to_ensure+=("$model_record")
+        done < <(select_multiple_menu_options 'Select models to download if missing (multiple options can be selected, separated by comma)' "$family_models")
+    fi
+
+    local family_python inspect_payload compatible models_dir runtime_bindings bindings_family custom_model design_model clone_model
+    family_python="$(ensure_family_environment "$project_root" "$family_key" "$service_key")"
+    invoke_launcher_json "$project_root" inspect --family "$family_key" --module "$service_key"
     if [[ $LAUNCHER_JSON_EXIT_CODE -ne 0 ]]; then
         printf 'Failed to resolve launch profile:\n%s\n' "$LAUNCHER_JSON_OUTPUT" >&2
         return 1
     fi
     inspect_payload="$LAUNCHER_JSON_OUTPUT"
     compatible="$(json_query "$inspect_payload" 'compatible')"
-    printf '\nSelected family: %s\n' "$model_family"
-    printf 'Selected model folder: %s\n' "$model_folder"
+    printf '\nSelected family: %s\n' "$family_label"
     printf 'Host contour: %s / backend: %s\n' "$(json_query "$inspect_payload" 'host.platform_system')" "$(json_query "$inspect_payload" 'selected_backend')"
     if [[ "$compatible" != "true" ]]; then
         printf 'Selected profile is incompatible with this host even after environment setup: %s\n' "$(json_query "$inspect_payload" 'reasons')" >&2
@@ -552,9 +747,18 @@ EOF
 
     models_dir="$project_root/.models"
     mkdir -p "$models_dir"
-    ensure_model_availability "$family_python" "$model_label" "$model_folder" "$download_strategy" "$artifact_groups" "$piper_voice" "$models_dir"
-    configure_service_environment "$project_root" "$inspect_payload" "$service_key"
-    start_selected_service "$project_root" "$model_family" "$service_key" "$service_key"
+    for model_record in "${models_to_ensure[@]}"; do
+        local model_key model_label model_family model_folder download_strategy artifact_groups piper_voice
+        IFS='|' read -r model_key model_label model_family model_folder download_strategy artifact_groups piper_voice <<< "$model_record"
+        printf 'Ensuring model: %s\n' "$model_label"
+        ensure_model_availability "$family_python" "$model_label" "$model_folder" "$download_strategy" "$artifact_groups" "$piper_voice" "$models_dir"
+    done
+
+    runtime_bindings="$(get_runtime_capability_bindings "$family_key" "${models_to_ensure[@]}")"
+    IFS='|' read -r bindings_family custom_model design_model clone_model <<< "$runtime_bindings"
+    show_runtime_capability_bindings "$bindings_family" "$custom_model" "$design_model" "$clone_model"
+    configure_service_environment "$project_root" "$inspect_payload" "$service_key" "$bindings_family" "$custom_model" "$design_model" "$clone_model"
+    start_selected_service "$project_root" "$family_key" "$service_key" "$service_key"
 }
 
 main "$@"
