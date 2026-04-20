@@ -59,6 +59,8 @@ http://127.0.0.1:8030/frontend_demo/?apiBaseUrl=http://127.0.0.1:8020
 
 ## Important note
 
-The demo checks `/health/ready` on startup and blocks clone submission when the active server runtime does not support clone mode.
+The demo checks `/health/ready` on startup and blocks clone submission when the active server runtime does not expose clone capability as both bound and runtime-ready.
+
+The browser client no longer needs to send a model id for clone requests. It relies on the runtime capability bindings advertised by the server and submits only the clone inputs required by the endpoint.
 
 For clone-capable live validation on this host, use the qwen runtime contour described in `server/README.md`.

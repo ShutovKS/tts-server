@@ -15,6 +15,7 @@ let presets = [];
 let selectedPresetId = null;
 let currentObjectUrl = null;
 let runtimeSupportsClone = false;
+let runtimeFamily = null;
 let previewAudio = new Audio();
 
 function apiUrl(path) { return `${apiBaseUrl}${path}`; }
@@ -97,11 +98,18 @@ async function loadRuntimeStatus() {
   try {
     const response = await fetch(apiUrl("/health/ready"));
     const payload = await response.json();
-    runtimeSupportsClone = Boolean(payload?.checks?.models?.backend_capabilities?.supports_clone);
+    runtimeFamily = payload?.checks?.runtime?.runtime_capability_map?.family || null;
+    const cloneStatus = payload?.checks?.capabilities?.capability_status?.clone;
+    runtimeSupportsClone = Boolean(cloneStatus?.bound && cloneStatus?.runtime_ready);
     
     if (!runtimeSupportsClone) {
-      setStatus("CLONE-РЕЖИМ НЕДОСТУПЕН", "error");
+      setStatus("CLONE-РЕЖИМ НЕДОСТУПЕН ДЛЯ ТЕКУЩЕГО RUNTIME", "error");
       setBusy(true);
+      return;
+    }
+
+    if (runtimeFamily) {
+      setStatus(`RUNTIME ${runtimeFamily.toUpperCase()} / CLONE ГОТОВ`, "info");
     }
   } catch (error) {
     setStatus("ОШИБКА ПОДКЛЮЧЕНИЯ К СЕРВЕРУ", "error");
@@ -131,7 +139,6 @@ async function submitClone() {
     formData.set("text", text);
     if (preset.language) formData.set("language", preset.language);
     if (preset.referenceText) formData.set("ref_text", preset.referenceText);
-    if (preset.model) formData.set("model", preset.model);
     
     // Получаем файл пресета
     const refAudio = await fetch(preset.referenceAudioPath);

@@ -5,8 +5,7 @@
     "avatar": "/public/avatars/npc.png",
     "referenceAudioPath": "/public/reference-audio/npc.mp3",
     "referenceText": "Просто представь, как ты на Гранд Арене соревнуешься с представителями других стран.",
-    "language": "russian",
-    "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+    "language": "russian"
   },
   {
     "id": "bast",
@@ -14,8 +13,7 @@
     "avatar": "/public/avatars/bast.png",
     "referenceAudioPath": "/public/reference-audio/bast.mp3",
     "referenceText": "ليس هناك كثير من الناس يصلون هنا، حتى ولو كان لديهم دعوة.",
-    "language": "auto",
-    "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+    "language": "auto"
   },
   {
     "id": "geisha",
@@ -23,8 +21,7 @@
     "avatar": "/public/avatars/geisha.png",
     "referenceAudioPath": "/public/reference-audio/geisha.mp3",
     "referenceText": "私の領域で飛ぶ権利を得るなら、ただバッテリーの寿命を無駄にしているだけじゃないと証明せよ。",
-    "language": "japanese",
-    "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+    "language": "japanese"
   },
   {
     "id": "madeleine",
@@ -32,8 +29,7 @@
     "avatar": "/public/avatars/madeleine.png",
     "referenceAudioPath": "/public/reference-audio/madeleine.mp3",
     "referenceText": "Non perché voglia ballare, ma perché sono curiosa di vedere come voli.",
-    "language": "italian",
-    "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+    "language": "italian"
   },
   {
     "id": "maribel",
@@ -41,7 +37,6 @@
     "avatar": "/public/avatars/maribel.png",
     "referenceAudioPath": "/public/reference-audio/maribel.mp3",
     "referenceText": "Volaste demasiado... fuerte para pasar desapercibido.",
-    "language": "spanish",
-    "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+    "language": "spanish"
   }
 ]
