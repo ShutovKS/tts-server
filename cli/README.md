@@ -106,18 +106,18 @@ CLI settings inherit the shared environment contract from [`CoreSettings`](../co
 
 Useful variables include:
 
-- `QWEN_TTS_MODELS_DIR`
-- `QWEN_TTS_OUTPUTS_DIR`
-- `QWEN_TTS_VOICES_DIR`
-- `QWEN_TTS_UPLOAD_STAGING_DIR`
-- `QWEN_TTS_ACTIVE_FAMILY`
-- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
-- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
-- `QWEN_TTS_DEFAULT_CLONE_MODEL`
-- `QWEN_TTS_BACKEND`
-- `QWEN_TTS_BACKEND_AUTOSELECT`
-- `QWEN_TTS_QWEN_FAST_ENABLED`
-- `QWEN_TTS_AUTO_PLAY_CLI`
+- `TTS_MODELS_DIR`
+- `TTS_OUTPUTS_DIR`
+- `TTS_VOICES_DIR`
+- `TTS_UPLOAD_STAGING_DIR`
+- `TTS_ACTIVE_FAMILY`
+- `TTS_DEFAULT_CUSTOM_MODEL`
+- `TTS_DEFAULT_DESIGN_MODEL`
+- `TTS_DEFAULT_CLONE_MODEL`
+- `TTS_BACKEND`
+- `TTS_BACKEND_AUTOSELECT`
+- `TTS_QWEN_FAST_ENABLED`
+- `TTS_AUTO_PLAY_CLI`
 
 When runtime bindings are configured, the CLI treats them as the source of truth for which family actions are available. That means `custom`, `design`, and `clone` can appear from the active runtime contour even when the user is not manually selecting an explicit model id for the session.
 

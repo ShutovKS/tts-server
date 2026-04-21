@@ -44,12 +44,12 @@ python scripts/validate_runtime.py host-matrix
 python scripts/validate_runtime.py docker-server
 python scripts/validate_runtime.py representative-models --target piper
 python scripts/validate_runtime.py representative-models --target omnivoice
-QWEN_TTS_QWEN_FAST_TEST_MODE=eligible python scripts/runtime_self_check.py
-QWEN_TTS_QWEN_FAST_TEST_MODE=cuda_missing python scripts/runtime_self_check.py
+TTS_QWEN_FAST_TEST_MODE=eligible python scripts/runtime_self_check.py
+TTS_QWEN_FAST_TEST_MODE=cuda_missing python scripts/runtime_self_check.py
 python scripts/validate_runtime.py smoke-server
 python scripts/validate_runtime.py smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx
-python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"
-python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN" --chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
+python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"
+python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN" --chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
 python scripts/validate_runtime.py artifact-review
 ```
 
@@ -58,8 +58,8 @@ python scripts/validate_runtime.py artifact-review
 - `python scripts/validate_runtime.py host-matrix` runs the baseline runtime self-check plus simulated `qwen_fast` readiness scenarios (`eligible`, `cuda_missing`, `dependency_missing`) so optional-lane support claims stay tied to real routing evidence.
 - `python scripts/validate_runtime.py docker-server` starts the server compose lane with a runtime-selected host port, waits for `/health/live`, `/health/ready`, and `/api/v1/models`, and retains the Docker JSON and log artifacts automatically.
 - `python scripts/validate_runtime.py smoke-server` starts a temporary local HTTP server, waits for `/health/live` and `/health/ready`, runs the smoke pytest module, and stops the server automatically.
-- Smoke model selection is model-aware: default behavior validates Qwen custom coverage, while `--smoke-model-id Piper-en_US-lessac-medium` (or `QWEN_TTS_SMOKE_MODEL_ID=Piper-en_US-lessac-medium`) switches smoke requests to the Piper path through `POST /v1/audio/speech` and expects ONNX routing.
-- `python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"` validates real Telegram Bot API reachability without entering the long-polling loop. Add `--chat-id <id>` if you also want an automated `sendMessage` check.
+- Smoke model selection is model-aware: default behavior validates Qwen custom coverage, while `--smoke-model-id Piper-en_US-lessac-medium` (or `TTS_SMOKE_MODEL_ID=Piper-en_US-lessac-medium`) switches smoke requests to the Piper path through `POST /v1/audio/speech` and expects ONNX routing.
+- `python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"` validates real Telegram Bot API reachability without entering the long-polling loop. Add `--chat-id <id>` if you also want an automated `sendMessage` check.
 - Add `--expect-update-chat-id <id>` and optionally `--expect-update-text <substring>` for an opt-in dedicated validation chat where the script also confirms that a matching newer inbound update becomes visible through `getUpdates`.
 - `python scripts/validate_runtime.py representative-models --target piper` is the optional representative-model success path on this host, while `--target omnivoice` remains an additive host-specific validation lane that depends on a runtime-ready OmniVoice environment and retained local assets.
 - `python scripts/validate_runtime.py artifact-review` is advisory only and reads retained repository-local evidence such as the server Docker JSON and log artifacts plus the CLI launchability transcript.

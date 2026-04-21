@@ -86,12 +86,12 @@ Async submit endpoint'ы принимают заголовок `Idempotency-Key`
 ## Важное поведение runtime
 
 - Адаптер возвращает готовое аудио как обычный HTTP response body.
-- `QWEN_TTS_ENABLE_STREAMING` остаётся конфигурационным флагом, но сам по себе не превращает готовый аудио-ответ в streaming transport.
-- Clone uploads временно размещаются в `QWEN_TTS_UPLOAD_STAGING_DIR` и удаляются после обработки запроса.
+- `TTS_ENABLE_STREAMING` остаётся конфигурационным флагом, но сам по себе не превращает готовый аудио-ответ в streaming transport.
+- Clone uploads временно размещаются в `TTS_UPLOAD_STAGING_DIR` и удаляются после обработки запроса.
 - Слишком длинные текстовые запросы завершаются стандартной validation error.
 - При превышении таймаута inference возвращается `request_timeout` с HTTP `504`.
 - Unsupported model/family combinations теперь возвращают controlled error `model_capability_not_supported` с явными capability details.
-- Runtime capability bindings ожидаются из `QWEN_TTS_ACTIVE_FAMILY`, `QWEN_TTS_DEFAULT_CUSTOM_MODEL`, `QWEN_TTS_DEFAULT_DESIGN_MODEL` и `QWEN_TTS_DEFAULT_CLONE_MODEL`, а не из неявной инспекции `.models/`.
+- Runtime capability bindings ожидаются из `TTS_ACTIVE_FAMILY`, `TTS_DEFAULT_CUSTOM_MODEL`, `TTS_DEFAULT_DESIGN_MODEL` и `TTS_DEFAULT_CLONE_MODEL`, а не из неявной инспекции `.models/`.
 - Если для режима нет активной runtime binding, ожидаемое API behavior — controlled unsupported-mode response, а не internal failure.
 - `GET /health/ready` теперь включает host snapshot и mixed-backend routing summary, чтобы оператор видел, почему Piper может маршрутизироваться в ONNX даже при глобально выбранном MLX.
 - Ускоренный `qwen_fast` lane остаётся additive и optional; readiness/model payload'ы могут показывать его как отклонённого route candidate с явной причиной отклонения, а не как автоматическое переключение на другой backend.
@@ -102,23 +102,23 @@ Server-specific настройки расширяют [`CoreSettings`](../core/c
 
 Ключевые переменные:
 
-- `QWEN_TTS_HOST`
-- `QWEN_TTS_PORT`
-- `QWEN_TTS_LOG_LEVEL`
-- `QWEN_TTS_ACTIVE_FAMILY`
-- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
-- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
-- `QWEN_TTS_DEFAULT_CLONE_MODEL`
-- `QWEN_TTS_DEFAULT_SAVE_OUTPUT`
-- `QWEN_TTS_ENABLE_STREAMING`
-- `QWEN_TTS_MAX_UPLOAD_SIZE_BYTES`
-- `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
-- `QWEN_TTS_REQUEST_TIMEOUT_SECONDS`
-- `QWEN_TTS_INFERENCE_BUSY_STATUS_CODE`
+- `TTS_HOST`
+- `TTS_PORT`
+- `TTS_LOG_LEVEL`
+- `TTS_ACTIVE_FAMILY`
+- `TTS_DEFAULT_CUSTOM_MODEL`
+- `TTS_DEFAULT_DESIGN_MODEL`
+- `TTS_DEFAULT_CLONE_MODEL`
+- `TTS_DEFAULT_SAVE_OUTPUT`
+- `TTS_ENABLE_STREAMING`
+- `TTS_MAX_UPLOAD_SIZE_BYTES`
+- `TTS_MAX_INPUT_TEXT_CHARS`
+- `TTS_REQUEST_TIMEOUT_SECONDS`
+- `TTS_INFERENCE_BUSY_STATUS_CODE`
 
 Также применяются общие переменные из [../core/README.ru.md](../core/README.ru.md).
 
-Если нужно полностью отключить ускоренный Qwen lane, установите `QWEN_TTS_QWEN_FAST_ENABLED=false`. Это влияет только на optional fast lane и не отключает стандартный Torch Qwen path.
+Если нужно полностью отключить ускоренный Qwen lane, установите `TTS_QWEN_FAST_ENABLED=false`. Это влияет только на optional fast lane и не отключает стандартный Torch Qwen path.
 
 Если lane нужно включить на поддерживаемом Linux/Windows CUDA-хосте, установите optional accelerated runtime отдельно через `pip install faster-qwen3-tts` и соблюдайте upstream prerequisites (Python 3.10+, PyTorch 2.5.1+, NVIDIA GPU с CUDA).
 

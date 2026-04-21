@@ -8,6 +8,7 @@
       <path>core/config.py</path>
       <depends>none</depends>
       <verification-ref>V-M-CONFIG</verification-ref>
+      <migration-note>Runtime configuration uses the project-wide `TTS_*` namespace as the only supported environment contract, and legacy alias handling has been removed.</migration-note>
       <annotations>
         <class-CoreSettings PURPOSE="Frozen dataclass holding all shared runtime settings" />
         <fn-parse_core_settings_from_env PURPOSE="Parse environment variables into typed settings dict" />
@@ -481,7 +482,7 @@
       </annotations>
       <CrossLink from="M-WINDOWS-LAUNCHER" to="M-LAUNCHER" relation="delegates-profile-aware-env-and-exec-commands" />
       <CrossLink from="M-WINDOWS-LAUNCHER" to="M-PROFILE-RESOLVER" relation="consumes-resolved-family-module-contours" />
-      <CrossLink from="M-WINDOWS-LAUNCHER" to="M-CONFIG" relation="projects-qwen-tts-env-variables-into-launch-process" />
+      <CrossLink from="M-WINDOWS-LAUNCHER" to="M-CONFIG" relation="projects-runtime-env-variables-into-launch-process" />
     </M-WINDOWS-LAUNCHER>
 
     <M-WINDOWS-LAUNCHER-CMD NAME="WindowsInteractiveLauncherCmd" TYPE="SCRIPT" STATUS="implemented">
@@ -507,7 +508,7 @@
       </annotations>
       <CrossLink from="M-MACOS-LAUNCHER" to="M-LAUNCHER" relation="delegates-profile-aware-env-and-exec-commands" />
       <CrossLink from="M-MACOS-LAUNCHER" to="M-PROFILE-RESOLVER" relation="consumes-resolved-family-module-contours" />
-      <CrossLink from="M-MACOS-LAUNCHER" to="M-CONFIG" relation="projects-qwen-tts-env-variables-into-launch-process" />
+      <CrossLink from="M-MACOS-LAUNCHER" to="M-CONFIG" relation="projects-runtime-env-variables-into-launch-process" />
     </M-MACOS-LAUNCHER>
 
     <M-LINUX-LAUNCHER NAME="LinuxInteractiveLauncher" TYPE="SCRIPT" STATUS="implemented">

@@ -34,23 +34,23 @@ Not implemented:
 
 ```bash
 source .venv311/bin/activate
-export QWEN_TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
-export QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
-export QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
-export QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
-export QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
-export QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
+export TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
+export TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+export TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+export TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
+export TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
+export TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
 python -m telegram_bot
 ```
 
 ```powershell
 .\.venv311\Scripts\Activate.ps1
-$env:QWEN_TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
-$env:QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
-$env:QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
-$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED="true"
-$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE="20"
-$env:QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=".state/telegram_delivery_store.json"
+$env:TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
+$env:TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+$env:TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+$env:TTS_TELEGRAM_RATE_LIMIT_ENABLED="true"
+$env:TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE="20"
+$env:TTS_TELEGRAM_DELIVERY_STORE_PATH=".state/telegram_delivery_store.json"
 python -m telegram_bot
 ```
 
@@ -80,9 +80,9 @@ On the current Windows host with Docker Desktop Linux containers, the Telegram c
 
 The Telegram Docker lane is intentionally split between behavioral API checks and container-runtime checks. Use the checked-in compose file to exercise startup self-checks, state-volume wiring, and the polling loop, and pair that with `python scripts/validate_runtime.py telegram-live ...` for Bot API behavior. Treat the lane as documented operator procedure unless you also retain run-specific logs and external validation evidence from the same execution.
 
-1. Export a real `QWEN_TTS_TELEGRAM_BOT_TOKEN` before launching the compose lane. Add `QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID` only when you want the advisory `sendMessage` / `getUpdates` subchecks.
+1. Export a real `TTS_TELEGRAM_BOT_TOKEN` before launching the compose lane. Add `TTS_TELEGRAM_VALIDATION_CHAT_ID` only when you want the advisory `sendMessage` / `getUpdates` subchecks.
 2. Start the checked-in compose scenario in detached mode: `docker compose -f docker-compose.telegram-bot.yaml up --build -d telegram-bot`.
-3. Run the behavioral Bot API check on the host side with `python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"`; add `--chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."` only when you have a dedicated validation chat.
+3. Run the behavioral Bot API check on the host side with `python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"`; add `--chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."` only when you have a dedicated validation chat.
 4. Retain raw compose logs as the polling artifact: `docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot > .sisyphus/evidence/telegram-docker-log.txt`. Prefer stable markers such as `[Poller][start][BLOCK_DISPATCH_UPDATES]` over prose-only snippets.
 5. Tear down explicitly with `docker compose -f docker-compose.telegram-bot.yaml down --remove-orphans`. Reserve `down -v` for intentional state resets because the named `/app/.state` volume is part of the deployment contract.
 
@@ -100,7 +100,7 @@ Skip the Docker Telegram lane only when Docker is unavailable, the bot token is 
 
 The bot command surface still targets Qwen-oriented `/tts`, `/design`, and `/clone` workflows. Families that do not support design or clone operations should be surfaced through controlled capability errors rather than ambiguous runtime failures.
 
-The running bot now also treats `QWEN_TTS_ACTIVE_FAMILY` and `QWEN_TTS_DEFAULT_*_MODEL` bindings as the source of truth for whether `custom`, `design`, or `clone` are operational in this process. Command syntax remains visible, but unbound modes are rejected explicitly as runtime capability configuration errors instead of failing later with implicit transport-level behavior.
+The running bot now also treats `TTS_ACTIVE_FAMILY` and `TTS_DEFAULT_*_MODEL` bindings as the source of truth for whether `custom`, `design`, or `clone` are operational in this process. Command syntax remains visible, but unbound modes are rejected explicitly as runtime capability configuration errors instead of failing later with implicit transport-level behavior.
 
 ### `/tts` syntax
 
@@ -141,27 +141,28 @@ Telegram-specific settings are defined by [`TelegramSettings`](config.py:42).
 
 Important environment variables:
 
-- `QWEN_TTS_TELEGRAM_BOT_TOKEN`
-- `QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS`
-- `QWEN_TTS_TELEGRAM_ADMIN_USER_IDS`
-- `QWEN_TTS_TELEGRAM_DEV_MODE`
-- `QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED`
-- `QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE`
-- `QWEN_TTS_TELEGRAM_LOG_LEVEL`
-- `QWEN_TTS_TELEGRAM_DEFAULT_SPEAKER`
-- `QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH`
-- `QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH`
-- `QWEN_TTS_TELEGRAM_POLL_INTERVAL_SECONDS`
-- `QWEN_TTS_TELEGRAM_MAX_RETRIES`
+- `TTS_TELEGRAM_BOT_TOKEN`
+- `TTS_TELEGRAM_ALLOWED_USER_IDS`
+- `TTS_TELEGRAM_ADMIN_USER_IDS`
+- `TTS_TELEGRAM_DEV_MODE`
+- `TTS_TELEGRAM_RATE_LIMIT_ENABLED`
+- `TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE`
+- `TTS_TELEGRAM_LOG_LEVEL`
+- `TTS_TELEGRAM_DEFAULT_SPEAKER`
+- `TTS_TELEGRAM_MAX_TEXT_LENGTH`
+- `TTS_TELEGRAM_DELIVERY_STORE_PATH`
+- `TTS_TELEGRAM_POLL_INTERVAL_SECONDS`
+- `TTS_TELEGRAM_MAX_RETRIES`
 
 Shared core variables from [../core/README.md](../core/README.md) also apply.
 
 Important runtime binding variables from the shared contract:
 
-- `QWEN_TTS_ACTIVE_FAMILY`
-- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
-- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
-- `QWEN_TTS_DEFAULT_CLONE_MODEL`
+- `TTS_ACTIVE_FAMILY`
+- `TTS_DEFAULT_CUSTOM_MODEL`
+- `TTS_DEFAULT_DESIGN_MODEL`
+- `TTS_DEFAULT_CLONE_MODEL`
+
 
 ## Operational notes
 

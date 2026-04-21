@@ -6,16 +6,16 @@ services:
     image: qwen3-tts-server:dev
     command: ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
-      - "${QWEN_TTS_SERVER_PORT:-8000}:8000"
+      - "${TTS_SERVER_PORT:-8000}:8000"
     environment:
-      QWEN_TTS_BACKEND: ${QWEN_TTS_BACKEND:-torch}
-      QWEN_TTS_BACKEND_AUTOSELECT: ${QWEN_TTS_BACKEND_AUTOSELECT:-true}
-      QWEN_TTS_HOST: 0.0.0.0
-      QWEN_TTS_PORT: "8000"
-      QWEN_TTS_MODELS_DIR: /app/.models
-      QWEN_TTS_OUTPUTS_DIR: /app/.outputs
-      QWEN_TTS_VOICES_DIR: /app/.voices
-      QWEN_TTS_UPLOAD_STAGING_DIR: /app/.uploads
+      TTS_BACKEND: ${TTS_BACKEND:-torch}
+      TTS_BACKEND_AUTOSELECT: ${TTS_BACKEND_AUTOSELECT:-true}
+      TTS_HOST: 0.0.0.0
+      TTS_PORT: "8000"
+      TTS_MODELS_DIR: /app/.models
+      TTS_OUTPUTS_DIR: /app/.outputs
+      TTS_VOICES_DIR: /app/.voices
+      TTS_UPLOAD_STAGING_DIR: /app/.uploads
     volumes:
       - ./.models:/app/.models
       - ./.outputs:/app/.outputs

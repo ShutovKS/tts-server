@@ -67,8 +67,8 @@ For a fully working clone demo on this host, run the server in the qwen isolated
 ```powershell
 python -m launcher inspect --family qwen --module server
 python -m launcher check-env --family qwen --module server
-$env:QWEN_TTS_HOST='127.0.0.1'
-$env:QWEN_TTS_PORT='8020'
+$env:TTS_HOST='127.0.0.1'
+$env:TTS_PORT='8020'
 & .\.envs\qwen\Scripts\python.exe -m server
 ```
 
@@ -110,12 +110,12 @@ Async submission endpoints accept the `Idempotency-Key` header.
 ## Important runtime behavior
 
 - The adapter returns completed audio as regular HTTP response bodies.
-- `QWEN_TTS_ENABLE_STREAMING` remains a configuration flag, but it does not turn completed audio responses into a streaming transport automatically.
-- Clone uploads are staged in `QWEN_TTS_UPLOAD_STAGING_DIR` and cleaned up after request processing.
+- `TTS_ENABLE_STREAMING` remains a configuration flag, but it does not turn completed audio responses into a streaming transport automatically.
+- Clone uploads are staged in `TTS_UPLOAD_STAGING_DIR` and cleaned up after request processing.
 - Oversized text requests fail with the standard validation error.
 - Inference timeouts return `request_timeout` with HTTP `504`.
 - Unsupported model/family combinations now return controlled `model_capability_not_supported` errors with explicit capability metadata.
-- Runtime capability bindings are now expected to come from `QWEN_TTS_ACTIVE_FAMILY`, `QWEN_TTS_DEFAULT_CUSTOM_MODEL`, `QWEN_TTS_DEFAULT_DESIGN_MODEL`, and `QWEN_TTS_DEFAULT_CLONE_MODEL` rather than from implicit `.models/` inspection.
+- Runtime capability bindings are now expected to come from `TTS_ACTIVE_FAMILY`, `TTS_DEFAULT_CUSTOM_MODEL`, `TTS_DEFAULT_DESIGN_MODEL`, and `TTS_DEFAULT_CLONE_MODEL` rather than from implicit `.models/` inspection.
 - When a requested mode has no active runtime binding, the expected API behavior is a controlled unsupported-mode response rather than an internal failure.
 - `GET /health/ready` now includes host snapshot, mixed-backend routing summaries, `runtime_capability_map`, and per-mode `capability_status` so operators and thin adapters can distinguish artifact availability from runtime-bound capability availability.
 - The accelerated `qwen_fast` lane is additive and optional; readiness and model payloads may show it as a rejected route candidate with an explicit rejection reason when the selected fast lane is unavailable.
@@ -153,23 +153,23 @@ Server-specific settings extend [`CoreSettings`](../core/config.py:27) through [
 
 Important variables:
 
-- `QWEN_TTS_HOST`
-- `QWEN_TTS_PORT`
-- `QWEN_TTS_LOG_LEVEL`
-- `QWEN_TTS_ACTIVE_FAMILY`
-- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
-- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
-- `QWEN_TTS_DEFAULT_CLONE_MODEL`
-- `QWEN_TTS_DEFAULT_SAVE_OUTPUT`
-- `QWEN_TTS_ENABLE_STREAMING`
-- `QWEN_TTS_MAX_UPLOAD_SIZE_BYTES`
-- `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
-- `QWEN_TTS_REQUEST_TIMEOUT_SECONDS`
-- `QWEN_TTS_INFERENCE_BUSY_STATUS_CODE`
+- `TTS_HOST`
+- `TTS_PORT`
+- `TTS_LOG_LEVEL`
+- `TTS_ACTIVE_FAMILY`
+- `TTS_DEFAULT_CUSTOM_MODEL`
+- `TTS_DEFAULT_DESIGN_MODEL`
+- `TTS_DEFAULT_CLONE_MODEL`
+- `TTS_DEFAULT_SAVE_OUTPUT`
+- `TTS_ENABLE_STREAMING`
+- `TTS_MAX_UPLOAD_SIZE_BYTES`
+- `TTS_MAX_INPUT_TEXT_CHARS`
+- `TTS_REQUEST_TIMEOUT_SECONDS`
+- `TTS_INFERENCE_BUSY_STATUS_CODE`
 
 Shared variables from [../core/README.md](../core/README.md) also apply.
 
-If you want to disable the accelerated Qwen lane entirely, set `QWEN_TTS_QWEN_FAST_ENABLED=false`. This affects only the optional fast lane and does not disable the standard Torch Qwen path.
+If you want to disable the accelerated Qwen lane entirely, set `TTS_QWEN_FAST_ENABLED=false`. This affects only the optional fast lane and does not disable the standard Torch Qwen path.
 
 When enabling this lane on a supported Linux/Windows CUDA host, install the optional accelerated runtime separately with `pip install faster-qwen3-tts` and follow the upstream prerequisites (Python 3.10+, PyTorch 2.5.1+, NVIDIA GPU with CUDA).
 

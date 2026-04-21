@@ -304,8 +304,8 @@ python scripts/validate_runtime.py host-matrix
 python scripts/validate_runtime.py smoke-server
 python scripts/validate_runtime.py smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx
 python scripts/validate_runtime.py smoke-server --smoke-model-id OmniVoice-Custom --expected-backend torch
-python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"
-python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN" --chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
+python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"
+python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN" --chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
 ```
 
 - `host-matrix` проверяет текущий host snapshot и симулированные сценарии optional-lane для `qwen_fast`.
@@ -370,23 +370,23 @@ docker compose -f docker-compose.server.yaml up --build
 
 ```bash
 source .venv311/bin/activate
-export QWEN_TTS_TELEGRAM_BOT_TOKEN="ваш_токен_бота"
-export QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
-export QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
-export QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
-export QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
-export QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
+export TTS_TELEGRAM_BOT_TOKEN="ваш_токен_бота"
+export TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+export TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+export TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
+export TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
+export TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
 python -m telegram_bot
 ```
 
 ```powershell
 .\.venv311\Scripts\Activate.ps1
-$env:QWEN_TTS_TELEGRAM_BOT_TOKEN="ваш_токен_бота"
-$env:QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
-$env:QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
-$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED="true"
-$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE="20"
-$env:QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=".state/telegram_delivery_store.json"
+$env:TTS_TELEGRAM_BOT_TOKEN="ваш_токен_бота"
+$env:TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+$env:TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+$env:TTS_TELEGRAM_RATE_LIMIT_ENABLED="true"
+$env:TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE="20"
+$env:TTS_TELEGRAM_DELIVERY_STORE_PATH=".state/telegram_delivery_store.json"
 python -m telegram_bot
 ```
 
@@ -408,18 +408,19 @@ docker compose -f docker-compose.telegram-bot.yaml up --build
 
 Общие настройки читаются через [`CoreSettings.from_env()`](core/config.py:112). Основные переменные:
 
-- `QWEN_TTS_MODELS_DIR`
-- `QWEN_TTS_OUTPUTS_DIR`
-- `QWEN_TTS_VOICES_DIR`
-- `QWEN_TTS_UPLOAD_STAGING_DIR`
-- `QWEN_TTS_ACTIVE_FAMILY`
-- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
-- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
-- `QWEN_TTS_DEFAULT_CLONE_MODEL`
-- `QWEN_TTS_BACKEND`
-- `QWEN_TTS_BACKEND_AUTOSELECT`
-- `QWEN_TTS_SAMPLE_RATE`
-- `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
+- `TTS_MODELS_DIR`
+- `TTS_OUTPUTS_DIR`
+- `TTS_VOICES_DIR`
+- `TTS_UPLOAD_STAGING_DIR`
+- `TTS_ACTIVE_FAMILY`
+- `TTS_DEFAULT_CUSTOM_MODEL`
+- `TTS_DEFAULT_DESIGN_MODEL`
+- `TTS_DEFAULT_CLONE_MODEL`
+- `TTS_BACKEND`
+- `TTS_BACKEND_AUTOSELECT`
+- `TTS_SAMPLE_RATE`
+- `TTS_MAX_INPUT_TEXT_CHARS`
+
 
 Runtime теперь опирается на явный capability-binding contract. Активный процесс должен трактовать `family`, `custom_model`, `design_model` и `clone_model` как runtime-привязки, а не как вывод о том, какие каталоги случайно существуют на диске. Иными словами, это модели, привязанные к текущему запущенному контуру, а не синоним «скачано локально».
 

@@ -83,24 +83,25 @@ runtime = build_runtime(settings)
 
 Основные переменные окружения:
 
-- `QWEN_TTS_MODELS_DIR`
-- `QWEN_TTS_OUTPUTS_DIR`
-- `QWEN_TTS_VOICES_DIR`
-- `QWEN_TTS_UPLOAD_STAGING_DIR`
-- `QWEN_TTS_ACTIVE_FAMILY`
-- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
-- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
-- `QWEN_TTS_DEFAULT_CLONE_MODEL`
-- `QWEN_TTS_BACKEND`
-- `QWEN_TTS_BACKEND_AUTOSELECT`
-- `QWEN_TTS_QWEN_FAST_ENABLED`
-- `QWEN_TTS_MODEL_PRELOAD_POLICY`
-- `QWEN_TTS_MODEL_PRELOAD_IDS`
-- `QWEN_TTS_AUTH_MODE`
-- `QWEN_TTS_RATE_LIMIT_ENABLED`
-- `QWEN_TTS_QUOTA_ENABLED`
-- `QWEN_TTS_SAMPLE_RATE`
-- `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
+- `TTS_MODELS_DIR`
+- `TTS_OUTPUTS_DIR`
+- `TTS_VOICES_DIR`
+- `TTS_UPLOAD_STAGING_DIR`
+- `TTS_ACTIVE_FAMILY`
+- `TTS_DEFAULT_CUSTOM_MODEL`
+- `TTS_DEFAULT_DESIGN_MODEL`
+- `TTS_DEFAULT_CLONE_MODEL`
+- `TTS_BACKEND`
+- `TTS_BACKEND_AUTOSELECT`
+- `TTS_QWEN_FAST_ENABLED`
+- `TTS_MODEL_PRELOAD_POLICY`
+- `TTS_MODEL_PRELOAD_IDS`
+- `TTS_AUTH_MODE`
+- `TTS_RATE_LIMIT_ENABLED`
+- `TTS_QUOTA_ENABLED`
+- `TTS_SAMPLE_RATE`
+- `TTS_MAX_INPUT_TEXT_CHARS`
+
 
 Transport-specific настройки описаны в [../server/README.ru.md](../server/README.ru.md), [../telegram_bot/README.ru.md](../telegram_bot/README.ru.md) и [../cli/README.ru.md](../cli/README.ru.md).
 
@@ -121,7 +122,7 @@ Shared runtime contract теперь также включает явную runt
 
 ## Модельные артефакты
 
-Манифест расположен в [models/manifest.v1.json](models/manifest.v1.json). Локальные директории моделей разрешаются через [`ModelRegistry`](services/model_registry.py:20) относительно `QWEN_TTS_MODELS_DIR`.
+Манифест расположен в [models/manifest.v1.json](models/manifest.v1.json). Локальные директории моделей разрешаются через [`ModelRegistry`](services/model_registry.py:20) относительно `TTS_MODELS_DIR`.
 
 Runtime сейчас поддерживает следующие model families:
 
@@ -139,7 +140,7 @@ Runtime сейчас поддерживает следующие model families:
 - Autoselect backend теперь учитывает host/runtime compatibility и даёт объяснимый результат: MLX предпочитается на совместимых macOS-хостах, Torch — на Linux/Windows CPU/CUDA-хостах, а ONNX может выбираться для Piper voices.
 - Unsupported family operations теперь завершаются явными capability errors вместо неоднозначных runtime failure.
 - Локальное выполнение jobs рассчитано на single-node runtime внутри репозитория.
-- Временные clone uploads используют `QWEN_TTS_UPLOAD_STAGING_DIR`; транспортные адаптеры не должны писать временные clone-файлы в [../.outputs](../.outputs).
+- Временные clone uploads используют `TTS_UPLOAD_STAGING_DIR`; транспортные адаптеры не должны писать временные clone-файлы в [../.outputs](../.outputs).
 - Все транспортные адаптеры используют общую модель запросов и ошибок из core.
 
 ## Связанные документы

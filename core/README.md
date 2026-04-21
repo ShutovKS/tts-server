@@ -83,24 +83,25 @@ Shared settings are defined by [`CoreSettings`](config.py:27).
 
 Common environment variables:
 
-- `QWEN_TTS_MODELS_DIR`
-- `QWEN_TTS_OUTPUTS_DIR`
-- `QWEN_TTS_VOICES_DIR`
-- `QWEN_TTS_UPLOAD_STAGING_DIR`
-- `QWEN_TTS_ACTIVE_FAMILY`
-- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
-- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
-- `QWEN_TTS_DEFAULT_CLONE_MODEL`
-- `QWEN_TTS_BACKEND`
-- `QWEN_TTS_BACKEND_AUTOSELECT`
-- `QWEN_TTS_QWEN_FAST_ENABLED`
-- `QWEN_TTS_MODEL_PRELOAD_POLICY`
-- `QWEN_TTS_MODEL_PRELOAD_IDS`
-- `QWEN_TTS_AUTH_MODE`
-- `QWEN_TTS_RATE_LIMIT_ENABLED`
-- `QWEN_TTS_QUOTA_ENABLED`
-- `QWEN_TTS_SAMPLE_RATE`
-- `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
+- `TTS_MODELS_DIR`
+- `TTS_OUTPUTS_DIR`
+- `TTS_VOICES_DIR`
+- `TTS_UPLOAD_STAGING_DIR`
+- `TTS_ACTIVE_FAMILY`
+- `TTS_DEFAULT_CUSTOM_MODEL`
+- `TTS_DEFAULT_DESIGN_MODEL`
+- `TTS_DEFAULT_CLONE_MODEL`
+- `TTS_BACKEND`
+- `TTS_BACKEND_AUTOSELECT`
+- `TTS_QWEN_FAST_ENABLED`
+- `TTS_MODEL_PRELOAD_POLICY`
+- `TTS_MODEL_PRELOAD_IDS`
+- `TTS_AUTH_MODE`
+- `TTS_RATE_LIMIT_ENABLED`
+- `TTS_QUOTA_ENABLED`
+- `TTS_SAMPLE_RATE`
+- `TTS_MAX_INPUT_TEXT_CHARS`
+
 
 Transport-specific settings are documented in [../server/README.md](../server/README.md), [../telegram_bot/README.md](../telegram_bot/README.md), and [../cli/README.md](../cli/README.md).
 
@@ -121,7 +122,7 @@ These values are active runtime bindings, not a proxy for which artifacts happen
 
 ## Model assets
 
-The manifest lives in [models/manifest.v1.json](models/manifest.v1.json). Local model directories are resolved through [`ModelRegistry`](services/model_registry.py:20) relative to `QWEN_TTS_MODELS_DIR`.
+The manifest lives in [models/manifest.v1.json](models/manifest.v1.json). Local model directories are resolved through [`ModelRegistry`](services/model_registry.py:20) relative to `TTS_MODELS_DIR`.
 
 The runtime currently supports these model families:
 
@@ -139,7 +140,7 @@ For operators, the repository now composes runtime dependency contours from `pro
 - Backend autoselection is now host-aware and explainable; MLX is preferred on compatible macOS hosts, Torch is preferred on Linux/Windows CPU/CUDA hosts, and ONNX can be selected for Piper voices.
 - Unsupported family operations now fail intentionally with explicit capability errors instead of falling through into ambiguous runtime failures.
 - Local job execution is repository-local and intended for a single-node runtime.
-- Temporary clone uploads use `QWEN_TTS_UPLOAD_STAGING_DIR`; adapters should not write temporary clone files into [../.outputs](../.outputs).
+- Temporary clone uploads use `TTS_UPLOAD_STAGING_DIR`; adapters should not write temporary clone files into [../.outputs](../.outputs).
 - All transport adapters reuse the same core request and error model.
 
 ## Related docs

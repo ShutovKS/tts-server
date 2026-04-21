@@ -316,8 +316,8 @@ python scripts/validate_runtime.py host-matrix
 python scripts/validate_runtime.py smoke-server
 python scripts/validate_runtime.py smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx
 python scripts/validate_runtime.py smoke-server --smoke-model-id OmniVoice-Custom --expected-backend torch
-python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"
-python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN" --chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
+python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"
+python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN" --chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."
 ```
 
 - `host-matrix` validates the current host snapshot plus simulated `qwen_fast` optional-lane evidence.
@@ -396,23 +396,23 @@ See [server/README.md](server/README.md) for endpoints, async jobs, and configur
 
 ```bash
 source .venv311/bin/activate
-export QWEN_TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
-export QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
-export QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
-export QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
-export QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
-export QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
+export TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
+export TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+export TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+export TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
+export TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
+export TTS_TELEGRAM_DELIVERY_STORE_PATH=.state/telegram_delivery_store.json
 python -m telegram_bot
 ```
 
 ```powershell
 .\.venv311\Scripts\Activate.ps1
-$env:QWEN_TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
-$env:QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
-$env:QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
-$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED="true"
-$env:QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE="20"
-$env:QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH=".state/telegram_delivery_store.json"
+$env:TTS_TELEGRAM_BOT_TOKEN="your_bot_token_here"
+$env:TTS_TELEGRAM_ALLOWED_USER_IDS="123456789,987654321"
+$env:TTS_TELEGRAM_ADMIN_USER_IDS="123456789"
+$env:TTS_TELEGRAM_RATE_LIMIT_ENABLED="true"
+$env:TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE="20"
+$env:TTS_TELEGRAM_DELIVERY_STORE_PATH=".state/telegram_delivery_store.json"
 python -m telegram_bot
 ```
 
@@ -426,7 +426,7 @@ The compose scenario builds from [telegram_bot/Dockerfile](telegram_bot/Dockerfi
 
 This is a documented Telegram Docker lane, but this README does not claim retained host proof for startup, Bot API reachability, or polling success on this machine.
 
-For V1 Docker validation, use the detached compose lane and pair it with the existing live API checker instead of inventing a second Bot API probe: `docker compose -f docker-compose.telegram-bot.yaml up --build -d telegram-bot`, run `python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"` (plus the optional `--chat-id` / `--expect-update-*` flags when you have a dedicated validation chat), retain `docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot > .sisyphus/evidence/telegram-docker-log.txt`, and finish with `docker compose -f docker-compose.telegram-bot.yaml down --remove-orphans`.
+For V1 Docker validation, use the detached compose lane and pair it with the existing live API checker instead of inventing a second Bot API probe: `docker compose -f docker-compose.telegram-bot.yaml up --build -d telegram-bot`, run `python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"` (plus the optional `--chat-id` / `--expect-update-*` flags when you have a dedicated validation chat), retain `docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot > .sisyphus/evidence/telegram-docker-log.txt`, and finish with `docker compose -f docker-compose.telegram-bot.yaml down --remove-orphans`.
 
 ### Telegram token note
 
@@ -438,18 +438,19 @@ See [telegram_bot/README.md](telegram_bot/README.md) for command syntax, operati
 
 Shared settings are parsed by [`CoreSettings.from_env()`](core/config.py:112). Common variables include:
 
-- `QWEN_TTS_MODELS_DIR`
-- `QWEN_TTS_OUTPUTS_DIR`
-- `QWEN_TTS_VOICES_DIR`
-- `QWEN_TTS_UPLOAD_STAGING_DIR`
-- `QWEN_TTS_ACTIVE_FAMILY`
-- `QWEN_TTS_DEFAULT_CUSTOM_MODEL`
-- `QWEN_TTS_DEFAULT_DESIGN_MODEL`
-- `QWEN_TTS_DEFAULT_CLONE_MODEL`
-- `QWEN_TTS_BACKEND`
-- `QWEN_TTS_BACKEND_AUTOSELECT`
-- `QWEN_TTS_SAMPLE_RATE`
-- `QWEN_TTS_MAX_INPUT_TEXT_CHARS`
+- `TTS_MODELS_DIR`
+- `TTS_OUTPUTS_DIR`
+- `TTS_VOICES_DIR`
+- `TTS_UPLOAD_STAGING_DIR`
+- `TTS_ACTIVE_FAMILY`
+- `TTS_DEFAULT_CUSTOM_MODEL`
+- `TTS_DEFAULT_DESIGN_MODEL`
+- `TTS_DEFAULT_CLONE_MODEL`
+- `TTS_BACKEND`
+- `TTS_BACKEND_AUTOSELECT`
+- `TTS_SAMPLE_RATE`
+- `TTS_MAX_INPUT_TEXT_CHARS`
+
 
 The runtime is moving to an explicit capability-binding contract. The active process should treat `family`, `custom_model`, `design_model`, and `clone_model` as runtime-selected bindings rather than inferring supported modes from whatever model directories exist on disk. In other words, these are the models bound to the running contour, not a synonym for “downloaded locally”.
 

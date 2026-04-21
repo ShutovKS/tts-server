@@ -87,13 +87,14 @@
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Default settings use local runtime defaults for job backends, auth, manifest path, preload policy, rate limiting, and quota.</scenario-1>
-        <scenario-2 kind="success">Environment variables override manifest, preload, auth, rate-limit, and quota settings with normalized values.</scenario-2>
+        <scenario-2 kind="success">Canonical `TTS_*` environment variables override manifest, preload, auth, rate-limit, and quota settings with normalized values.</scenario-2>
         <scenario-3 kind="success">Explicit models, outputs, voices, and upload staging directories are parsed into the resulting settings object.</scenario-3>
         <scenario-4 kind="success">Runtime capability bindings for family, custom, design, and clone models are parsed from environment variables as active runtime configuration rather than inferred artifact presence.</scenario-4>
         <scenario-5 kind="success">When a capability binding is configured, requests without an explicit model resolve through the runtime-bound model for that execution mode.</scenario-5>
         <scenario-6 kind="failure">When a capability binding is missing, the API returns a controlled runtime capability error instead of falling back to another local model.</scenario-6>
         <scenario-7 kind="success">Launcher and readiness surfaces expose the runtime capability map explicitly so adapters can distinguish bound capabilities from local artifact presence.</scenario-7>
         <scenario-8 kind="success">CLI, Telegram, and the frontend demo consume runtime capability bindings instead of requiring explicit model identifiers in normal runtime-bound flows.</scenario-8>
+        <scenario-9 kind="success">Configuration uses the `TTS_*` namespace exclusively across runtime, validation, and operator surfaces.</scenario-9>
       </scenarios>
     </V-M-CONFIG>
 
@@ -490,9 +491,9 @@
       </test-files>
       <module-checks>
         <check-1>python -m pytest tests/integration/test_api.py tests/unit/server/test_health_routes.py tests/unit/server/test_tts_routes.py -m "integration or unit"</check-1>
-        <check-2>QWEN_TTS_RUN_SMOKE=1 python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-2>
-        <check-3>QWEN_TTS_RUN_SMOKE=1 QWEN_TTS_SMOKE_MODEL_ID=Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-3>
-        <check-4>QWEN_TTS_RUN_SMOKE=1 QWEN_TTS_SMOKE_MODEL_ID=Piper-en_US-lessac-medium QWEN_TTS_SMOKE_EXPECTED_BACKEND=onnx python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-4>
+        <check-2>TTS_RUN_SMOKE=1 python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-2>
+        <check-3>TTS_RUN_SMOKE=1 TTS_SMOKE_MODEL_ID=Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-3>
+        <check-4>TTS_RUN_SMOKE=1 TTS_SMOKE_MODEL_ID=Piper-en_US-lessac-medium TTS_SMOKE_EXPECTED_BACKEND=onnx python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-4>
         <check-5>python scripts/validate_runtime.py smoke-server</check-5>
         <check-6>python scripts/validate_runtime.py smoke-server --smoke-model-id Piper-en_US-lessac-medium --expected-backend onnx</check-6>
         <check-7>docker compose -f docker-compose.server.yaml up -d server</check-7>
@@ -560,8 +561,8 @@
       <module-checks>
         <check-1>python -m pytest tests/unit/test_telegram_bot -m unit</check-1>
         <check-2>python -m pytest tests/integration/test_telegram_adapter -m integration</check-2>
-        <check-3>python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN"</check-3>
-        <check-4>python scripts/validate_runtime.py telegram-live --bot-token "$QWEN_TTS_TELEGRAM_BOT_TOKEN" --chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$QWEN_TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."</check-4>
+        <check-3>python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"</check-3>
+        <check-4>python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN" --chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."</check-4>
         <check-5>docker compose -f docker-compose.telegram-bot.yaml up -d telegram-bot</check-5>
         <check-6>docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot</check-6>
       </module-checks>
@@ -829,7 +830,7 @@
       <goal>Platform support claims are backed by diagnostics, documentation, and available smoke evidence.</goal>
       <commands>
         <command-1>python -m pytest</command-1>
-        <command-2>QWEN_TTS_RUN_SMOKE=1 python -m pytest tests/smoke/test_local_runtime.py -m smoke</command-2>
+        <command-2>TTS_RUN_SMOKE=1 python -m pytest tests/smoke/test_local_runtime.py -m smoke</command-2>
         <command-3>docker compose -f docker-compose.server.yaml up -d server</command-3>
         <command-4>docker compose -f docker-compose.telegram-bot.yaml up -d telegram-bot</command-4>
       </commands>
