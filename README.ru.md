@@ -92,6 +92,22 @@ choco install ffmpeg -y
 
 ### Интерактивный Windows launcher
 
+Для запуска по двойному клику в Проводнике используйте корневой BAT-entrypoint:
+
+```bat
+.\launch.bat
+```
+
+Этот BAT-файл делегирует в существующий `scripts\launch-windows.cmd`, поэтому сохраняет совместимость с Windows-хостами, где `MachinePolicy` принудительно задаёт `AllSigned`.
+
+Теперь есть и рекомендуемый универсальный guided entrypoint, который сам маршрутизирует запуск в правильный wrapper для текущей платформы:
+
+```bash
+python -m launcher launch
+```
+
+На Windows этот универсальный вход делегирует в существующий CMD compatibility wrapper, поэтому guided flow остаётся доступным даже там, где PowerShell `MachinePolicy` принудительно задаёт `AllSigned`.
+
 Для управляемого запуска в Windows на хостах, где разрешён запуск `.ps1`, используйте интерактивный PowerShell-оркестратор:
 
 ```powershell
@@ -117,6 +133,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\launch-windows.ps1
 
 ### Интерактивный launcher для macOS
 
+Тот же универсальный guided entrypoint доступен и на macOS; он маршрутизирует запуск в существующий shell wrapper для текущего хоста:
+
+```bash
+python -m launcher launch
+```
+
 Для управляемого запуска на macOS с тем же profile-aware `launcher`, который используется в Windows flow, выполните:
 
 ```bash
@@ -133,6 +155,12 @@ bash ./scripts/launch-macos.sh
 - HF token и Telegram bot token остаются process-local и не сохраняются launcher’ом на диск.
 
 ### Интерактивный launcher для Linux
+
+Тот же универсальный guided entrypoint доступен и на Linux; он маршрутизирует запуск в существующий shell wrapper для текущего хоста:
+
+```bash
+python -m launcher launch
+```
 
 Для аналогичного управляемого запуска на Linux выполните:
 

@@ -94,6 +94,22 @@ If your machine allows unsigned local PowerShell scripts, you can still use `Set
 
 ### Interactive Windows launcher
 
+For double-click startup in Windows Explorer, use the repository-root BAT entrypoint:
+
+```bat
+.\launch.bat
+```
+
+This BAT file delegates to the existing `scripts\launch-windows.cmd` wrapper, so it preserves compatibility with Windows hosts where `MachinePolicy` enforces `AllSigned`.
+
+The recommended universal guided entrypoint now routes to the correct existing launcher wrapper for the current host:
+
+```bash
+python -m launcher launch
+```
+
+On Windows this universal entrypoint delegates to the existing CMD compatibility wrapper so the guided launch flow remains available even when PowerShell `MachinePolicy` enforces `AllSigned`.
+
 For a guided Windows-only launch flow on hosts where `.ps1` execution is allowed, use the interactive PowerShell orchestrator:
 
 ```powershell
@@ -119,6 +135,12 @@ Important notes:
 
 ### Interactive macOS launcher
 
+The same universal guided entrypoint is also available on macOS and dispatches to the existing shell wrapper for the current host:
+
+```bash
+python -m launcher launch
+```
+
 For a guided macOS launch flow that mirrors the Windows orchestrator while staying on top of the same profile-aware `launcher` package, use:
 
 ```bash
@@ -135,6 +157,12 @@ Important macOS notes:
 - HF tokens and Telegram bot tokens remain transient and process-local; the launcher does not persist them.
 
 ### Interactive Linux launcher
+
+The same universal guided entrypoint is also available on Linux and dispatches to the existing shell wrapper for the current host:
+
+```bash
+python -m launcher launch
+```
 
 For the analogous guided Linux launch flow, use:
 

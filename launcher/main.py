@@ -1,8 +1,8 @@
 # FILE: launcher/main.py
-# VERSION: 1.1.0
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Provide the profile-aware launcher CLI for inspecting, planning, validating, and executing runtime contours.
-#   SCOPE: CLI parsing and command dispatch for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env flows including CUDA-aware Qwen environment bootstrap verification
+#   PURPOSE: Provide the profile-aware launcher CLI for inspecting, planning, validating, executing, and dispatching runtime contours.
+#   SCOPE: CLI parsing and command dispatch for inspect, plan-run, doctor, bootstrap-env, check-env, exec, create-env, and universal interactive launch flows including CUDA-aware Qwen environment bootstrap verification
 #   DEPENDS: M-PROFILES
 #   LINKS: M-LAUNCHER
 #   ROLE: SCRIPT
@@ -20,12 +20,14 @@
 #   _build_runtime_bootstrap_steps - Build pre-requirements pip install commands for runtime-specific bootstrap dependencies.
 #   _probe_torch_runtime - Inspect the resolved interpreter for Torch version and CUDA visibility after bootstrap.
 #   _write_compiled_requirements_file - Materialize a temporary compiled requirements file for create-env execution
+#   _interactive_launcher_command - Build the platform-specific wrapper command for the universal interactive launch entrypoint
+#   _interactive_launcher_env - Build the environment overrides required by the universal interactive launch entrypoint
 #   parse_args - Parse launcher CLI arguments and subcommands
 #   main - Resolve the requested launcher command and emit JSON payloads or process exit codes
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Added CUDA-aware Qwen Torch bootstrap planning and post-install Torch runtime verification for isolated family environments]
+#   LAST_CHANGE: [v1.2.0 - Added a universal interactive launch subcommand that dispatches to the existing platform-specific wrapper scripts without duplicating their host-specific logic]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ import argparse
 import tempfile
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 
@@ -247,6 +250,40 @@ def _write_compiled_requirements_file(resolved: object) -> str:
     return handle.name
 
 
+# START_CONTRACT: _interactive_launcher_command
+#   PURPOSE: Build the platform-specific wrapper command for the universal interactive launch entrypoint.
+#   INPUTS: { project_root: Path - repository root used to resolve wrapper scripts, platform_system: str | None - optional host platform override for deterministic tests }
+#   OUTPUTS: { list[str] - subprocess-safe wrapper command }
+#   SIDE_EFFECTS: none
+#   LINKS: M-LAUNCHER, M-WINDOWS-LAUNCHER, M-WINDOWS-LAUNCHER-CMD, M-MACOS-LAUNCHER, M-LINUX-LAUNCHER
+# END_CONTRACT: _interactive_launcher_command
+def _interactive_launcher_command(project_root: Path, platform_system: str | None = None) -> list[str]:
+    detected_platform = (platform_system or platform.system()).lower()
+    scripts_root = project_root / "scripts"
+
+    if detected_platform == "windows":
+        return ["cmd.exe", "/c", str(scripts_root / "launch-windows.cmd")]
+    if detected_platform == "darwin":
+        return ["bash", str(scripts_root / "launch-macos.sh")]
+    if detected_platform == "linux":
+        return ["bash", str(scripts_root / "launch-linux.sh")]
+
+    raise ValueError(f"Unsupported interactive launcher platform: {detected_platform}")
+
+
+# START_CONTRACT: _interactive_launcher_env
+#   PURPOSE: Build the environment overrides required by the universal interactive launch entrypoint.
+#   INPUTS: { project_root: Path - repository root used by wrapper fallbacks }
+#   OUTPUTS: { dict[str, str] - environment mapping for wrapper delegation }
+#   SIDE_EFFECTS: Reads current process environment
+#   LINKS: M-LAUNCHER, M-WINDOWS-LAUNCHER-CMD
+# END_CONTRACT: _interactive_launcher_env
+def _interactive_launcher_env(project_root: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    env.setdefault("TTS_LAUNCH_PROJECT_ROOT", str(project_root))
+    return env
+
+
 def _runtime_bindings_payload(resolved: object) -> dict[str, object]:
     default_bindings_by_family = {
         "piper": {
@@ -307,6 +344,11 @@ def parse_args() -> argparse.Namespace:
         help="override the repository root used to resolve profiles and isolated family environments",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    subparsers.add_parser(
+        "launch",
+        help="dispatch to the existing interactive platform launcher wrapper for the current host",
+    )
 
     inspect_parser = subparsers.add_parser(
         "inspect",
@@ -379,6 +421,33 @@ def main() -> int:
     # END_BLOCK_RESOLVE_COMMAND_CONTEXT
 
     # START_BLOCK_DISPATCH_COMMAND
+    if args.command == "launch":
+        project_root = Path(args.project_root).resolve() if args.project_root else Path.cwd().resolve()
+        try:
+            command = _interactive_launcher_command(project_root)
+        except ValueError as exc:
+            print(
+                json.dumps(
+                    {
+                        "launch": {
+                            "project_root": str(project_root),
+                            "platform": platform.system().lower(),
+                            "error": "unsupported_platform",
+                            "message": str(exc),
+                        }
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 1
+        completed = subprocess.run(
+            command,
+            cwd=str(project_root),
+            env=_interactive_launcher_env(project_root),
+            check=False,
+        )
+        return completed.returncode
     if args.command == "inspect":
         resolved = resolver.resolve(family=args.family, module=args.module)
         payload = resolved.to_dict()
