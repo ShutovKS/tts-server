@@ -1,3 +1,5 @@
 -r profiles/packs/base/common.txt
+-r profiles/packs/module/server.txt
+-r profiles/packs/module/telegram.txt
 
 # CI intentionally excludes optional model-family runtimes and accelerated lanes.

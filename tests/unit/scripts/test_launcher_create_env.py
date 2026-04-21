@@ -155,6 +155,13 @@ def test_launcher_create_env_apply_reports_error_json_when_install_fails(
         nonlocal install_command
         if cmd[:4] == ["py", "-3.11", "-m", "venv"]:
             raise AssertionError("bootstrap step should be skipped when expected python already exists")
+        if len(cmd) >= 3 and cmd[1] == "-c":
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                stdout='{"torch": false, "qwen_tts": false}\n',
+                stderr="",
+            )
         if cmd[-2:] == ["--upgrade", "pip"]:
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         install_command = cmd

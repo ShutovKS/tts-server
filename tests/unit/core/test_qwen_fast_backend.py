@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -143,40 +144,42 @@ def test_qwen_fast_backend_executes_custom_design_and_clone(tmp_path: Path):
     reference_audio = tmp_path / "reference.wav"
     reference_audio.write_bytes(b"wav")
 
-    backend.execute(
-        ExecutionRequest(
-            handle=handle,
-            text="hello custom",
-            output_dir=tmp_path / "custom-output",
-            language="auto",
-            execution_mode="custom",
-            generation_kwargs={
-                "voice": "Vivian",
-                "instruct": "Normal tone",
-                "speed": 1.0,
-            },
+    with patch.object(backend, "_persist_first_wav", autospec=True) as persist_first_wav:
+        persist_first_wav.return_value = None
+        backend.execute(
+            ExecutionRequest(
+                handle=handle,
+                text="hello custom",
+                output_dir=tmp_path / "custom-output",
+                language="auto",
+                execution_mode="custom",
+                generation_kwargs={
+                    "voice": "Vivian",
+                    "instruct": "Normal tone",
+                    "speed": 1.0,
+                },
+            )
         )
-    )
-    backend.execute(
-        ExecutionRequest(
-            handle=handle,
-            text="hello design",
-            output_dir=tmp_path / "design-output",
-            language="auto",
-            execution_mode="design",
-            generation_kwargs={"instruct": "Warm narrator"},
+        backend.execute(
+            ExecutionRequest(
+                handle=handle,
+                text="hello design",
+                output_dir=tmp_path / "design-output",
+                language="auto",
+                execution_mode="design",
+                generation_kwargs={"instruct": "Warm narrator"},
+            )
         )
-    )
-    backend.execute(
-        ExecutionRequest(
-            handle=handle,
-            text="hello clone",
-            output_dir=tmp_path / "clone-output",
-            language="English",
-            execution_mode="clone",
-            generation_kwargs={"ref_audio": reference_audio, "ref_text": "reference text"},
+        backend.execute(
+            ExecutionRequest(
+                handle=handle,
+                text="hello clone",
+                output_dir=tmp_path / "clone-output",
+                language="English",
+                execution_mode="clone",
+                generation_kwargs={"ref_audio": reference_audio, "ref_text": "reference text"},
+            )
         )
-    )
 
     assert recorded_calls[0][0] == "custom"
     assert recorded_calls[0][1]["text"] == "hello custom"

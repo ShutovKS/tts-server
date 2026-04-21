@@ -83,10 +83,23 @@ class FamilyAwareRegistry(StubRegistry):
 
 
 def _make_core_settings(tmp_path: Path) -> CoreSettings:
+    qwen_clone_model = next(
+        spec.model_id
+        for spec in MODEL_SPECS.values()
+        if spec.family == "Qwen3-TTS" and spec.mode == "clone"
+    )
+    qwen_design_model = next(
+        spec.model_id
+        for spec in MODEL_SPECS.values()
+        if spec.family == "Qwen3-TTS" and spec.mode == "design"
+    )
     settings = CoreSettings(
         models_dir=tmp_path / ".models",
         outputs_dir=tmp_path / ".outputs",
         voices_dir=tmp_path / ".voices",
+        active_family="qwen",
+        default_design_model=qwen_design_model,
+        default_clone_model=qwen_clone_model,
     )
     settings.ensure_directories()
     return settings

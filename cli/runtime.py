@@ -1,5 +1,5 @@
 # FILE: cli/runtime.py
-# VERSION: 1.1.1
+# VERSION: 1.1.2
 # START_MODULE_CONTRACT
 #   PURPOSE: Define CLI runtime container with core runtime and CLI-specific state.
 #   SCOPE: Interactive CLI runtime orchestration, family/model selection helpers, exported model lookup, and CLI entrypoint
@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.1 - Refreshed GRACE module scope, dependencies, and export map to match the current CLI runtime surface]
+#   LAST_CHANGE: [v1.1.2 - Restored an interactive family-selection fallback and clean exit path when runtime capability bindings are absent so CLI launchability checks do not hang]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -155,9 +155,24 @@ class CliRuntime:
         runtime_family = self._runtime_bound_family()
         if runtime_family is not None:
             return runtime_family
-        print("Runtime capability bindings are not configured for this CLI process.")
-        print("Launch the CLI through the runtime-bound launcher flow first.")
-        return None
+
+        print("\nMulti-Family TTS CLI")
+        for index, family_key in enumerate(self._family_menu_order, start=1):
+            print(f"  {index}. {self._family_label(family_key)}")
+        print("\n  q. Exit")
+
+        choice = input("\nSelect family: ").strip().lower()
+        if choice == "q":
+            raise SystemExit(0)
+        try:
+            selected_index = int(choice) - 1
+        except ValueError:
+            print("Invalid selection.")
+            return None
+        if selected_index < 0 or selected_index >= len(self._family_menu_order):
+            print("Invalid selection.")
+            return None
+        return self._family_menu_order[selected_index]
 
     def _pick_spec_from_list(self, specs: Iterable, *, prompt: str) -> Optional[str]:
         spec_list = list(specs)
@@ -463,7 +478,7 @@ class CliRuntime:
     # END_CONTRACT: run_custom_session
     def run_custom_session(self, model_key: str | None) -> None:
         spec = CLI_MODELS[model_key] if model_key is not None else None
-        if spec is not None and not (self.settings.models_dir / spec.folder).exists():
+        if spec is not None and spec not in self._available_model_specs():
             print("Error: Model not found.")
             return
 
@@ -508,7 +523,7 @@ class CliRuntime:
     # END_CONTRACT: run_design_session
     def run_design_session(self, model_key: str | None) -> None:
         spec = CLI_MODELS[model_key] if model_key is not None else None
-        if spec is not None and not (self.settings.models_dir / spec.folder).exists():
+        if spec is not None and spec not in self._available_model_specs():
             print("Error: Model not found.")
             return
 
@@ -564,7 +579,7 @@ class CliRuntime:
             return
 
         spec = CLI_MODELS[model_key] if model_key is not None else None
-        if spec is not None and not (self.settings.models_dir / spec.folder).exists():
+        if spec is not None and spec not in self._available_model_specs():
             print("Error: Model not found.")
             return
 
@@ -712,6 +727,8 @@ class CliRuntime:
 def run_cli() -> None:
     try:
         CliRuntime().run()
+    except SystemExit:
+        return
     except KeyboardInterrupt:
         print("\nExiting...")
 

@@ -1,5 +1,5 @@
 # FILE: launcher/__init__.py
-# VERSION: 1.0.1
+# VERSION: 1.0.2
 # START_MODULE_CONTRACT
 #   PURPOSE: Re-export the launcher CLI entrypoint for profile-aware runtime commands.
 #   SCOPE: barrel exports for launcher consumers
@@ -14,9 +14,9 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Aligned the launcher package barrel with GRACE barrel-role semantics and summary mapping]
+#   LAST_CHANGE: [v1.0.2 - Re-exported the launcher.main module instead of the bare function so package imports preserve access to helper symbols used by tests]
 # END_CHANGE_SUMMARY
 
-from launcher.main import main
+from . import main
 
 __all__ = ["main"]
