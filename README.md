@@ -100,7 +100,13 @@ For double-click startup in Windows Explorer, use the repository-root BAT entryp
 .\launch.bat
 ```
 
-This BAT file delegates to the existing `scripts\launch-windows.cmd` wrapper, so it preserves compatibility with Windows hosts where `MachinePolicy` enforces `AllSigned`.
+This BAT file delegates to the shared root-level `launch.py` entrypoint, which then routes into the existing Windows CMD compatibility wrapper so compatibility with `MachinePolicy` `AllSigned` hosts is preserved.
+
+For a universal cross-platform CLI entrypoint, use:
+
+```bash
+python launch.py
+```
 
 The recommended universal guided entrypoint now routes to the correct existing launcher wrapper for the current host:
 
@@ -138,6 +144,18 @@ Important notes:
 The same universal guided entrypoint is also available on macOS and dispatches to the existing shell wrapper for the current host:
 
 ```bash
+python launch.py
+```
+
+or through the thin Unix shell wrapper:
+
+```bash
+./launch.sh
+```
+
+The legacy launcher-module entrypoint remains available too:
+
+```bash
 python -m launcher launch
 ```
 
@@ -159,6 +177,18 @@ Important macOS notes:
 ### Interactive Linux launcher
 
 The same universal guided entrypoint is also available on Linux and dispatches to the existing shell wrapper for the current host:
+
+```bash
+python launch.py
+```
+
+or through the thin Unix shell wrapper:
+
+```bash
+./launch.sh
+```
+
+The legacy launcher-module entrypoint remains available too:
 
 ```bash
 python -m launcher launch

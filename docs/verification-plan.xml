@@ -699,15 +699,37 @@
     </V-M-WINDOWS-LAUNCHER-CMD>
     <V-M-WINDOWS-LAUNCHER-BAT MODULE="M-WINDOWS-LAUNCHER-BAT" PRIORITY="medium">
       <test-files>
-        <file>tests/unit/scripts/test_windows_launcher_script.py</file>
+        <file>tests/unit/scripts/test_root_launchers.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/unit/scripts/test_windows_launcher_script.py -m unit</check-1>
+        <check-1>python -m pytest tests/unit/scripts/test_root_launchers.py -m unit</check-1>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">The repository-root BAT entrypoint remains double-clickable and delegates directly to the existing Windows CMD compatibility wrapper instead of duplicating the PowerShell or launcher orchestration logic.</scenario-1>
+        <scenario-1 kind="success">The repository-root BAT entrypoint remains double-clickable and delegates to the shared root-level Python launcher instead of duplicating the Windows wrapper or launcher orchestration logic.</scenario-1>
       </scenarios>
     </V-M-WINDOWS-LAUNCHER-BAT>
+    <V-M-ROOT-LAUNCHER MODULE="M-ROOT-LAUNCHER" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/scripts/test_root_launchers.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_root_launchers.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The root Python launcher delegates to the shared launcher dispatch command from the repository root and preserves the delegated exit code.</scenario-1>
+      </scenarios>
+    </V-M-ROOT-LAUNCHER>
+    <V-M-ROOT-LAUNCHER-SH MODULE="M-ROOT-LAUNCHER-SH" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/scripts/test_root_launchers.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/scripts/test_root_launchers.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The root Unix shell wrapper remains a thin entrypoint that executes the shared launch.py entrypoint through python3.</scenario-1>
+      </scenarios>
+    </V-M-ROOT-LAUNCHER-SH>
     <V-M-MACOS-LAUNCHER MODULE="M-MACOS-LAUNCHER" PRIORITY="medium">
       <test-files>
         <file>tests/unit/scripts/test_unix_launcher_scripts.py</file>

@@ -502,15 +502,37 @@
     </M-WINDOWS-LAUNCHER-CMD>
 
     <M-WINDOWS-LAUNCHER-BAT NAME="WindowsInteractiveLauncherBat" TYPE="SCRIPT" STATUS="implemented">
-      <purpose>Provide a repository-root clickable Windows BAT entrypoint that delegates to the existing CMD compatibility launcher for the supported guided launch flow.</purpose>
+      <purpose>Provide a repository-root clickable Windows BAT entrypoint that delegates to the shared root-level Python launcher for the supported guided launch flow.</purpose>
       <path>launch.bat</path>
-      <depends>M-WINDOWS-LAUNCHER-CMD</depends>
+      <depends>M-ROOT-LAUNCHER</depends>
       <verification-ref>V-M-WINDOWS-LAUNCHER-BAT</verification-ref>
       <annotations>
-        <fn-launch-bat PURPOSE="Resolve the repository-root CMD compatibility wrapper and delegate to it for double-click guided launch startup." />
+        <fn-launch-bat PURPOSE="Resolve the repository-root Python launcher and delegate to it for double-click guided launch startup." />
       </annotations>
-      <CrossLink from="M-WINDOWS-LAUNCHER-BAT" to="M-WINDOWS-LAUNCHER-CMD" relation="delegates-clickable-windows-entrypoint-to-policy-resilient-cmd-wrapper" />
+      <CrossLink from="M-WINDOWS-LAUNCHER-BAT" to="M-ROOT-LAUNCHER" relation="delegates-clickable-windows-entrypoint-to-shared-root-python-launcher" />
     </M-WINDOWS-LAUNCHER-BAT>
+
+    <M-ROOT-LAUNCHER NAME="RootUniversalLauncher" TYPE="SCRIPT" STATUS="implemented">
+      <purpose>Provide a repository-root cross-platform Python launcher entrypoint that delegates to the shared launcher dispatch command.</purpose>
+      <path>launch.py</path>
+      <depends>M-LAUNCHER</depends>
+      <verification-ref>V-M-ROOT-LAUNCHER</verification-ref>
+      <annotations>
+        <fn-main PURPOSE="Execute python -m launcher launch from the repository root and return the delegated exit code." />
+      </annotations>
+      <CrossLink from="M-ROOT-LAUNCHER" to="M-LAUNCHER" relation="delegates-root-cross-platform-entrypoint-to-shared-launch-dispatch-command" />
+    </M-ROOT-LAUNCHER>
+
+    <M-ROOT-LAUNCHER-SH NAME="RootUniversalLauncherShell" TYPE="SCRIPT" STATUS="implemented">
+      <purpose>Provide a repository-root Unix shell wrapper for the shared root-level Python launcher entrypoint.</purpose>
+      <path>launch.sh</path>
+      <depends>M-ROOT-LAUNCHER</depends>
+      <verification-ref>V-M-ROOT-LAUNCHER-SH</verification-ref>
+      <annotations>
+        <fn-launch-sh PURPOSE="Resolve the repository root and exec the shared launch.py entrypoint through python3." />
+      </annotations>
+      <CrossLink from="M-ROOT-LAUNCHER-SH" to="M-ROOT-LAUNCHER" relation="delegates-root-unix-shell-entrypoint-to-shared-root-python-launcher" />
+    </M-ROOT-LAUNCHER-SH>
 
     <M-MACOS-LAUNCHER NAME="MacOSInteractiveLauncher" TYPE="SCRIPT" STATUS="implemented">
       <purpose>Provide a macOS-only interactive shell launcher that orchestrates profile-aware family environments, optional model downloads, and adapter startup.</purpose>

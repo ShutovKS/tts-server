@@ -98,7 +98,13 @@ choco install ffmpeg -y
 .\launch.bat
 ```
 
-Этот BAT-файл делегирует в существующий `scripts\launch-windows.cmd`, поэтому сохраняет совместимость с Windows-хостами, где `MachinePolicy` принудительно задаёт `AllSigned`.
+Этот BAT-файл делегирует в общий корневой `launch.py`, а тот уже маршрутизирует запуск в существующий Windows CMD compatibility wrapper, поэтому совместимость с хостами, где `MachinePolicy` принудительно задаёт `AllSigned`, сохраняется.
+
+Для универсального cross-platform CLI-входа используйте:
+
+```bash
+python launch.py
+```
 
 Теперь есть и рекомендуемый универсальный guided entrypoint, который сам маршрутизирует запуск в правильный wrapper для текущей платформы:
 
@@ -136,6 +142,18 @@ powershell -ExecutionPolicy Bypass -File .\scripts\launch-windows.ps1
 Тот же универсальный guided entrypoint доступен и на macOS; он маршрутизирует запуск в существующий shell wrapper для текущего хоста:
 
 ```bash
+python launch.py
+```
+
+или через тонкий Unix shell wrapper:
+
+```bash
+./launch.sh
+```
+
+Прежний launcher-module entrypoint тоже остаётся доступным:
+
+```bash
 python -m launcher launch
 ```
 
@@ -157,6 +175,18 @@ bash ./scripts/launch-macos.sh
 ### Интерактивный launcher для Linux
 
 Тот же универсальный guided entrypoint доступен и на Linux; он маршрутизирует запуск в существующий shell wrapper для текущего хоста:
+
+```bash
+python launch.py
+```
+
+или через тонкий Unix shell wrapper:
+
+```bash
+./launch.sh
+```
+
+Прежний launcher-module entrypoint тоже остаётся доступным:
 
 ```bash
 python -m launcher launch
