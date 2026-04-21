@@ -115,10 +115,10 @@ def _run_exec_dry_run(
         launcher_main.os,
         "environ",
         {
-            "QWEN_TTS_ACTIVE_FAMILY": family,
-            "QWEN_TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
-            "QWEN_TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
-            "QWEN_TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
+            "TTS_ACTIVE_FAMILY": family,
+            "TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+            "TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+            "TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
         },
     )
     monkeypatch.setattr(
@@ -163,17 +163,17 @@ def test_launcher_exec_dry_run_outputs_platform_aware_qwen_command(
                 "custom": {
                     "bound": True,
                     "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
-                    "env_var": "QWEN_TTS_DEFAULT_CUSTOM_MODEL",
+                    "env_var": "TTS_DEFAULT_CUSTOM_MODEL",
                 },
                 "design": {
                     "bound": True,
                     "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
-                    "env_var": "QWEN_TTS_DEFAULT_DESIGN_MODEL",
+                    "env_var": "TTS_DEFAULT_DESIGN_MODEL",
                 },
                 "clone": {
                     "bound": True,
                     "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
-                    "env_var": "QWEN_TTS_DEFAULT_CLONE_MODEL",
+                    "env_var": "TTS_DEFAULT_CLONE_MODEL",
                 },
             },
         },
@@ -228,9 +228,9 @@ def test_launcher_exec_reports_missing_python_when_env_absent():
                 "clone_model": "OmniVoice-Clone",
             },
             "capability_status": {
-                "custom": {"bound": True, "model": "OmniVoice-Custom", "env_var": "QWEN_TTS_DEFAULT_CUSTOM_MODEL"},
-                "design": {"bound": True, "model": "OmniVoice-Design", "env_var": "QWEN_TTS_DEFAULT_DESIGN_MODEL"},
-                "clone": {"bound": True, "model": "OmniVoice-Clone", "env_var": "QWEN_TTS_DEFAULT_CLONE_MODEL"},
+                "custom": {"bound": True, "model": "OmniVoice-Custom", "env_var": "TTS_DEFAULT_CUSTOM_MODEL"},
+                "design": {"bound": True, "model": "OmniVoice-Design", "env_var": "TTS_DEFAULT_DESIGN_MODEL"},
+                "clone": {"bound": True, "model": "OmniVoice-Clone", "env_var": "TTS_DEFAULT_CLONE_MODEL"},
             },
         }
         assert payload["exec"]["error"] == "expected_python_missing"

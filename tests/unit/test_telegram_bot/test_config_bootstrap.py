@@ -30,7 +30,6 @@ and bootstrap/runtime assembly.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -42,10 +41,10 @@ from telegram_bot.config import TelegramSettings
 def _make_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
     """Create test environment with required variables."""
     env = {
-        "QWEN_TTS_TELEGRAM_BOT_TOKEN": "test_token_123:ABCabc123",
-        "QWEN_TTS_MODELS_DIR": ".models",
-        "QWEN_TTS_OUTPUTS_DIR": ".outputs",
-        "QWEN_TTS_VOICES_DIR": ".voices",
+        "TTS_TELEGRAM_BOT_TOKEN": "test_token_123:ABCabc123",
+        "TTS_MODELS_DIR": ".models",
+        "TTS_OUTPUTS_DIR": ".outputs",
+        "TTS_VOICES_DIR": ".voices",
     }
     if overrides:
         env.update(overrides)
@@ -66,11 +65,11 @@ class TestTelegramSettingsFromEnv:
         """Test that from_env parses Telegram-specific environment variables."""
         env = _make_env(
             {
-                "QWEN_TTS_TELEGRAM_BOT_TOKEN": "my_token",
-                "QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS": "111,222,333",
-                "QWEN_TTS_TELEGRAM_LOG_LEVEL": "debug",
-                "QWEN_TTS_TELEGRAM_DEFAULT_SPEAKER": "Alex",
-                "QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH": "500",
+                "TTS_TELEGRAM_BOT_TOKEN": "my_token",
+                "TTS_TELEGRAM_ALLOWED_USER_IDS": "111,222,333",
+                "TTS_TELEGRAM_LOG_LEVEL": "debug",
+                "TTS_TELEGRAM_DEFAULT_SPEAKER": "Alex",
+                "TTS_TELEGRAM_MAX_TEXT_LENGTH": "500",
             }
         )
 
@@ -86,11 +85,11 @@ class TestTelegramSettingsFromEnv:
         """Test that from_env uses parse_core_settings_from_env for core settings."""
         env = _make_env(
             {
-                "QWEN_TTS_SAMPLE_RATE": "48000",
-                "QWEN_TTS_BACKEND": "mlx",
-                "QWEN_TTS_AUTH_MODE": "static_bearer",
-                "QWEN_TTS_AUTH_STATIC_BEARER_TOKEN": "secret_token",
-                "QWEN_TTS_RATE_LIMIT_ENABLED": "true",
+                "TTS_SAMPLE_RATE": "48000",
+                "TTS_BACKEND": "mlx",
+                "TTS_AUTH_MODE": "static_bearer",
+                "TTS_AUTH_STATIC_BEARER_TOKEN": "secret_token",
+                "TTS_RATE_LIMIT_ENABLED": "true",
             }
         )
 
@@ -153,10 +152,10 @@ class TestTelegramSettingsFromEnv:
         """Test that from_env applies correct defaults."""
         # Create env without Telegram-specific vars to test defaults
         env = {
-            "QWEN_TTS_TELEGRAM_BOT_TOKEN": "test_token_123:ABCabc123",
-            "QWEN_TTS_MODELS_DIR": ".models",
-            "QWEN_TTS_OUTPUTS_DIR": ".outputs",
-            "QWEN_TTS_VOICES_DIR": ".voices",
+            "TTS_TELEGRAM_BOT_TOKEN": "test_token_123:ABCabc123",
+            "TTS_MODELS_DIR": ".models",
+            "TTS_OUTPUTS_DIR": ".outputs",
+            "TTS_VOICES_DIR": ".voices",
         }
 
         settings = TelegramSettings.from_env(env)
@@ -172,7 +171,7 @@ class TestTelegramSettingsValidation:
 
     def test_validate_requires_bot_token(self):
         """Test that validation fails without bot token."""
-        env = _make_env({"QWEN_TTS_TELEGRAM_BOT_TOKEN": ""})
+        env = _make_env({"TTS_TELEGRAM_BOT_TOKEN": ""})
         settings = TelegramSettings.from_env(env)
 
         errors = settings.validate()
@@ -182,7 +181,7 @@ class TestTelegramSettingsValidation:
 
     def test_validate_rejects_negative_max_text_length(self):
         """Test that validation rejects negative max text length."""
-        env = _make_env({"QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH": "-1"})
+        env = _make_env({"TTS_TELEGRAM_MAX_TEXT_LENGTH": "-1"})
         settings = TelegramSettings.from_env(env)
 
         errors = settings.validate()
@@ -214,7 +213,7 @@ class TestAllowlistPolicy:
 
     def test_is_user_allowed_with_allowlist(self):
         """Test that allowlist restricts access."""
-        env = _make_env({"QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS": "111,222"})
+        env = _make_env({"TTS_TELEGRAM_ALLOWED_USER_IDS": "111,222"})
         settings = TelegramSettings.from_env(env)
 
         assert settings.is_user_allowed(111) is True
@@ -246,7 +245,7 @@ class TestTelegramRuntimeBootstrap:
 
     def test_build_telegram_runtime_validates_settings(self):
         """Test that build_telegram_runtime validates settings before building."""
-        env = _make_env({"QWEN_TTS_TELEGRAM_BOT_TOKEN": ""})
+        env = _make_env({"TTS_TELEGRAM_BOT_TOKEN": ""})
         settings = TelegramSettings.from_env(env)
 
         with pytest.raises(ValueError) as exc_info:
@@ -276,9 +275,9 @@ class TestTelegramRuntimeBootstrap:
         """Telegram operational settings should be parsed from env."""
         env = _make_env(
             {
-                "QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH": "/tmp/telegram-delivery.json",
-                "QWEN_TTS_TELEGRAM_POLL_INTERVAL_SECONDS": "2.5",
-                "QWEN_TTS_TELEGRAM_MAX_RETRIES": "7",
+                "TTS_TELEGRAM_DELIVERY_STORE_PATH": "/tmp/telegram-delivery.json",
+                "TTS_TELEGRAM_POLL_INTERVAL_SECONDS": "2.5",
+                "TTS_TELEGRAM_MAX_RETRIES": "7",
             }
         )
         settings = TelegramSettings.from_env(env)
@@ -293,28 +292,28 @@ class TestConfigPathResolution:
 
     def test_models_dir_resolved_from_env(self):
         """Test that models_dir is resolved from environment variable."""
-        env = _make_env({"QWEN_TTS_MODELS_DIR": "/custom/models"})
+        env = _make_env({"TTS_MODELS_DIR": "/custom/models"})
         settings = TelegramSettings.from_env(env)
 
         assert settings.models_dir == Path("/custom/models").resolve()
 
     def test_mlx_models_dir_resolved_from_env(self):
         """Test that mlx_models_dir is resolved from environment variable."""
-        env = _make_env({"QWEN_TTS_MLX_MODELS_DIR": "/custom/mlx-models"})
+        env = _make_env({"TTS_MLX_MODELS_DIR": "/custom/mlx-models"})
         settings = TelegramSettings.from_env(env)
 
         assert settings.mlx_models_dir == Path("/custom/mlx-models").resolve()
 
     def test_outputs_dir_resolved_from_env(self):
         """Test that outputs_dir is resolved from environment variable."""
-        env = _make_env({"QWEN_TTS_OUTPUTS_DIR": "/custom/outputs"})
+        env = _make_env({"TTS_OUTPUTS_DIR": "/custom/outputs"})
         settings = TelegramSettings.from_env(env)
 
         assert settings.outputs_dir == Path("/custom/outputs").resolve()
 
     def test_voices_dir_resolved_from_env(self):
         """Test that voices_dir is resolved from environment variable."""
-        env = _make_env({"QWEN_TTS_VOICES_DIR": "/custom/voices"})
+        env = _make_env({"TTS_VOICES_DIR": "/custom/voices"})
         settings = TelegramSettings.from_env(env)
 
         assert settings.voices_dir == Path("/custom/voices").resolve()

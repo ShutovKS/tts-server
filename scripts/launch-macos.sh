@@ -25,7 +25,7 @@
 #   get_model_mode - Derive the runtime lane mode for a selected model key.
 #   get_runtime_capability_bindings - Derive runtime capability bindings from ensured models and selected family.
 #   show_runtime_capability_bindings - Print the final runtime capability binding summary before launch.
-#   configure_service_environment - Apply transient QWEN_TTS_* and Telegram settings for the selected launch contour and runtime capability bindings.
+#   configure_service_environment - Apply transient TTS_* and Telegram settings for the selected launch contour and runtime capability bindings.
 #   wait_http_health_check - Probe the configured HTTP server until /health/live responds or timeout elapses.
 #   start_selected_service - Launch the selected adapter through the profile-aware launcher exec command.
 #   main - Run the interactive launcher flow end-to-end.
@@ -550,10 +550,10 @@ show_runtime_capability_bindings() {
     local clone_model="$4"
 
     printf '\nRuntime capability bindings:\n'
-    printf '  QWEN_TTS_ACTIVE_FAMILY=%s\n' "$family"
-    printf '  QWEN_TTS_DEFAULT_CUSTOM_MODEL=%s\n' "${custom_model:-<unbound>}"
-    printf '  QWEN_TTS_DEFAULT_DESIGN_MODEL=%s\n' "${design_model:-<unbound>}"
-    printf '  QWEN_TTS_DEFAULT_CLONE_MODEL=%s\n' "${clone_model:-<unbound>}"
+    printf '  TTS_ACTIVE_FAMILY=%s\n' "$family"
+    printf '  TTS_DEFAULT_CUSTOM_MODEL=%s\n' "${custom_model:-<unbound>}"
+    printf '  TTS_DEFAULT_DESIGN_MODEL=%s\n' "${design_model:-<unbound>}"
+    printf '  TTS_DEFAULT_CLONE_MODEL=%s\n' "${clone_model:-<unbound>}"
 }
 
 configure_service_environment() {
@@ -565,68 +565,68 @@ configure_service_environment() {
     local design_model="$6"
     local clone_model="$7"
 
-    export QWEN_TTS_MODELS_DIR="$project_root/.models"
-    export QWEN_TTS_OUTPUTS_DIR="$project_root/.outputs"
-    export QWEN_TTS_VOICES_DIR="$project_root/.voices"
-    export QWEN_TTS_UPLOAD_STAGING_DIR="$project_root/.uploads"
-    export QWEN_TTS_ACTIVE_FAMILY="$bindings_family"
+    export TTS_MODELS_DIR="$project_root/.models"
+    export TTS_OUTPUTS_DIR="$project_root/.outputs"
+    export TTS_VOICES_DIR="$project_root/.voices"
+    export TTS_UPLOAD_STAGING_DIR="$project_root/.uploads"
+    export TTS_ACTIVE_FAMILY="$bindings_family"
     if [[ -n "$custom_model" ]]; then
-        export QWEN_TTS_DEFAULT_CUSTOM_MODEL="$custom_model"
+        export TTS_DEFAULT_CUSTOM_MODEL="$custom_model"
     else
-        unset QWEN_TTS_DEFAULT_CUSTOM_MODEL 2>/dev/null || true
+        unset TTS_DEFAULT_CUSTOM_MODEL 2>/dev/null || true
     fi
     if [[ -n "$design_model" ]]; then
-        export QWEN_TTS_DEFAULT_DESIGN_MODEL="$design_model"
+        export TTS_DEFAULT_DESIGN_MODEL="$design_model"
     else
-        unset QWEN_TTS_DEFAULT_DESIGN_MODEL 2>/dev/null || true
+        unset TTS_DEFAULT_DESIGN_MODEL 2>/dev/null || true
     fi
     if [[ -n "$clone_model" ]]; then
-        export QWEN_TTS_DEFAULT_CLONE_MODEL="$clone_model"
+        export TTS_DEFAULT_CLONE_MODEL="$clone_model"
     else
-        unset QWEN_TTS_DEFAULT_CLONE_MODEL 2>/dev/null || true
+        unset TTS_DEFAULT_CLONE_MODEL 2>/dev/null || true
     fi
     local selected_backend
     selected_backend="$(json_query "$inspect_payload" 'selected_backend')"
     if [[ -n "$selected_backend" ]]; then
-        export QWEN_TTS_BACKEND="$selected_backend"
-        export QWEN_TTS_BACKEND_AUTOSELECT=false
+        export TTS_BACKEND="$selected_backend"
+        export TTS_BACKEND_AUTOSELECT=false
     fi
-    export QWEN_TTS_REQUEST_TIMEOUT_SECONDS=300
+    export TTS_REQUEST_TIMEOUT_SECONDS=300
 
     case "$service_key" in
         server)
             local bind_host bind_port
             bind_host="$(read_trimmed_input 'Host for HTTP server [0.0.0.0]: ')"
             bind_port="$(read_trimmed_input 'Port for HTTP server [8000]: ')"
-            export QWEN_TTS_HOST="${bind_host:-0.0.0.0}"
-            export QWEN_TTS_PORT="${bind_port:-8000}"
-            export QWEN_TTS_LOG_LEVEL=info
+            export TTS_HOST="${bind_host:-0.0.0.0}"
+            export TTS_PORT="${bind_port:-8000}"
+            export TTS_LOG_LEVEL=info
             ;;
         telegram)
-            if [[ -z "${QWEN_TTS_TELEGRAM_BOT_TOKEN:-}" ]]; then
-                export QWEN_TTS_TELEGRAM_BOT_TOKEN
-                QWEN_TTS_TELEGRAM_BOT_TOKEN="$(read_secret_input 'Enter Telegram bot token (it will not be saved): ')"
+            if [[ -z "${TTS_TELEGRAM_BOT_TOKEN:-}" ]]; then
+                export TTS_TELEGRAM_BOT_TOKEN
+                TTS_TELEGRAM_BOT_TOKEN="$(read_secret_input 'Enter Telegram bot token (it will not be saved): ')"
             fi
-            if [[ -z "${QWEN_TTS_TELEGRAM_BOT_TOKEN:-}" ]]; then
-                printf 'QWEN_TTS_TELEGRAM_BOT_TOKEN is required for Telegram launch.\n' >&2
+            if [[ -z "${TTS_TELEGRAM_BOT_TOKEN:-}" ]]; then
+                printf 'TTS_TELEGRAM_BOT_TOKEN is required for Telegram launch.\n' >&2
                 return 1
             fi
             local allowed_ids admin_ids
             allowed_ids="$(read_trimmed_input 'Allowed user IDs (comma-separated, optional): ')"
             admin_ids="$(read_trimmed_input 'Admin user IDs (comma-separated, optional): ')"
             if [[ -n "$allowed_ids" ]]; then
-                export QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS="$allowed_ids"
+                export TTS_TELEGRAM_ALLOWED_USER_IDS="$allowed_ids"
             fi
             if [[ -n "$admin_ids" ]]; then
-                export QWEN_TTS_TELEGRAM_ADMIN_USER_IDS="$admin_ids"
+                export TTS_TELEGRAM_ADMIN_USER_IDS="$admin_ids"
             fi
-            export QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
-            export QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
-            export QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH="$project_root/.state/telegram_delivery_store.json"
-            export QWEN_TTS_TELEGRAM_LOG_LEVEL=info
+            export TTS_TELEGRAM_RATE_LIMIT_ENABLED=true
+            export TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE=20
+            export TTS_TELEGRAM_DELIVERY_STORE_PATH="$project_root/.state/telegram_delivery_store.json"
+            export TTS_TELEGRAM_LOG_LEVEL=info
             ;;
         *)
-            export QWEN_TTS_AUTO_PLAY_CLI=true
+            export TTS_AUTO_PLAY_CLI=true
             ;;
     esac
 }
@@ -671,7 +671,7 @@ start_selected_service() {
         local server_pid=$!
         disown "$server_pid" 2>/dev/null || true
         printf 'Server process started with PID %s.\n' "$server_pid"
-        wait_http_health_check "${QWEN_TTS_HOST:-0.0.0.0}" "${QWEN_TTS_PORT:-8000}" || true
+        wait_http_health_check "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}" || true
         return 0
     fi
 

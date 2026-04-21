@@ -42,7 +42,7 @@ def test_windows_launcher_script_exists_with_grace_contract():
     assert "# START_MODULE_CONTRACT" in contents
     assert "#   PURPOSE: Provide an interactive Windows PowerShell launcher" in contents
     assert "$SCRIPT:MODEL_OPTIONS" in contents
-    assert "QWEN_TTS_LAUNCH_PROJECT_ROOT" in contents
+    assert "TTS_LAUNCH_PROJECT_ROOT" in contents
 
 
 def test_windows_launcher_script_reuses_profile_aware_launcher_and_family_download_paths():
@@ -57,10 +57,10 @@ def test_windows_launcher_script_reuses_profile_aware_launcher_and_family_downlo
     assert "127.0.0.1" in contents
     assert "Selected family:" in contents
     assert "Runtime capability bindings:" in contents
-    assert "QWEN_TTS_ACTIVE_FAMILY" in contents
-    assert "QWEN_TTS_DEFAULT_CUSTOM_MODEL" in contents
-    assert "QWEN_TTS_DEFAULT_DESIGN_MODEL" in contents
-    assert "QWEN_TTS_DEFAULT_CLONE_MODEL" in contents
+    assert "TTS_ACTIVE_FAMILY" in contents
+    assert "TTS_DEFAULT_CUSTOM_MODEL" in contents
+    assert "TTS_DEFAULT_DESIGN_MODEL" in contents
+    assert "TTS_DEFAULT_CLONE_MODEL" in contents
     assert "snapshot_download" in contents
     assert "piper.download_voices" in contents
     assert "HF_TOKEN" in contents
@@ -76,7 +76,7 @@ def test_windows_cmd_launcher_wraps_powershell_script_without_file_execution():
     assert "START_MODULE_CONTRACT" in contents
     assert "bypasses PowerShell script-signing policy" in contents
     assert "launch-windows.ps1" in contents
-    assert "QWEN_TTS_LAUNCH_PROJECT_ROOT" in contents
+    assert "TTS_LAUNCH_PROJECT_ROOT" in contents
     assert "powershell.exe -NoLogo -NoProfile -Command" in contents
     assert "Get-Content -LiteralPath" in contents
     assert "[ScriptBlock]::Create" in contents

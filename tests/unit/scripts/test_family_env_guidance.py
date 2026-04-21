@@ -91,7 +91,7 @@ def test_runtime_self_check_exposes_dedicated_family_env_guidance(
                     transport="http",
                     docker_supported=True,
                     pack_refs={"module": ("server",)},
-                    env_prefixes=("QWEN_TTS_",),
+                    env_prefixes=("TTS_",),
                 ),
             )
 

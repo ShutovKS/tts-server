@@ -1,5 +1,5 @@
 # FILE: core/config.py
-# VERSION: 1.0.0
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Parse and validate environment-based runtime configuration for all components.
 #   SCOPE: CoreSettings dataclass, environment parsing helpers, typed settings dict
@@ -23,6 +23,7 @@
 #   CoreSettings - Frozen dataclass holding all shared runtime settings including active capability bindings
 #   CoreSettingsEnv - TypedDict describing parsed settings shape
 #   AuthMode - Literal type for authentication mode
+#   env_value - Resolve an environment variable by exact canonical name only
 #   parse_core_settings_from_env - Parse environment variables into typed settings dict
 #   env_text - Read string from environment with default
 #   env_int - Read integer from environment with default
@@ -31,7 +32,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.2.0 - Removed deprecated env compatibility so runtime configuration accepts only TTS_* variables]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -184,6 +185,18 @@ class CoreSettings:
         return None
 
 
+# START_CONTRACT: env_value
+#   PURPOSE: Resolve an environment variable value using its exact canonical name.
+#   INPUTS: { name: str - Canonical environment variable name, environ: Mapping[str, str] | None - Optional environment mapping override }
+#   OUTPUTS: { str | None - Resolved environment value or None when unset }
+#   SIDE_EFFECTS: none
+#   LINKS: M-CONFIG
+# END_CONTRACT: env_value
+def env_value(name: str, environ: Mapping[str, str] | None = None) -> str | None:
+    env = os.environ if environ is None else environ
+    return env.get(name)
+
+
 # START_CONTRACT: env_text
 #   PURPOSE: Read a string environment variable with a provided default fallback.
 #   INPUTS: { name: str - Environment variable name to read, default: str - Fallback value when the variable is unset, environ: Mapping[str, str] | None - Optional environment mapping override }
@@ -192,8 +205,8 @@ class CoreSettings:
 #   LINKS: M-CONFIG
 # END_CONTRACT: env_text
 def env_text(name: str, default: str, environ: Mapping[str, str] | None = None) -> str:
-    env = os.environ if environ is None else environ
-    return env.get(name, default)
+    value = env_value(name, environ)
+    return default if value is None else value
 
 
 # START_CONTRACT: env_int
@@ -217,8 +230,7 @@ def env_int(name: str, default: int, environ: Mapping[str, str] | None = None) -
 def env_bool(
     name: str, default: bool, environ: Mapping[str, str] | None = None
 ) -> bool:
-    env = os.environ if environ is None else environ
-    value = env.get(name)
+    value = env_value(name, environ)
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
@@ -234,8 +246,8 @@ def env_bool(
 def env_path(
     name: str, default: Path, environ: Mapping[str, str] | None = None
 ) -> Path:
-    env = os.environ if environ is None else environ
-    return Path(env.get(name, str(default))).resolve()
+    value = env_value(name, environ)
+    return Path(str(default) if value is None else value).resolve()
 
 
 def _parse_csv_env(
@@ -261,77 +273,77 @@ def parse_core_settings_from_env(
     environ: Mapping[str, str] | None = None,
 ) -> CoreSettingsEnv:
     # START_BLOCK_PARSE_AUTH_SETTINGS
-    backend = env_text("QWEN_TTS_BACKEND", "", environ).strip() or None
-    auth_mode = env_text("QWEN_TTS_AUTH_MODE", "off", environ).strip().lower() or "off"
+    backend = env_text("TTS_BACKEND", "", environ).strip() or None
+    auth_mode = env_text("TTS_AUTH_MODE", "off", environ).strip().lower() or "off"
     if auth_mode not in {"off", "static_bearer"}:
         raise ValueError(f"Unsupported auth mode: {auth_mode}")
     auth_static_bearer_token = (
-        env_text("QWEN_TTS_AUTH_STATIC_BEARER_TOKEN", "", environ).strip() or None
+        env_text("TTS_AUTH_STATIC_BEARER_TOKEN", "", environ).strip() or None
     )
     auth_static_bearer_principal_id = (
-        env_text("QWEN_TTS_AUTH_STATIC_BEARER_PRINCIPAL_ID", "", environ).strip()
+        env_text("TTS_AUTH_STATIC_BEARER_PRINCIPAL_ID", "", environ).strip()
         or None
     )
     auth_static_bearer_credential_id = (
-        env_text("QWEN_TTS_AUTH_STATIC_BEARER_CREDENTIAL_ID", "", environ).strip()
+        env_text("TTS_AUTH_STATIC_BEARER_CREDENTIAL_ID", "", environ).strip()
         or None
     )
     # END_BLOCK_PARSE_AUTH_SETTINGS
     # START_BLOCK_PARSE_PATH_SETTINGS
     return {
-        "models_dir": env_path("QWEN_TTS_MODELS_DIR", DEFAULT_MODELS_DIR, environ),
+        "models_dir": env_path("TTS_MODELS_DIR", DEFAULT_MODELS_DIR, environ),
         "mlx_models_dir": env_path(
-            "QWEN_TTS_MLX_MODELS_DIR", DEFAULT_MODELS_DIR / "mlx", environ
+            "TTS_MLX_MODELS_DIR", DEFAULT_MODELS_DIR / "mlx", environ
         ),
-        "outputs_dir": env_path("QWEN_TTS_OUTPUTS_DIR", DEFAULT_OUTPUTS_DIR, environ),
-        "voices_dir": env_path("QWEN_TTS_VOICES_DIR", DEFAULT_VOICES_DIR, environ),
+        "outputs_dir": env_path("TTS_OUTPUTS_DIR", DEFAULT_OUTPUTS_DIR, environ),
+        "voices_dir": env_path("TTS_VOICES_DIR", DEFAULT_VOICES_DIR, environ),
         "upload_staging_dir": env_path(
-            "QWEN_TTS_UPLOAD_STAGING_DIR", DEFAULT_UPLOAD_STAGING_DIR, environ
+            "TTS_UPLOAD_STAGING_DIR", DEFAULT_UPLOAD_STAGING_DIR, environ
         ),
         "model_manifest_path": env_path(
-            "QWEN_TTS_MODEL_MANIFEST_PATH",
+            "TTS_MODEL_MANIFEST_PATH",
             PROJECT_ROOT / "core" / "models" / "manifest.v1.json",
             environ,
         ),
-        "active_family": env_text("QWEN_TTS_ACTIVE_FAMILY", "", environ).strip() or None,
+        "active_family": env_text("TTS_ACTIVE_FAMILY", "", environ).strip() or None,
         "default_custom_model": env_text(
-            "QWEN_TTS_DEFAULT_CUSTOM_MODEL", "", environ
+            "TTS_DEFAULT_CUSTOM_MODEL", "", environ
         ).strip()
         or None,
         "default_design_model": env_text(
-            "QWEN_TTS_DEFAULT_DESIGN_MODEL", "", environ
+            "TTS_DEFAULT_DESIGN_MODEL", "", environ
         ).strip()
         or None,
         "default_clone_model": env_text(
-            "QWEN_TTS_DEFAULT_CLONE_MODEL", "", environ
+            "TTS_DEFAULT_CLONE_MODEL", "", environ
         ).strip()
         or None,
         # END_BLOCK_PARSE_PATH_SETTINGS
         # START_BLOCK_PARSE_RUNTIME_SETTINGS
         "backend": backend,
-        "backend_autoselect": env_bool("QWEN_TTS_BACKEND_AUTOSELECT", True, environ),
-        "qwen_fast_enabled": env_bool("QWEN_TTS_QWEN_FAST_ENABLED", True, environ),
+        "backend_autoselect": env_bool("TTS_BACKEND_AUTOSELECT", True, environ),
+        "qwen_fast_enabled": env_bool("TTS_QWEN_FAST_ENABLED", True, environ),
         "model_preload_policy": env_text(
-            "QWEN_TTS_MODEL_PRELOAD_POLICY", "none", environ
+            "TTS_MODEL_PRELOAD_POLICY", "none", environ
         )
         .strip()
         .lower()
         or "none",
-        "model_preload_ids": _parse_csv_env("QWEN_TTS_MODEL_PRELOAD_IDS", environ),
+        "model_preload_ids": _parse_csv_env("TTS_MODEL_PRELOAD_IDS", environ),
         "job_execution_backend": env_text(
-            "QWEN_TTS_JOB_EXECUTION_BACKEND",
+            "TTS_JOB_EXECUTION_BACKEND",
             LOCAL_JOB_EXECUTION_BACKEND,
             environ,
         ).strip()
         or LOCAL_JOB_EXECUTION_BACKEND,
         "job_metadata_backend": env_text(
-            "QWEN_TTS_JOB_METADATA_BACKEND",
+            "TTS_JOB_METADATA_BACKEND",
             LOCAL_JOB_METADATA_BACKEND,
             environ,
         ).strip()
         or LOCAL_JOB_METADATA_BACKEND,
         "job_artifact_backend": env_text(
-            "QWEN_TTS_JOB_ARTIFACT_BACKEND",
+            "TTS_JOB_ARTIFACT_BACKEND",
             LOCAL_JOB_ARTIFACT_BACKEND,
             environ,
         ).strip()
@@ -340,57 +352,57 @@ def parse_core_settings_from_env(
         "auth_static_bearer_token": auth_static_bearer_token,
         "auth_static_bearer_principal_id": auth_static_bearer_principal_id,
         "auth_static_bearer_credential_id": auth_static_bearer_credential_id,
-        "rate_limit_enabled": env_bool("QWEN_TTS_RATE_LIMIT_ENABLED", False, environ),
+        "rate_limit_enabled": env_bool("TTS_RATE_LIMIT_ENABLED", False, environ),
         "rate_limit_backend": env_text(
-            "QWEN_TTS_RATE_LIMIT_BACKEND", LOCAL_RATE_LIMIT_BACKEND, environ
+            "TTS_RATE_LIMIT_BACKEND", LOCAL_RATE_LIMIT_BACKEND, environ
         ).strip()
         or LOCAL_RATE_LIMIT_BACKEND,
         "rate_limit_sync_tts_per_minute": env_int(
-            "QWEN_TTS_RATE_LIMIT_SYNC_TTS_PER_MINUTE", 0, environ
+            "TTS_RATE_LIMIT_SYNC_TTS_PER_MINUTE", 0, environ
         ),
         "rate_limit_async_submit_per_minute": env_int(
-            "QWEN_TTS_RATE_LIMIT_ASYNC_SUBMIT_PER_MINUTE", 0, environ
+            "TTS_RATE_LIMIT_ASYNC_SUBMIT_PER_MINUTE", 0, environ
         ),
         "rate_limit_job_read_per_minute": env_int(
-            "QWEN_TTS_RATE_LIMIT_JOB_READ_PER_MINUTE", 0, environ
+            "TTS_RATE_LIMIT_JOB_READ_PER_MINUTE", 0, environ
         ),
         "rate_limit_job_cancel_per_minute": env_int(
-            "QWEN_TTS_RATE_LIMIT_JOB_CANCEL_PER_MINUTE", 0, environ
+            "TTS_RATE_LIMIT_JOB_CANCEL_PER_MINUTE", 0, environ
         ),
         "rate_limit_control_plane_per_minute": env_int(
-            "QWEN_TTS_RATE_LIMIT_CONTROL_PLANE_PER_MINUTE", 0, environ
+            "TTS_RATE_LIMIT_CONTROL_PLANE_PER_MINUTE", 0, environ
         ),
-        "quota_enabled": env_bool("QWEN_TTS_QUOTA_ENABLED", False, environ),
+        "quota_enabled": env_bool("TTS_QUOTA_ENABLED", False, environ),
         "quota_backend": env_text(
-            "QWEN_TTS_QUOTA_BACKEND", LOCAL_QUOTA_BACKEND, environ
+            "TTS_QUOTA_BACKEND", LOCAL_QUOTA_BACKEND, environ
         ).strip()
         or LOCAL_QUOTA_BACKEND,
         "quota_compute_requests_per_window": env_int(
-            "QWEN_TTS_QUOTA_COMPUTE_REQUESTS_PER_WINDOW", 0, environ
+            "TTS_QUOTA_COMPUTE_REQUESTS_PER_WINDOW", 0, environ
         ),
         "quota_compute_window_seconds": env_int(
-            "QWEN_TTS_QUOTA_COMPUTE_WINDOW_SECONDS", 60, environ
+            "TTS_QUOTA_COMPUTE_WINDOW_SECONDS", 60, environ
         ),
         "quota_max_active_jobs_per_principal": env_int(
-            "QWEN_TTS_QUOTA_MAX_ACTIVE_JOBS_PER_PRINCIPAL", 0, environ
+            "TTS_QUOTA_MAX_ACTIVE_JOBS_PER_PRINCIPAL", 0, environ
         ),
-        "default_save_output": env_bool("QWEN_TTS_DEFAULT_SAVE_OUTPUT", False, environ),
-        "enable_streaming": env_bool("QWEN_TTS_ENABLE_STREAMING", True, environ),
+        "default_save_output": env_bool("TTS_DEFAULT_SAVE_OUTPUT", False, environ),
+        "enable_streaming": env_bool("TTS_ENABLE_STREAMING", True, environ),
         "max_upload_size_bytes": env_int(
-            "QWEN_TTS_MAX_UPLOAD_SIZE_BYTES", 25 * 1024 * 1024, environ
+            "TTS_MAX_UPLOAD_SIZE_BYTES", 25 * 1024 * 1024, environ
         ),
         "max_input_text_chars": env_int(
-            "QWEN_TTS_MAX_INPUT_TEXT_CHARS", 5_000, environ
+            "TTS_MAX_INPUT_TEXT_CHARS", 5_000, environ
         ),
         "request_timeout_seconds": env_int(
-            "QWEN_TTS_REQUEST_TIMEOUT_SECONDS", 300, environ
+            "TTS_REQUEST_TIMEOUT_SECONDS", 300, environ
         ),
         "inference_busy_status_code": env_int(
-            "QWEN_TTS_INFERENCE_BUSY_STATUS_CODE", 503, environ
+            "TTS_INFERENCE_BUSY_STATUS_CODE", 503, environ
         ),
-        "sample_rate": env_int("QWEN_TTS_SAMPLE_RATE", 24000, environ),
-        "filename_max_len": env_int("QWEN_TTS_FILENAME_MAX_LEN", 20, environ),
-        "auto_play_cli": env_bool("QWEN_TTS_AUTO_PLAY_CLI", True, environ),
+        "sample_rate": env_int("TTS_SAMPLE_RATE", 24000, environ),
+        "filename_max_len": env_int("TTS_FILENAME_MAX_LEN", 20, environ),
+        "auto_play_cli": env_bool("TTS_AUTO_PLAY_CLI", True, environ),
         # END_BLOCK_PARSE_RUNTIME_SETTINGS
     }
 
@@ -409,6 +421,7 @@ __all__ = [
     "AuthMode",
     "CoreSettingsEnv",
     "CoreSettings",
+    "env_value",
     "env_text",
     "env_int",
     "env_bool",

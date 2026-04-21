@@ -48,9 +48,9 @@ FAMILY_IMPORT_CHECKS = {
 }
 
 RUNTIME_BINDING_ENV_BY_MODE = {
-    "custom": "QWEN_TTS_DEFAULT_CUSTOM_MODEL",
-    "design": "QWEN_TTS_DEFAULT_DESIGN_MODEL",
-    "clone": "QWEN_TTS_DEFAULT_CLONE_MODEL",
+    "custom": "TTS_DEFAULT_CUSTOM_MODEL",
+    "design": "TTS_DEFAULT_DESIGN_MODEL",
+    "clone": "TTS_DEFAULT_CLONE_MODEL",
 }
 
 
@@ -274,10 +274,10 @@ def _runtime_bindings_payload(resolved: object) -> dict[str, object]:
     }.get(resolved.family.key, {})
 
     bindings = {
-        "family": os.environ.get("QWEN_TTS_ACTIVE_FAMILY") or resolved.family.key,
-        "custom_model": os.environ.get("QWEN_TTS_DEFAULT_CUSTOM_MODEL") or default_bindings_by_family.get("custom_model"),
-        "design_model": os.environ.get("QWEN_TTS_DEFAULT_DESIGN_MODEL") or default_bindings_by_family.get("design_model"),
-        "clone_model": os.environ.get("QWEN_TTS_DEFAULT_CLONE_MODEL") or default_bindings_by_family.get("clone_model"),
+        "family": os.environ.get("TTS_ACTIVE_FAMILY") or resolved.family.key,
+        "custom_model": os.environ.get("TTS_DEFAULT_CUSTOM_MODEL") or default_bindings_by_family.get("custom_model"),
+        "design_model": os.environ.get("TTS_DEFAULT_DESIGN_MODEL") or default_bindings_by_family.get("design_model"),
+        "clone_model": os.environ.get("TTS_DEFAULT_CLONE_MODEL") or default_bindings_by_family.get("clone_model"),
     }
     capability_status = {}
     for mode, env_name in RUNTIME_BINDING_ENV_BY_MODE.items():
@@ -451,7 +451,7 @@ def main() -> int:
             "suggested_backend_env": resolved.selected_backend,
             "commands": {
                 "create_env": f"py -3.11 -m venv {env_root}",
-                "set_backend": f"set QWEN_TTS_BACKEND={resolved.selected_backend}" if resolved.selected_backend else None,
+                "set_backend": f"set TTS_BACKEND={resolved.selected_backend}" if resolved.selected_backend else None,
                 "upgrade_pip": f"{resolved.expected_python_path} -m pip install --upgrade pip",
                 "runtime_bootstrap": [" ".join(step) for step in runtime_bootstrap_steps],
                 "install_compiled_requirements": f"{resolved.expected_python_path} -m pip install -r <temp compiled requirements file>",

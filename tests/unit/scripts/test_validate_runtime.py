@@ -55,7 +55,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.8.1 - Locked main() exit-code semantics to the structured envelope so advisory/skipped validation errors exit zero while hard failures remain non-zero]
+#   LAST_CHANGE: [v1.9.0 - Locked validation command parsing to canonical TTS_* environment variables only]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -139,11 +139,11 @@ def _make_representative_args(
 def _make_smoke_env(tmp_path: Path) -> dict[str, str]:
     return build_validation_env(
         {
-            "QWEN_TTS_MODELS_DIR": str(tmp_path / "models"),
-            "QWEN_TTS_MLX_MODELS_DIR": str(tmp_path / "models" / "mlx"),
-            "QWEN_TTS_OUTPUTS_DIR": str(tmp_path / "outputs"),
-            "QWEN_TTS_VOICES_DIR": str(tmp_path / "voices"),
-            "QWEN_TTS_UPLOAD_STAGING_DIR": str(tmp_path / "uploads"),
+            "TTS_MODELS_DIR": str(tmp_path / "models"),
+            "TTS_MLX_MODELS_DIR": str(tmp_path / "models" / "mlx"),
+            "TTS_OUTPUTS_DIR": str(tmp_path / "outputs"),
+            "TTS_VOICES_DIR": str(tmp_path / "voices"),
+            "TTS_UPLOAD_STAGING_DIR": str(tmp_path / "uploads"),
         }
     )
 
@@ -234,17 +234,17 @@ def _patch_smoke_server_runtime(
 def test_build_validation_env_sets_repo_defaults():
     env = build_validation_env({}, backend="mlx", host="127.0.0.1", port=8123)
 
-    assert env["QWEN_TTS_BACKEND"] == "mlx"
-    assert env["QWEN_TTS_HOST"] == "127.0.0.1"
-    assert env["QWEN_TTS_PORT"] == "8123"
-    assert env["QWEN_TTS_MODELS_DIR"].endswith(".models")
-    assert env["QWEN_TTS_MLX_MODELS_DIR"].endswith(".models/mlx")
+    assert env["TTS_BACKEND"] == "mlx"
+    assert env["TTS_HOST"] == "127.0.0.1"
+    assert env["TTS_PORT"] == "8123"
+    assert env["TTS_MODELS_DIR"].endswith(".models")
+    assert env["TTS_MLX_MODELS_DIR"].endswith(".models/mlx")
 
 
 def test_parse_args_smoke_server_defaults_to_env_smoke_model_id(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("QWEN_TTS_SMOKE_MODEL_ID", PIPER_SMOKE_MODEL_ID)
+    monkeypatch.setenv("TTS_SMOKE_MODEL_ID", PIPER_SMOKE_MODEL_ID)
 
     args = parse_args(["smoke-server"])
 
@@ -254,7 +254,7 @@ def test_parse_args_smoke_server_defaults_to_env_smoke_model_id(
 def test_parse_args_smoke_server_allows_cli_smoke_model_id_override(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("QWEN_TTS_SMOKE_MODEL_ID", PIPER_SMOKE_MODEL_ID)
+    monkeypatch.setenv("TTS_SMOKE_MODEL_ID", PIPER_SMOKE_MODEL_ID)
 
     args = parse_args(
         [
@@ -299,7 +299,7 @@ def test_run_host_matrix_validation_respects_disabled_qwen_fast_config():
     summary = run_host_matrix_validation(
         build_validation_env(
             {
-                "QWEN_TTS_QWEN_FAST_ENABLED": "false",
+                "TTS_QWEN_FAST_ENABLED": "false",
             }
         )
     )
@@ -552,9 +552,9 @@ def test_run_smoke_server_validation_returns_summary_with_expected_evidence_payl
     assert summary["health"] == health
     assert summary["server_log_path"]
     run_env = captured["run_kwargs"]["env"]
-    assert run_env["QWEN_TTS_SMOKE_BASE_URL"] == "http://127.0.0.1:8124"
-    assert run_env["QWEN_TTS_SMOKE_MODEL_ID"] == OMNIVOICE_SMOKE_MODEL_ID
-    assert run_env["QWEN_TTS_SMOKE_EXPECTED_BACKEND"] == "torch"
+    assert run_env["TTS_SMOKE_BASE_URL"] == "http://127.0.0.1:8124"
+    assert run_env["TTS_SMOKE_MODEL_ID"] == OMNIVOICE_SMOKE_MODEL_ID
+    assert run_env["TTS_SMOKE_EXPECTED_BACKEND"] == "torch"
     assert process.terminated is True
 
 
@@ -613,7 +613,7 @@ def test_run_smoke_server_validation_uses_expected_backend_override_in_smoke_env
     summary = run_smoke_server_validation(args, env)
 
     assert summary["expected_backend"] == "torch"
-    assert captured["run_kwargs"]["env"]["QWEN_TTS_SMOKE_EXPECTED_BACKEND"] == "torch"
+    assert captured["run_kwargs"]["env"]["TTS_SMOKE_EXPECTED_BACKEND"] == "torch"
 
 
 def test_run_smoke_server_validation_rejects_wrong_expected_backend_for_piper(
@@ -821,7 +821,7 @@ def test_run_smoke_server_validation_allows_missing_assets_when_not_strict(
     summary = run_smoke_server_validation(args, env)
 
     assert summary["status"] == "ok"
-    assert captured["run_kwargs"]["env"]["QWEN_TTS_SMOKE_MODEL_ID"] == CUSTOM_SMOKE_MODEL_ID
+    assert captured["run_kwargs"]["env"]["TTS_SMOKE_MODEL_ID"] == CUSTOM_SMOKE_MODEL_ID
 
 
 def test_run_smoke_server_validation_rejects_strict_runtime_missing_assets(
@@ -1011,7 +1011,7 @@ def test_run_server_docker_validation_selects_free_host_port_for_compose_mapping
 
     assert choose_port_calls == [("0.0.0.0", 0)]
     assert compose_envs
-    assert all(run_env["QWEN_TTS_SERVER_PORT"] == "18080" for run_env in compose_envs)
+    assert all(run_env["TTS_SERVER_PORT"] == "18080" for run_env in compose_envs)
     assert summary["compose"]["host_port"] == 18080
 
 
@@ -1578,7 +1578,7 @@ def test_main_returns_advisory_summary_for_missing_telegram_token(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-    monkeypatch.delenv("QWEN_TTS_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TTS_TELEGRAM_BOT_TOKEN", raising=False)
 
     exit_code = main(["telegram-live"])
 
@@ -1590,14 +1590,14 @@ def test_main_returns_advisory_summary_for_missing_telegram_token(
     assert payload["outcome"] == "advisory"
     assert payload["reason"] == "telegram_bot_token_missing"
     assert payload["stage"] == "preflight"
-    assert "QWEN_TTS_TELEGRAM_BOT_TOKEN" in payload["message"]
+    assert "TTS_TELEGRAM_BOT_TOKEN" in payload["message"]
 
 
 def test_main_returns_skipped_summary_for_missing_docker_telegram_token(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-    monkeypatch.delenv("QWEN_TTS_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TTS_TELEGRAM_BOT_TOKEN", raising=False)
 
     exit_code = main(["docker-telegram"])
 
@@ -1650,7 +1650,7 @@ def test_run_artifact_review_validation_returns_advisory_summary_for_persisted_e
 
     summary = run_artifact_review_validation(
         _make_artifact_review_args(explicit.as_posix()),
-        build_validation_env({"QWEN_TTS_MODELS_DIR": str(tmp_path / "models")}),
+            build_validation_env({"TTS_MODELS_DIR": str(tmp_path / "models")}),
     )
 
     assert summary["status"] == "advisory"
@@ -1687,7 +1687,7 @@ def test_run_artifact_review_validation_surfaces_authoritative_failures_in_revie
 
     summary = run_artifact_review_validation(
         _make_artifact_review_args(),
-        build_validation_env({"QWEN_TTS_MODELS_DIR": str(tmp_path / "models")}),
+            build_validation_env({"TTS_MODELS_DIR": str(tmp_path / "models")}),
     )
 
     assert summary["status"] == "advisory"

@@ -18,7 +18,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.2.0 - Removed deprecated alias coverage and locked parsing to canonical TTS_* names only]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -91,38 +91,38 @@ def test_parse_core_settings_from_env_reads_explicit_job_backends(tmp_path: Path
     manifest_path.write_text("{}", encoding="utf-8")
     values = parse_core_settings_from_env(
         {
-            "QWEN_TTS_MODELS_DIR": str(tmp_path / "models"),
-            "QWEN_TTS_MLX_MODELS_DIR": str(tmp_path / "mlx-models"),
-            "QWEN_TTS_OUTPUTS_DIR": str(tmp_path / "outputs"),
-            "QWEN_TTS_VOICES_DIR": str(tmp_path / "voices"),
-            "QWEN_TTS_UPLOAD_STAGING_DIR": str(tmp_path / "uploads"),
-            "QWEN_TTS_MODEL_MANIFEST_PATH": str(manifest_path),
-            "QWEN_TTS_ACTIVE_FAMILY": "qwen",
-            "QWEN_TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
-            "QWEN_TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
-            "QWEN_TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
-            "QWEN_TTS_QWEN_FAST_ENABLED": "false",
-            "QWEN_TTS_MODEL_PRELOAD_POLICY": "listed",
-            "QWEN_TTS_MODEL_PRELOAD_IDS": "model-a, model-b,model-a",
-            "QWEN_TTS_JOB_EXECUTION_BACKEND": "future-executor",
-            "QWEN_TTS_JOB_METADATA_BACKEND": "future-metadata",
-            "QWEN_TTS_JOB_ARTIFACT_BACKEND": "future-artifacts",
-            "QWEN_TTS_AUTH_MODE": "static_bearer",
-            "QWEN_TTS_AUTH_STATIC_BEARER_TOKEN": "secret-token",
-            "QWEN_TTS_AUTH_STATIC_BEARER_PRINCIPAL_ID": "principal-configured",
-            "QWEN_TTS_AUTH_STATIC_BEARER_CREDENTIAL_ID": "cred-configured",
-            "QWEN_TTS_RATE_LIMIT_ENABLED": "true",
-            "QWEN_TTS_RATE_LIMIT_BACKEND": "future-rate-limit",
-            "QWEN_TTS_RATE_LIMIT_SYNC_TTS_PER_MINUTE": "11",
-            "QWEN_TTS_RATE_LIMIT_ASYNC_SUBMIT_PER_MINUTE": "12",
-            "QWEN_TTS_RATE_LIMIT_JOB_READ_PER_MINUTE": "13",
-            "QWEN_TTS_RATE_LIMIT_JOB_CANCEL_PER_MINUTE": "14",
-            "QWEN_TTS_RATE_LIMIT_CONTROL_PLANE_PER_MINUTE": "15",
-            "QWEN_TTS_QUOTA_ENABLED": "true",
-            "QWEN_TTS_QUOTA_BACKEND": "future-quota",
-            "QWEN_TTS_QUOTA_COMPUTE_REQUESTS_PER_WINDOW": "21",
-            "QWEN_TTS_QUOTA_COMPUTE_WINDOW_SECONDS": "120",
-            "QWEN_TTS_QUOTA_MAX_ACTIVE_JOBS_PER_PRINCIPAL": "3",
+            "TTS_MODELS_DIR": str(tmp_path / "models"),
+            "TTS_MLX_MODELS_DIR": str(tmp_path / "mlx-models"),
+            "TTS_OUTPUTS_DIR": str(tmp_path / "outputs"),
+            "TTS_VOICES_DIR": str(tmp_path / "voices"),
+            "TTS_UPLOAD_STAGING_DIR": str(tmp_path / "uploads"),
+            "TTS_MODEL_MANIFEST_PATH": str(manifest_path),
+            "TTS_ACTIVE_FAMILY": "qwen",
+            "TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+            "TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+            "TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
+            "TTS_QWEN_FAST_ENABLED": "false",
+            "TTS_MODEL_PRELOAD_POLICY": "listed",
+            "TTS_MODEL_PRELOAD_IDS": "model-a, model-b,model-a",
+            "TTS_JOB_EXECUTION_BACKEND": "future-executor",
+            "TTS_JOB_METADATA_BACKEND": "future-metadata",
+            "TTS_JOB_ARTIFACT_BACKEND": "future-artifacts",
+            "TTS_AUTH_MODE": "static_bearer",
+            "TTS_AUTH_STATIC_BEARER_TOKEN": "secret-token",
+            "TTS_AUTH_STATIC_BEARER_PRINCIPAL_ID": "principal-configured",
+            "TTS_AUTH_STATIC_BEARER_CREDENTIAL_ID": "cred-configured",
+            "TTS_RATE_LIMIT_ENABLED": "true",
+            "TTS_RATE_LIMIT_BACKEND": "future-rate-limit",
+            "TTS_RATE_LIMIT_SYNC_TTS_PER_MINUTE": "11",
+            "TTS_RATE_LIMIT_ASYNC_SUBMIT_PER_MINUTE": "12",
+            "TTS_RATE_LIMIT_JOB_READ_PER_MINUTE": "13",
+            "TTS_RATE_LIMIT_JOB_CANCEL_PER_MINUTE": "14",
+            "TTS_RATE_LIMIT_CONTROL_PLANE_PER_MINUTE": "15",
+            "TTS_QUOTA_ENABLED": "true",
+            "TTS_QUOTA_BACKEND": "future-quota",
+            "TTS_QUOTA_COMPUTE_REQUESTS_PER_WINDOW": "21",
+            "TTS_QUOTA_COMPUTE_WINDOW_SECONDS": "120",
+            "TTS_QUOTA_MAX_ACTIVE_JOBS_PER_PRINCIPAL": "3",
         }
     )
 
@@ -154,6 +154,37 @@ def test_parse_core_settings_from_env_reads_explicit_job_backends(tmp_path: Path
     assert values["quota_compute_requests_per_window"] == 21
     assert values["quota_compute_window_seconds"] == 120
     assert values["quota_max_active_jobs_per_principal"] == 3
+
+
+def test_parse_core_settings_from_env_ignores_legacy_qwen_names(tmp_path: Path):
+    values = parse_core_settings_from_env(
+        {
+            "LEGACY_MODELS_DIR": str(tmp_path / "legacy-models"),
+            "LEGACY_BACKEND": "torch",
+            "LEGACY_SAMPLE_RATE": "22050",
+        }
+    )
+
+    assert values["models_dir"] == DEFAULT_MODELS_DIR.resolve()
+    assert values["backend"] is None
+    assert values["sample_rate"] == 24000
+
+
+def test_parse_core_settings_from_env_uses_only_tts_names_when_legacy_names_are_also_set(tmp_path: Path):
+    values = parse_core_settings_from_env(
+        {
+            "TTS_MODELS_DIR": str(tmp_path / "canonical-models"),
+            "LEGACY_MODELS_DIR": str(tmp_path / "legacy-models"),
+            "TTS_BACKEND": "onnx",
+            "LEGACY_BACKEND": "torch",
+            "TTS_SAMPLE_RATE": "16000",
+            "LEGACY_SAMPLE_RATE": "24000",
+        }
+    )
+
+    assert values["models_dir"] == (tmp_path / "canonical-models").resolve()
+    assert values["backend"] == "onnx"
+    assert values["sample_rate"] == 16000
 
 
 @pytest.mark.parametrize(

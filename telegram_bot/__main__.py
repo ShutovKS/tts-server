@@ -270,7 +270,7 @@ def run_startup_self_checks(runtime_or_settings) -> StartupCheckResult:
         else:
             for error in settings_errors:
                 if (
-                    error == "QWEN_TTS_TELEGRAM_BOT_TOKEN is required"
+                    error == "TTS_TELEGRAM_BOT_TOKEN is required"
                     and not settings.telegram_bot_token
                 ):
                     continue
@@ -278,7 +278,7 @@ def run_startup_self_checks(runtime_or_settings) -> StartupCheckResult:
 
     # Check 1: Required environment variables
     if not settings.telegram_bot_token:
-        result.errors.append("FATAL: QWEN_TTS_TELEGRAM_BOT_TOKEN not set")
+        result.errors.append("FATAL: TTS_TELEGRAM_BOT_TOKEN not set")
     else:
         result.checks_passed.append("bot_token_configured")
 
@@ -812,11 +812,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--bot-token",
-        help="Telegram bot token (or set QWEN_TTS_TELEGRAM_BOT_TOKEN env var)",
+        help="Telegram bot token (or set TTS_TELEGRAM_BOT_TOKEN env var)",
     )
     parser.add_argument(
         "--allowed-users",
-        help="Comma-separated user IDs (or set QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS env var)",
+        help="Comma-separated user IDs (or set TTS_TELEGRAM_ALLOWED_USER_IDS env var)",
     )
 
     args = parser.parse_args()
@@ -825,9 +825,9 @@ def main() -> None:
     import os
 
     if args.bot_token:
-        os.environ["QWEN_TTS_TELEGRAM_BOT_TOKEN"] = args.bot_token
+        os.environ["TTS_TELEGRAM_BOT_TOKEN"] = args.bot_token
     if args.allowed_users:
-        os.environ["QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS"] = args.allowed_users
+        os.environ["TTS_TELEGRAM_ALLOWED_USER_IDS"] = args.allowed_users
 
     try:
         runtime = build_telegram_runtime()

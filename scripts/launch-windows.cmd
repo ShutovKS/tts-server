@@ -24,7 +24,7 @@ REM END_CHANGE_SUMMARY
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
 set "PS_SCRIPT=%SCRIPT_DIR%launch-windows.ps1"
-set "QWEN_TTS_LAUNCH_PROJECT_ROOT=%PROJECT_ROOT%"
+set "TTS_LAUNCH_PROJECT_ROOT=%PROJECT_ROOT%"
 
 where powershell.exe >nul 2>nul
 if errorlevel 1 (

@@ -544,7 +544,7 @@ class QwenFastBackend(TTSBackend):
 
     @staticmethod
     def _test_mode() -> str | None:
-        raw = os.getenv("QWEN_TTS_QWEN_FAST_TEST_MODE", "").strip().lower()
+        raw = (os.getenv("TTS_QWEN_FAST_TEST_MODE", "")).strip().lower()
         return raw or None
 
     @staticmethod

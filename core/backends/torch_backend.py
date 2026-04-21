@@ -42,31 +42,31 @@ else:
     TORCH_IMPORT_ERROR = None
 
 Qwen3TTSModel = None
-QWEN_TTS_IMPORT_ERROR = None
+QWEN_MODEL_IMPORT_ERROR = None
 OmniVoiceModel = None
 OMNIVOICE_IMPORT_ERROR = None
 _MIN_CLONE_AUDIO_SECONDS = 1.0
 
 
 def _load_qwen_tts_model_cls():
-    global Qwen3TTSModel, QWEN_TTS_IMPORT_ERROR
+    global Qwen3TTSModel, QWEN_MODEL_IMPORT_ERROR
     if Qwen3TTSModel is not None:
         return Qwen3TTSModel
-    if QWEN_TTS_IMPORT_ERROR is not None:
+    if QWEN_MODEL_IMPORT_ERROR is not None:
         return None
     try:
         module = importlib.import_module("qwen_tts")
     except Exception as exc:  # pragma: no cover
-        QWEN_TTS_IMPORT_ERROR = exc
+        QWEN_MODEL_IMPORT_ERROR = exc
         return None
     model_cls = getattr(module, "Qwen3TTSModel", None)
     if model_cls is None:
-        QWEN_TTS_IMPORT_ERROR = ImportError(
+        QWEN_MODEL_IMPORT_ERROR = ImportError(
             "qwen_tts does not expose Qwen3TTSModel"
         )
         return None
     Qwen3TTSModel = model_cls
-    QWEN_TTS_IMPORT_ERROR = None
+    QWEN_MODEL_IMPORT_ERROR = None
     return Qwen3TTSModel
 
 
@@ -392,8 +392,8 @@ class TorchBackend(TTSBackend):
                 if TORCH_IMPORT_ERROR is None
                 else str(TORCH_IMPORT_ERROR),
                 "qwen_tts_error": None
-                if QWEN_TTS_IMPORT_ERROR is None
-                else str(QWEN_TTS_IMPORT_ERROR),
+                if QWEN_MODEL_IMPORT_ERROR is None
+                else str(QWEN_MODEL_IMPORT_ERROR),
                 "omnivoice_error": None
                 if OMNIVOICE_IMPORT_ERROR is None
                 else str(OMNIVOICE_IMPORT_ERROR),
@@ -598,7 +598,7 @@ class TorchBackend(TTSBackend):
     @staticmethod
     def _runtime_import_error_for_spec(spec: ModelSpec):
         mapping = {
-            "qwen3_tts": QWEN_TTS_IMPORT_ERROR,
+            "qwen3_tts": QWEN_MODEL_IMPORT_ERROR,
             "omnivoice": OMNIVOICE_IMPORT_ERROR,
         }
         return mapping.get(spec.family_key)
