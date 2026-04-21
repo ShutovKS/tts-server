@@ -110,7 +110,6 @@ Async submission endpoints accept the `Idempotency-Key` header.
 ## Important runtime behavior
 
 - The adapter returns completed audio as regular HTTP response bodies.
-- `TTS_ENABLE_STREAMING` remains a configuration flag, but it does not turn completed audio responses into a streaming transport automatically.
 - Clone uploads are staged in `TTS_UPLOAD_STAGING_DIR` and cleaned up after request processing.
 - Oversized text requests fail with the standard validation error.
 - Inference timeouts return `request_timeout` with HTTP `504`.
@@ -161,7 +160,6 @@ Important variables:
 - `TTS_DEFAULT_DESIGN_MODEL`
 - `TTS_DEFAULT_CLONE_MODEL`
 - `TTS_DEFAULT_SAVE_OUTPUT`
-- `TTS_ENABLE_STREAMING`
 - `TTS_MAX_UPLOAD_SIZE_BYTES`
 - `TTS_MAX_INPUT_TEXT_CHARS`
 - `TTS_REQUEST_TIMEOUT_SECONDS`

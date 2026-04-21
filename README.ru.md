@@ -9,6 +9,7 @@ English version: [README.md](README.md)
 - [server/](server/README.ru.md) — HTTP API на FastAPI
 - [telegram_bot/](telegram_bot/README.ru.md) — Telegram-бот на long polling
 - [cli/](cli/README.ru.md) — интерактивный локальный CLI
+- [frontend_demo/](frontend_demo/README.md) — отдельный статический demo frontend для HTTP API
 - [core/](core/README.ru.md) — общий runtime, реестр моделей, бэкенды, jobs и observability
 
 После реорганизации Docker-структуры артефакты сборки находятся рядом с соответствующими компонентами:

@@ -89,22 +89,29 @@ docker compose -f docker-compose.telegram-bot.yaml up --build
 ### Синтаксис `/tts`
 
 ```text
-/tts [-- speaker=<speaker>] [-- speed=<speed>] -- <text>
+/tts [speaker=<speaker>] [speed=<speed>] [lang=<language>] -- <text>
 ```
+
+Если `lang` не указан, используется `auto`.
+
+Для обратной совместимости бот по-прежнему принимает legacy-форму `/tts <text>` без разделителя `--`, когда структурированные параметры не нужны. Форма с `--` остаётся предпочтительным и документированным синтаксисом, потому что она однозначна при использовании speaker, speed или language.
 
 ### Синтаксис `/design`
 
 ```text
-/design <voice_description> -- <text>
+/design [lang=<language>] <voice_description> -- <text>
 ```
+
+Если `lang` не указан, используется `auto`.
 
 ### Синтаксис `/clone`
 
 ```text
-/clone [-- ref=<transcript>] -- <text>
+/clone [lang=<language>] [ref=<transcript>] -- <text>
 ```
 
 Для `/clone` команда должна быть отправлена reply на сообщение с reference audio.
+Если `lang` не указан, используется `auto`.
 
 ## Поддерживаемые clone media
 

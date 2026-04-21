@@ -136,7 +136,6 @@ def build_readiness_report(request: Request) -> HealthResponse:
     }
     runtime = {
         "inference_busy": request.app.state.runtime.inference_guard.is_busy(),
-        "streaming_enabled": settings.enable_streaming,
         "default_save_output": settings.default_save_output,
         "request_timeout_seconds": settings.request_timeout_seconds,
         "configured_backend": settings.backend,

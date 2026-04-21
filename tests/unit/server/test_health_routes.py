@@ -82,7 +82,6 @@ def test_build_readiness_report_returns_deep_diagnostics(
         models_dir=tmp_path / ".models",
         outputs_dir=tmp_path / ".outputs",
         voices_dir=tmp_path / ".voices",
-        enable_streaming=True,
         default_save_output=False,
         sample_rate=24000,
         max_upload_size_bytes=25 * 1024 * 1024,
@@ -118,7 +117,6 @@ def test_build_readiness_report_returns_deep_diagnostics(
     assert report.checks["config"]["model_preload_ids"] == [
         "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     ]
-    assert report.checks["runtime"]["streaming_enabled"] is True
     assert report.checks["runtime"]["configured_backend"] is None
     assert report.checks["runtime"]["backend_autoselect"] is True
     assert report.checks["runtime"]["runtime_capability_map"] == {

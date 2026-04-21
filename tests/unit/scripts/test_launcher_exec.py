@@ -187,7 +187,16 @@ def test_launcher_exec_reports_missing_python_when_env_absent():
             PROJECT_ROOT,
             isolated_root,
             ignore=shutil.ignore_patterns(
-                ".git", ".envs", ".venv*", "__pycache__", ".pytest_cache"
+                ".git",
+                ".envs",
+                ".venv*",
+                "__pycache__",
+                ".pytest_cache",
+                ".models",
+                ".outputs",
+                ".uploads",
+                ".voices",
+                ".opencode",
             ),
         )
 

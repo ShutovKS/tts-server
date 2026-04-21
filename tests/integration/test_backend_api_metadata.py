@@ -52,7 +52,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         default_clone_model="Qwen3-TTS-12Hz-1.7B-Base-8bit",
         backend=None,
         backend_autoselect=True,
-        enable_streaming=True,
         default_save_output=False,
     )
     settings.ensure_directories()

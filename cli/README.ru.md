@@ -15,7 +15,7 @@ CLI удобен, когда нужно:
 ## Точки входа
 
 - [__main__.py](__main__.py) — package entry point для `python -m cli`
-- [main.py](main.py) — явная модульная точка входа
+- [main.py](main.py) — тонкая явная модульная точка входа, которая делегирует в [`run_cli()`](runtime.py:420)
 - [`run_cli()`](runtime.py:420) и [`CliRuntime`](runtime.py:27) в [runtime.py](runtime.py)
 
 ## Запуск

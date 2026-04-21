@@ -15,7 +15,7 @@ Use it when you want to:
 ## Entry points
 
 - [__main__.py](__main__.py) — package entry point for `python -m cli`
-- [main.py](main.py) — explicit module entry point
+- [main.py](main.py) — thin explicit module entry point that delegates to [`run_cli()`](runtime.py:420)
 - [`run_cli()`](runtime.py:420) and [`CliRuntime`](runtime.py:27) in [runtime.py](runtime.py)
 
 ## Launch

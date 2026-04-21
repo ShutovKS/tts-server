@@ -1,5 +1,5 @@
 # FILE: core/config.py
-# VERSION: 1.2.0
+# VERSION: 1.3.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Parse and validate environment-based runtime configuration for all components.
 #   SCOPE: CoreSettings dataclass, environment parsing helpers, typed settings dict
@@ -32,7 +32,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.0 - Removed deprecated env compatibility so runtime configuration accepts only TTS_* variables]
+#   LAST_CHANGE: [v1.3.0 - Removed the unused public TTS_ENABLE_STREAMING contract so runtime settings no longer imply unsupported HTTP streaming behavior]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -98,7 +98,6 @@ class CoreSettingsEnv(TypedDict):
     sample_rate: int
     filename_max_len: int
     default_save_output: bool
-    enable_streaming: bool
     max_upload_size_bytes: int
     max_input_text_chars: int
     request_timeout_seconds: int
@@ -154,7 +153,6 @@ class CoreSettings:
     sample_rate: int = 24000
     filename_max_len: int = 20
     default_save_output: bool = False
-    enable_streaming: bool = True
     max_upload_size_bytes: int = 25 * 1024 * 1024
     max_input_text_chars: int = 5_000
     request_timeout_seconds: int = 300
@@ -387,7 +385,6 @@ def parse_core_settings_from_env(
             "TTS_QUOTA_MAX_ACTIVE_JOBS_PER_PRINCIPAL", 0, environ
         ),
         "default_save_output": env_bool("TTS_DEFAULT_SAVE_OUTPUT", False, environ),
-        "enable_streaming": env_bool("TTS_ENABLE_STREAMING", True, environ),
         "max_upload_size_bytes": env_int(
             "TTS_MAX_UPLOAD_SIZE_BYTES", 25 * 1024 * 1024, environ
         ),

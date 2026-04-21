@@ -1,14 +1,14 @@
 <KnowledgeGraph>
-  <Project NAME="Qwen3-TTS-Cross-Platform" VERSION="1.0.0">
-    <keywords>TTS, text-to-speech, Qwen3, Apple Silicon, Windows, Linux, MLX, PyTorch, FastAPI, Telegram bot, CLI, voice synthesis, voice cloning, voice design, audio generation, model inference</keywords>
-    <annotation>Local text-to-speech stack built around Qwen3 TTS models with three transport adapters (HTTP server, Telegram bot, interactive CLI) and a shared runtime core providing model registry, backend selection, job orchestration, and observability.</annotation>
+  <Project NAME="Modular-Local-TTS-Runtime" VERSION="1.0.0">
+    <keywords>TTS, text-to-speech, Qwen3, OmniVoice, Piper, Apple Silicon, Windows, Linux, MLX, PyTorch, ONNX, FastAPI, Telegram bot, CLI, voice synthesis, voice cloning, voice design, audio generation, model inference</keywords>
+    <annotation>Local cross-platform text-to-speech runtime with shared core services, multiple model families, and transport adapters for HTTP, Telegram, and interactive CLI workflows.</annotation>
 
     <M-CONFIG NAME="CoreSettings" TYPE="UTILITY" STATUS="implemented">
       <purpose>Parse and validate environment-based runtime configuration for all components.</purpose>
       <path>core/config.py</path>
       <depends>none</depends>
       <verification-ref>V-M-CONFIG</verification-ref>
-      <migration-note>Runtime configuration uses the project-wide `TTS_*` namespace as the only supported environment contract, and legacy alias handling has been removed.</migration-note>
+      <implementation-note>Runtime configuration uses the project-wide `TTS_*` namespace as the only supported environment contract, and legacy alias handling has been removed.</implementation-note>
       <annotations>
         <class-CoreSettings PURPOSE="Frozen dataclass holding all shared runtime settings" />
         <fn-parse_core_settings_from_env PURPOSE="Parse environment variables into typed settings dict" />
@@ -217,7 +217,7 @@
       <path>core/registry/model_catalog.py</path>
       <depends>M-CONFIG, M-MODELS</depends>
       <verification-ref>V-M-MODEL-CATALOG</verification-ref>
-      <migration-note>Family-aware metadata is exposed through the split catalog surface and remains independent from runtime artifact presence.</migration-note>
+      <implementation-note>Family-aware metadata is exposed through the split catalog surface and remains independent from runtime artifact presence.</implementation-note>
       <annotations>
         <class-ModelCatalogRegistry PURPOSE="Family-aware model metadata registry" />
       </annotations>
@@ -229,7 +229,7 @@
       <path>core/registry/artifacts.py</path>
       <depends>M-MODEL-CATALOG, M-CONFIG</depends>
       <verification-ref>V-M-ARTIFACT-REGISTRY</verification-ref>
-      <migration-note>Artifact-state inspection is isolated from runtime loading and backs readiness reporting directly.</migration-note>
+      <implementation-note>Artifact-state inspection is isolated from runtime loading and backs readiness reporting directly.</implementation-note>
       <annotations>
         <class-ArtifactRegistry PURPOSE="Registry for local model artifact resolution and validation" />
       </annotations>
@@ -241,7 +241,7 @@
       <path>core/registry/runtime_models.py</path>
       <depends>M-ARTIFACT-REGISTRY, M-MODELS, M-MODEL-REGISTRY</depends>
       <verification-ref>V-M-RUNTIME-MODEL-REGISTRY</verification-ref>
-      <migration-note>Runtime state depends only on artifact inspection and the public preload report contract.</migration-note>
+      <implementation-note>Runtime state depends only on artifact inspection and the public preload report contract.</implementation-note>
       <annotations>
         <class-RuntimeModelRegistry PURPOSE="Registry for loaded model handles and preload state" />
       </annotations>
@@ -267,7 +267,7 @@
       <path>core/planning/planner.py</path>
       <depends>M-EXECUTION-PLAN, M-MODEL-REGISTRY, M-OBSERVABILITY, M-MODELS</depends>
       <verification-ref>V-M-SYNTHESIS-PLANNER</verification-ref>
-      <migration-note>Planner resolution now relies on the registry contract as the single source of model lookup instead of carrying a direct manifest/catalog fallback, and the seam is typed through core/contracts/runtime.py.</migration-note>
+      <implementation-note>Planner resolution now relies on the registry contract as the single source of model lookup instead of carrying a direct manifest/catalog fallback, and the seam is typed through core/contracts/runtime.py.</implementation-note>
       <annotations>
         <class-SynthesisPlanner PURPOSE="Planner for family, model, backend, and artifact resolution" />
       </annotations>
@@ -305,7 +305,7 @@
       <path>core/services/tts_service.py</path>
       <depends>M-SYNTHESIS-PLANNER, M-RUNTIME-MODEL-REGISTRY, M-INFRASTRUCTURE, M-OBSERVABILITY</depends>
       <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
-      <migration-note>Planner and coordinator seams depend on typed runtime registry protocols defined in core/contracts/runtime.py instead of concrete registry implementations.</migration-note>
+      <implementation-note>Planner and coordinator seams depend on typed runtime registry protocols defined in core/contracts/runtime.py instead of concrete registry implementations.</implementation-note>
       <annotations>
         <class-TTSService PURPOSE="Coordinator-shaped synthesis service over planning, family preparation, and runtime execution" />
       </annotations>
@@ -343,8 +343,8 @@
       <CrossLink from="M-BOOTSTRAP" to="M-MODEL-REGISTRY" relation="creates-registry" />
       <CrossLink from="M-BOOTSTRAP" to="M-TTS-SERVICE" relation="creates-service" />
       <CrossLink from="M-BOOTSTRAP" to="M-APPLICATION" relation="creates-application" />
-      <CrossLink from="M-BOOTSTRAP" to="M-SYNTHESIS-PLANNER" relation="planned-runtime-wiring" />
-      <CrossLink from="M-BOOTSTRAP" to="M-HOST-PROBE" relation="planned-host-diagnostics" />
+      <CrossLink from="M-BOOTSTRAP" to="M-SYNTHESIS-PLANNER" relation="wires-runtime-planning" />
+      <CrossLink from="M-BOOTSTRAP" to="M-HOST-PROBE" relation="uses-host-diagnostics" />
     </M-BOOTSTRAP>
 
     <M-DOCKER-ASSETS NAME="DockerDeploymentAssets" TYPE="DEPLOYMENT" STATUS="implemented">

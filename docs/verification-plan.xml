@@ -49,7 +49,7 @@
       </required-signals>
     </VF-004>
 
-    <VF-005 NAME="PlannedRequestToPlanFlow" USE_CASES="UC-001,UC-002,UC-003" DATA_FLOW="DF-REQUEST-TO-PLAN" PRIORITY="high">
+    <VF-005 NAME="RequestToPlanFlow" USE_CASES="UC-001,UC-002,UC-003" DATA_FLOW="DF-REQUEST-TO-PLAN" PRIORITY="high">
       <scenario>A normalized synthesis request is resolved through planner, family adapter, runtime model registry, and backend execution without transport-specific branching.</scenario>
       <expected-outcome>Planner produces an execution plan, the family adapter prepares backend execution inputs, and the coordinator returns a persisted GenerationResult while preserving observability markers.</expected-outcome>
       <required-signals>
@@ -57,7 +57,7 @@
       </required-signals>
     </VF-005>
 
-    <VF-006 NAME="PlannedHostAwareReadiness" USE_CASES="UC-008" DATA_FLOW="DF-STARTUP-READINESS" PRIORITY="high">
+    <VF-006 NAME="HostAwareReadiness" USE_CASES="UC-008" DATA_FLOW="DF-STARTUP-READINESS" PRIORITY="high">
       <scenario>Runtime startup exposes host-aware readiness that distinguishes host, backend, catalog, artifact, and runtime states with explicit rejection reasons.</scenario>
       <expected-outcome>Readiness payload explains why candidates are accepted or rejected and no longer relies solely on platform-order heuristics.</expected-outcome>
       <required-signals>

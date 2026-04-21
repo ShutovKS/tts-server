@@ -86,14 +86,13 @@ Async submit endpoint'ы принимают заголовок `Idempotency-Key`
 ## Важное поведение runtime
 
 - Адаптер возвращает готовое аудио как обычный HTTP response body.
-- `TTS_ENABLE_STREAMING` остаётся конфигурационным флагом, но сам по себе не превращает готовый аудио-ответ в streaming transport.
 - Clone uploads временно размещаются в `TTS_UPLOAD_STAGING_DIR` и удаляются после обработки запроса.
 - Слишком длинные текстовые запросы завершаются стандартной validation error.
 - При превышении таймаута inference возвращается `request_timeout` с HTTP `504`.
 - Unsupported model/family combinations теперь возвращают controlled error `model_capability_not_supported` с явными capability details.
 - Runtime capability bindings ожидаются из `TTS_ACTIVE_FAMILY`, `TTS_DEFAULT_CUSTOM_MODEL`, `TTS_DEFAULT_DESIGN_MODEL` и `TTS_DEFAULT_CLONE_MODEL`, а не из неявной инспекции `.models/`.
 - Если для режима нет активной runtime binding, ожидаемое API behavior — controlled unsupported-mode response, а не internal failure.
-- `GET /health/ready` теперь включает host snapshot и mixed-backend routing summary, чтобы оператор видел, почему Piper может маршрутизироваться в ONNX даже при глобально выбранном MLX.
+- `GET /health/ready` теперь включает host snapshot, mixed-backend routing summary, `runtime_capability_map` и per-mode `capability_status`, чтобы оператор и thin adapters могли отличать доступность артефактов от реально привязанных runtime capabilities.
 - Ускоренный `qwen_fast` lane остаётся additive и optional; readiness/model payload'ы могут показывать его как отклонённого route candidate с явной причиной отклонения, а не как автоматическое переключение на другой backend.
 
 ## Конфигурация
@@ -110,7 +109,6 @@ Server-specific настройки расширяют [`CoreSettings`](../core/c
 - `TTS_DEFAULT_DESIGN_MODEL`
 - `TTS_DEFAULT_CLONE_MODEL`
 - `TTS_DEFAULT_SAVE_OUTPUT`
-- `TTS_ENABLE_STREAMING`
 - `TTS_MAX_UPLOAD_SIZE_BYTES`
 - `TTS_MAX_INPUT_TEXT_CHARS`
 - `TTS_REQUEST_TIMEOUT_SECONDS`

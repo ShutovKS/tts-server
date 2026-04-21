@@ -1,8 +1,8 @@
 <RequirementsAnalysis VERSION="1.0.0">
   <Project>
-    <name>Qwen3 TTS on Apple Silicon</name>
-    <annotation>Local text-to-speech stack built around Qwen3 TTS models with three transport adapters (HTTP server, Telegram bot, interactive CLI) and a shared runtime core providing model registry, backend selection, job orchestration, and observability.</annotation>
-    <keywords>TTS, text-to-speech, Qwen3, Apple Silicon, MLX, PyTorch, FastAPI, Telegram bot, CLI, voice synthesis, voice cloning, voice design, audio generation, model inference</keywords>
+    <name>Modular Local TTS Runtime</name>
+    <annotation>Local cross-platform text-to-speech runtime with shared core services, multiple model families, and transport adapters for HTTP, Telegram, and interactive CLI workflows.</annotation>
+    <keywords>TTS, text-to-speech, Qwen3, OmniVoice, Piper, Apple Silicon, Windows, Linux, MLX, PyTorch, ONNX, FastAPI, Telegram bot, CLI, voice synthesis, voice cloning, voice design, audio generation, model inference</keywords>
   </Project>
 
   <Actors>
@@ -104,7 +104,7 @@
 
   <Constraints>
     <constraint-1>Must run on a single machine with local model files.</constraint-1>
-    <constraint-2>Apple Silicon (MLX) is the primary target; PyTorch is the fallback.</constraint-2>
+    <constraint-2>Platform support and backend selection must stay explicit: MLX for compatible Apple Silicon hosts, Torch for CPU/CUDA-compatible hosts, and ONNX for supported Piper voices.</constraint-2>
     <constraint-3>Python 3.11+ required for all components.</constraint-3>
     <constraint-4>ffmpeg must be available in PATH for audio conversion.</constraint-4>
     <constraint-5>Secrets (tokens, credentials) must never appear in logs.</constraint-5>
@@ -120,6 +120,6 @@
 
   <OpenQuestions>
     <question-1>Should the async job system support persistent storage beyond in-memory?</question-1>
-    <question-2>Should streaming inference be exposed at the transport layer?</question-2>
+    <question-2>Should support policy narrow any currently documented secondary operator surfaces or remain broad across the multi-family runtime?</question-2>
   </OpenQuestions>
 </RequirementsAnalysis>

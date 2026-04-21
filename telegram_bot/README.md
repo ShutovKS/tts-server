@@ -110,6 +110,8 @@ The running bot now also treats `TTS_ACTIVE_FAMILY` and `TTS_DEFAULT_*_MODEL` bi
 
 Omitted `lang` defaults to `auto`.
 
+For backward compatibility, the bot still accepts legacy `/tts <text>` without the `--` separator when no structured options are needed. The `--` form remains the documented preferred syntax because it stays unambiguous once speaker, speed, or language options are present.
+
 ### `/design` syntax
 
 ```text

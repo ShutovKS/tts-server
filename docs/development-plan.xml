@@ -5,14 +5,14 @@
     <risk-1>Backend selection at startup must fail fast with explicit diagnostics when no registered backend is actually ready.</risk-1>
     <risk-2>Single inference guard serializes all generation requests across adapters.</risk-2>
     <risk-3>Additional Torch-backed families must isolate family semantics from backend loading so OmniVoice does not regress Qwen3 transport behavior.</risk-3>
-    <migration-objective>Maintain the current multi-platform, multi-backend, multi-model runtime without regressing server, Telegram, or CLI adapter behavior.</migration-objective>
-    <migration-invariants>
+    <runtime-objective>Maintain the current multi-platform, multi-backend, multi-model runtime without regressing server, Telegram, or CLI adapter behavior.</runtime-objective>
+    <runtime-invariants>
       <item-1>Current transport adapters continue to depend only on shared core and application contracts.</item-1>
       <item-2>Qwen3-TTS remains the reference family while planner, family-adapter, and backend-contract seams are proven.</item-2>
       <item-3>No big-bang rewrite is allowed; planning and family seams remain explicit and contract-driven.</item-3>
       <item-4>Readiness, observability, and job execution remain first-class runtime artifacts.</item-4>
       <item-5>OmniVoice onboarding reuses the existing Torch backend contract through a family adapter instead of introducing transport-visible forks.</item-5>
-    </migration-invariants>
+    </runtime-invariants>
   </ArchitectureNotes>
 
   <Modules>
@@ -405,7 +405,7 @@
       <verification-ref>V-M-CLI</verification-ref>
     </M-CLI>
 
-    <!-- Migration baseline: current and planned architecture surfaces -->
+    <!-- Current architecture baseline: implemented runtime surfaces -->
 
     <M-MODELS NAME="ModelMetadata" TYPE="TYPES" LAYER="0" ORDER="6" STATUS="implemented">
       <contract>
@@ -424,7 +424,7 @@
         <source>core/models/manifest.v1.json</source>
       </target>
       <verification-ref>V-M-MODELS</verification-ref>
-      <migration-note>Current model metadata is Qwen3-mode-oriented and will be split into family-aware catalog, artifact, and runtime registry surfaces.</migration-note>
+      <implementation-note>Current model metadata is already split across manifest-backed, family-aware catalog, artifact, and runtime-registry surfaces.</implementation-note>
     </M-MODELS>
 
     <M-EXECUTION-PLAN NAME="ExecutionPlanContracts" TYPE="TYPES" LAYER="0" ORDER="7" STATUS="implemented">
@@ -512,7 +512,7 @@
         <source>core/registry/model_catalog.py</source>
       </target>
       <verification-ref>V-M-MODEL-CATALOG</verification-ref>
-      <migration-note>Current code uses this registry as the family-aware metadata surface alongside the runtime-facing registry layers.</migration-note>
+      <implementation-note>Current code uses this registry as the family-aware metadata surface alongside the runtime-facing registry layers.</implementation-note>
     </M-MODEL-CATALOG>
 
     <M-ARTIFACT-REGISTRY NAME="ArtifactRegistry" TYPE="DATA_LAYER" LAYER="2" ORDER="5" STATUS="implemented">
@@ -527,7 +527,7 @@
         <source>core/registry/artifacts.py</source>
       </target>
       <verification-ref>V-M-ARTIFACT-REGISTRY</verification-ref>
-      <migration-note>Current code uses this registry as the artifact-state facade over backend inspection for readiness and model-asset validation.</migration-note>
+      <implementation-note>Current code uses this registry as the artifact-state facade over backend inspection for readiness and model-asset validation.</implementation-note>
     </M-ARTIFACT-REGISTRY>
 
     <M-RUNTIME-MODEL-REGISTRY NAME="RuntimeModelRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="6" STATUS="implemented">
@@ -542,7 +542,7 @@
         <source>core/registry/runtime_models.py</source>
       </target>
       <verification-ref>V-M-RUNTIME-MODEL-REGISTRY</verification-ref>
-      <migration-note>Current code exposes runtime-facing preload and cache state through a stable wrapper that reads artifact state and the public ModelRegistry preload contract directly.</migration-note>
+      <implementation-note>Current code exposes runtime-facing preload and cache state through a stable wrapper that reads artifact state and the public ModelRegistry preload contract directly.</implementation-note>
     </M-RUNTIME-MODEL-REGISTRY>
 
     <M-CAPABILITY-RESOLVER NAME="CapabilityResolver" TYPE="CORE_LOGIC" LAYER="2" ORDER="7" STATUS="implemented">
@@ -572,7 +572,7 @@
         <source>core/contracts/runtime.py</source>
       </target>
       <verification-ref>V-M-SYNTHESIS-PLANNER</verification-ref>
-      <migration-note>Current code no longer falls back to direct catalog scanning inside the planner; model resolution is expected to arrive through the registry contract only, with the planning seam typed through core/contracts/runtime.py.</migration-note>
+      <implementation-note>Current code no longer falls back to direct catalog scanning inside the planner; model resolution is expected to arrive through the registry contract only, with the planning seam typed through core/contracts/runtime.py.</implementation-note>
     </M-SYNTHESIS-PLANNER>
 
     <M-BACKENDS-V2 NAME="ExecutionBackendContract" TYPE="CORE_LOGIC" LAYER="2" ORDER="9" STATUS="implemented">
@@ -606,7 +606,7 @@
         <source>core/contracts/runtime.py</source>
       </target>
       <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
-      <migration-note>Current code binds planner/coordinator seams to typed runtime registry protocols so service layers depend on explicit contracts instead of concrete registry implementations.</migration-note>
+      <implementation-note>Current code binds planner/coordinator seams to typed runtime registry protocols so service layers depend on explicit contracts instead of concrete registry implementations.</implementation-note>
     </M-TTS-COORDINATOR>
 
     <M-PROFILE-SCHEMA NAME="RuntimeProfileSchema" TYPE="TYPES" LAYER="0" ORDER="9" STATUS="implemented">

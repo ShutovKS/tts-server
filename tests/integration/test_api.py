@@ -133,7 +133,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         outputs_dir=tmp_path / ".outputs",
         voices_dir=tmp_path / ".voices",
         upload_staging_dir=tmp_path / ".uploads",
-        enable_streaming=True,
         default_save_output=False,
         max_input_text_chars=32,
     )
@@ -373,8 +372,6 @@ def test_clone_tts_passes_language_to_application(client: TestClient):
 def test_openai_speech_ignores_streaming_flag_for_materialized_audio(
     client: TestClient,
 ):
-    assert _state(client).settings.enable_streaming is True
-
     response = client.post(
         "/v1/audio/speech",
         json={
@@ -1966,7 +1963,6 @@ def test_clone_endpoint_returns_controlled_error_when_generation_artifact_missin
         outputs_dir=tmp_path / ".outputs",
         voices_dir=tmp_path / ".voices",
         upload_staging_dir=tmp_path / ".uploads",
-        enable_streaming=True,
         default_save_output=False,
         default_clone_model="Qwen3-TTS-12Hz-1.7B-Base-8bit",
     )
