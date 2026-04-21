@@ -125,12 +125,13 @@ def _assert_bootstrap_payload(payload: dict[str, object], *, family: str, module
     assert set(commands) == {
         "create_env",
         "set_backend",
+        "runtime_bootstrap",
         "upgrade_pip",
         "install_compiled_requirements",
     }
     # The launcher currently emits Windows-oriented operator guidance strings verbatim.
     assert commands["create_env"] == f"py -3.11 -m venv {bootstrap['expected_env_root']}"
-    assert commands["set_backend"] == f"set QWEN_TTS_BACKEND={bootstrap['suggested_backend_env']}"
+    assert commands["set_backend"] == f"set TTS_BACKEND={bootstrap['suggested_backend_env']}"
     assert commands["upgrade_pip"] == f"{bootstrap['expected_python_path']} -m pip install --upgrade pip"
     assert (
         commands["install_compiled_requirements"]

@@ -168,15 +168,15 @@ class TestSettingsFromEnv:
         """Test parsing Telegram settings from environment."""
         environ = {
             # CoreSettings required fields
-            "QWEN_TTS_MODELS_DIR": ".models",
-            "QWEN_TTS_OUTPUTS_DIR": ".outputs",
-            "QWEN_TTS_VOICES_DIR": ".voices",
+            "TTS_MODELS_DIR": ".models",
+            "TTS_OUTPUTS_DIR": ".outputs",
+            "TTS_VOICES_DIR": ".voices",
             # Telegram settings
-            "QWEN_TTS_TELEGRAM_BOT_TOKEN": "test_token",
-            "QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS": "123,456,789",
-            "QWEN_TTS_TELEGRAM_LOG_LEVEL": "DEBUG",
-            "QWEN_TTS_TELEGRAM_DEFAULT_SPEAKER": "Alex",
-            "QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH": "500",
+            "TTS_TELEGRAM_BOT_TOKEN": "test_token",
+            "TTS_TELEGRAM_ALLOWED_USER_IDS": "123,456,789",
+            "TTS_TELEGRAM_LOG_LEVEL": "DEBUG",
+            "TTS_TELEGRAM_DEFAULT_SPEAKER": "Alex",
+            "TTS_TELEGRAM_MAX_TEXT_LENGTH": "500",
         }
 
         settings = TelegramSettings.from_env(environ)
@@ -190,11 +190,11 @@ class TestSettingsFromEnv:
     def test_parse_empty_allowlist(self):
         """Test parsing empty allowlist from environment."""
         environ = {
-            "QWEN_TTS_MODELS_DIR": ".models",
-            "QWEN_TTS_OUTPUTS_DIR": ".outputs",
-            "QWEN_TTS_VOICES_DIR": ".voices",
-            "QWEN_TTS_TELEGRAM_BOT_TOKEN": "test_token",
-            "QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS": "",
+            "TTS_MODELS_DIR": ".models",
+            "TTS_OUTPUTS_DIR": ".outputs",
+            "TTS_VOICES_DIR": ".voices",
+            "TTS_TELEGRAM_BOT_TOKEN": "test_token",
+            "TTS_TELEGRAM_ALLOWED_USER_IDS": "",
         }
 
         settings = TelegramSettings.from_env(environ)
@@ -204,10 +204,10 @@ class TestSettingsFromEnv:
     def test_parse_default_speaker(self):
         """Test parsing default speaker from environment."""
         environ = {
-            "QWEN_TTS_MODELS_DIR": ".models",
-            "QWEN_TTS_OUTPUTS_DIR": ".outputs",
-            "QWEN_TTS_VOICES_DIR": ".voices",
-            "QWEN_TTS_TELEGRAM_BOT_TOKEN": "test_token",
+            "TTS_MODELS_DIR": ".models",
+            "TTS_OUTPUTS_DIR": ".outputs",
+            "TTS_VOICES_DIR": ".voices",
+            "TTS_TELEGRAM_BOT_TOKEN": "test_token",
         }
 
         settings = TelegramSettings.from_env(environ)
@@ -217,10 +217,10 @@ class TestSettingsFromEnv:
     def test_parse_default_max_text_length(self):
         """Test parsing default max text length from environment."""
         environ = {
-            "QWEN_TTS_MODELS_DIR": ".models",
-            "QWEN_TTS_OUTPUTS_DIR": ".outputs",
-            "QWEN_TTS_VOICES_DIR": ".voices",
-            "QWEN_TTS_TELEGRAM_BOT_TOKEN": "test_token",
+            "TTS_MODELS_DIR": ".models",
+            "TTS_OUTPUTS_DIR": ".outputs",
+            "TTS_VOICES_DIR": ".voices",
+            "TTS_TELEGRAM_BOT_TOKEN": "test_token",
         }
 
         settings = TelegramSettings.from_env(environ)

@@ -614,10 +614,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     smoke_parser.add_argument(
         "--smoke-model-id",
-        default=(os.getenv("QWEN_TTS_SMOKE_MODEL_ID") or CUSTOM_SMOKE_MODEL_ID),
+        default=(os.getenv("TTS_SMOKE_MODEL_ID") or CUSTOM_SMOKE_MODEL_ID),
         help=(
             "Smoke model id to validate through the HTTP API. "
-            f"Defaults to QWEN_TTS_SMOKE_MODEL_ID or {CUSTOM_SMOKE_MODEL_ID}."
+            f"Defaults to TTS_SMOKE_MODEL_ID or {CUSTOM_SMOKE_MODEL_ID}."
         ),
     )
     smoke_parser.add_argument(
@@ -667,7 +667,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     telegram_parser.add_argument(
         "--bot-token",
         default=None,
-        help="Telegram bot token override. Falls back to QWEN_TTS_TELEGRAM_BOT_TOKEN.",
+        help="Telegram bot token override. Falls back to TTS_TELEGRAM_BOT_TOKEN.",
     )
     telegram_parser.add_argument(
         "--chat-id",
@@ -722,7 +722,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     docker_telegram_parser.add_argument(
         "--bot-token",
         default=None,
-        help="Telegram bot token override. Falls back to QWEN_TTS_TELEGRAM_BOT_TOKEN.",
+        help="Telegram bot token override. Falls back to TTS_TELEGRAM_BOT_TOKEN.",
     )
     docker_telegram_parser.add_argument(
         "--chat-id",
@@ -802,28 +802,28 @@ def build_validation_env(
         if str(sox_dir).lower() not in normalized_entries:
             env["PATH"] = os.pathsep.join([str(sox_dir), *path_entries])
     env.setdefault(
-        "QWEN_TTS_MODELS_DIR", (PROJECT_ROOT / ".models").resolve().as_posix()
+        "TTS_MODELS_DIR", (PROJECT_ROOT / ".models").resolve().as_posix()
     )
     env.setdefault(
-        "QWEN_TTS_MLX_MODELS_DIR",
+        "TTS_MLX_MODELS_DIR",
         (PROJECT_ROOT / ".models" / "mlx").resolve().as_posix(),
     )
     env.setdefault(
-        "QWEN_TTS_OUTPUTS_DIR", (PROJECT_ROOT / ".outputs").resolve().as_posix()
+        "TTS_OUTPUTS_DIR", (PROJECT_ROOT / ".outputs").resolve().as_posix()
     )
     env.setdefault(
-        "QWEN_TTS_VOICES_DIR", (PROJECT_ROOT / ".voices").resolve().as_posix()
+        "TTS_VOICES_DIR", (PROJECT_ROOT / ".voices").resolve().as_posix()
     )
     env.setdefault(
-        "QWEN_TTS_UPLOAD_STAGING_DIR",
+        "TTS_UPLOAD_STAGING_DIR",
         (PROJECT_ROOT / ".uploads").resolve().as_posix(),
     )
     if backend is not None:
-        env["QWEN_TTS_BACKEND"] = backend
+        env["TTS_BACKEND"] = backend
     if host is not None:
-        env["QWEN_TTS_HOST"] = host
+        env["TTS_HOST"] = host
     if port is not None:
-        env["QWEN_TTS_PORT"] = str(port)
+        env["TTS_PORT"] = str(port)
     return env
 
 
@@ -1042,15 +1042,15 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
     # START_BLOCK_BUILD_BASELINE_PAYLOADS
     baseline, baseline_diagnostics = _build_self_check_payload_with_diagnostics(environ)
     eligible_env = dict(environ)
-    eligible_env["QWEN_TTS_QWEN_FAST_TEST_MODE"] = "eligible"
+    eligible_env["TTS_QWEN_FAST_TEST_MODE"] = "eligible"
     eligible, eligible_diagnostics = _build_self_check_payload_with_diagnostics(eligible_env)
     cuda_missing_env = dict(environ)
-    cuda_missing_env["QWEN_TTS_QWEN_FAST_TEST_MODE"] = "cuda_missing"
+    cuda_missing_env["TTS_QWEN_FAST_TEST_MODE"] = "cuda_missing"
     cuda_missing, cuda_missing_diagnostics = _build_self_check_payload_with_diagnostics(
         cuda_missing_env
     )
     dependency_missing_env = dict(environ)
-    dependency_missing_env["QWEN_TTS_QWEN_FAST_TEST_MODE"] = "dependency_missing"
+    dependency_missing_env["TTS_QWEN_FAST_TEST_MODE"] = "dependency_missing"
     dependency_missing, dependency_missing_diagnostics = _build_self_check_payload_with_diagnostics(
         dependency_missing_env
     )
@@ -1253,7 +1253,7 @@ def run_smoke_server_validation(
     host = payload["readiness"]["host"]
     smoke_model = _model_entry(payload, smoke_model_id)
     smoke_model_dir = (
-        Path(env["QWEN_TTS_MODELS_DIR"]) / resolve_smoke_model_folder(smoke_model)
+        Path(env["TTS_MODELS_DIR"]) / resolve_smoke_model_folder(smoke_model)
     )
     if not smoke_model_dir.exists():
         _raise_validation_error(
@@ -1370,10 +1370,10 @@ def run_smoke_server_validation(
         )
 
         smoke_env = dict(env)
-        smoke_env["QWEN_TTS_RUN_SMOKE"] = "1"
-        smoke_env["QWEN_TTS_SMOKE_BASE_URL"] = base_url
-        smoke_env["QWEN_TTS_SMOKE_MODEL_ID"] = smoke_model_id
-        smoke_env["QWEN_TTS_SMOKE_EXPECTED_BACKEND"] = str(expected_backend)
+        smoke_env["TTS_RUN_SMOKE"] = "1"
+        smoke_env["TTS_SMOKE_BASE_URL"] = base_url
+        smoke_env["TTS_SMOKE_MODEL_ID"] = smoke_model_id
+        smoke_env["TTS_SMOKE_EXPECTED_BACKEND"] = str(expected_backend)
         smoke_result = subprocess.run(
             [
                 args.python_executable,
@@ -1615,7 +1615,7 @@ def run_server_docker_validation(
             details={"compose_host": "0.0.0.0"},
             artifacts=retained_artifacts,
         )
-    env["QWEN_TTS_SERVER_PORT"] = str(resolved_host_port)
+    env["TTS_SERVER_PORT"] = str(resolved_host_port)
     main_error: ValidationCommandError | None = None
     probes: dict[str, dict[str, Any]] | None = None
     compose_attempted = False
@@ -1775,18 +1775,18 @@ async def run_telegram_live_validation(
 ) -> dict[str, Any]:
     # START_BLOCK_INIT_TELEGRAM_CLIENT
     command = "telegram-live"
-    token = (args.bot_token or environ.get("QWEN_TTS_TELEGRAM_BOT_TOKEN") or "").strip()
+    token = (args.bot_token or environ.get("TTS_TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
         _raise_validation_error(
             command,
             "telegram_bot_token_missing",
-            "Telegram live validation requires --bot-token or QWEN_TTS_TELEGRAM_BOT_TOKEN",
+            "Telegram live validation requires --bot-token or TTS_TELEGRAM_BOT_TOKEN",
             outcome="advisory",
             stage="preflight",
             details={
                 "requires": [
                     "--bot-token",
-                    "QWEN_TTS_TELEGRAM_BOT_TOKEN",
+                    "TTS_TELEGRAM_BOT_TOKEN",
                 ]
             },
         )
@@ -1951,18 +1951,18 @@ async def run_telegram_docker_validation(
             artifacts=retained_artifacts,
         )
 
-    token = (args.bot_token or environ.get("QWEN_TTS_TELEGRAM_BOT_TOKEN") or "").strip()
+    token = (args.bot_token or environ.get("TTS_TELEGRAM_BOT_TOKEN") or "").strip()
     if not token:
         _raise_validation_error(
             command,
             "telegram_bot_token_missing",
-            "Telegram Docker parity requires --bot-token or QWEN_TTS_TELEGRAM_BOT_TOKEN.",
+            "Telegram Docker parity requires --bot-token or TTS_TELEGRAM_BOT_TOKEN.",
             outcome="skipped",
             stage="preflight",
             details={
                 "requires": [
                     "--bot-token",
-                    "QWEN_TTS_TELEGRAM_BOT_TOKEN",
+                    "TTS_TELEGRAM_BOT_TOKEN",
                 ]
             },
             artifacts=retained_artifacts,
@@ -1982,7 +1982,7 @@ async def run_telegram_docker_validation(
         )
 
     env = build_validation_env(environ)
-    env["QWEN_TTS_TELEGRAM_BOT_TOKEN"] = token
+    env["TTS_TELEGRAM_BOT_TOKEN"] = token
     main_error: ValidationCommandError | None = None
     startup_proof: dict[str, Any] | None = None
     api_summary: dict[str, Any] | None = None

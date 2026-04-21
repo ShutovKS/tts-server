@@ -59,16 +59,16 @@ def test_macos_launcher_script_reuses_profile_aware_launcher_and_brew_guidance()
     assert "/health/live" in contents
     assert "Select family to prepare" in contents
     assert "select_multiple_menu_options" in contents
-    assert "QWEN_TTS_ACTIVE_FAMILY" in contents
-    assert "QWEN_TTS_DEFAULT_CUSTOM_MODEL" in contents
-    assert "QWEN_TTS_DEFAULT_DESIGN_MODEL" in contents
-    assert "QWEN_TTS_DEFAULT_CLONE_MODEL" in contents
+    assert "TTS_ACTIVE_FAMILY" in contents
+    assert "TTS_DEFAULT_CUSTOM_MODEL" in contents
+    assert "TTS_DEFAULT_DESIGN_MODEL" in contents
+    assert "TTS_DEFAULT_CLONE_MODEL" in contents
     assert "Runtime capability bindings:" in contents
     assert "Automatically preparing the only model" in contents
     assert "snapshot_download" in contents
     assert "piper.download_voices" in contents
     assert "HF_TOKEN" in contents
-    assert "QWEN_TTS_TELEGRAM_BOT_TOKEN" in contents
+    assert "TTS_TELEGRAM_BOT_TOKEN" in contents
     assert "Run brew install now? [y/N]:" in contents
     assert "Homebrew was not found" in contents
     assert "Qwen Custom 1.7B" in contents
@@ -99,16 +99,16 @@ def test_linux_launcher_script_reuses_profile_aware_launcher_and_manual_package_
     assert "/health/live" in contents
     assert "Select family to prepare" in contents
     assert "select_multiple_menu_options" in contents
-    assert "QWEN_TTS_ACTIVE_FAMILY" in contents
-    assert "QWEN_TTS_DEFAULT_CUSTOM_MODEL" in contents
-    assert "QWEN_TTS_DEFAULT_DESIGN_MODEL" in contents
-    assert "QWEN_TTS_DEFAULT_CLONE_MODEL" in contents
+    assert "TTS_ACTIVE_FAMILY" in contents
+    assert "TTS_DEFAULT_CUSTOM_MODEL" in contents
+    assert "TTS_DEFAULT_DESIGN_MODEL" in contents
+    assert "TTS_DEFAULT_CLONE_MODEL" in contents
     assert "Runtime capability bindings:" in contents
     assert "Automatically preparing the only model" in contents
     assert "snapshot_download" in contents
     assert "piper.download_voices" in contents
     assert "HF_TOKEN" in contents
-    assert "QWEN_TTS_TELEGRAM_BOT_TOKEN" in contents
+    assert "TTS_TELEGRAM_BOT_TOKEN" in contents
     assert "This script does not install system packages automatically." in contents
     assert "sudo apt-get install -y python3.11 python3.11-venv ffmpeg" in contents
     assert "sudo dnf install -y python3.11 ffmpeg" in contents

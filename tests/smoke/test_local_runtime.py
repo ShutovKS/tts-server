@@ -53,16 +53,16 @@ import pytest
 pytestmark = pytest.mark.smoke
 
 
-SMOKE_FLAG = "QWEN_TTS_RUN_SMOKE"
-SMOKE_BASE_URL = os.getenv("QWEN_TTS_SMOKE_BASE_URL", "http://127.0.0.1:8001").rstrip(
+SMOKE_FLAG = "TTS_RUN_SMOKE"
+SMOKE_BASE_URL = os.getenv("TTS_SMOKE_BASE_URL", "http://127.0.0.1:8001").rstrip(
     "/"
 )
-MODELS_DIR = Path(os.getenv("QWEN_TTS_MODELS_DIR", ".models"))
+MODELS_DIR = Path(os.getenv("TTS_MODELS_DIR", ".models"))
 CUSTOM_MODEL_DIR = MODELS_DIR / "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
 OMNIVOICE_MODEL_DIR = MODELS_DIR / "OmniVoice"
 PIPER_MODEL_DIR = MODELS_DIR / "Piper-en_US-lessac-medium"
-SMOKE_MODEL_ID = os.getenv("QWEN_TTS_SMOKE_MODEL_ID", "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit")
-EXPECTED_BACKEND = os.getenv("QWEN_TTS_SMOKE_EXPECTED_BACKEND")
+SMOKE_MODEL_ID = os.getenv("TTS_SMOKE_MODEL_ID", "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit")
+EXPECTED_BACKEND = os.getenv("TTS_SMOKE_EXPECTED_BACKEND")
 DEFAULT_CUSTOM_SMOKE_TEXT = "Smoke test for local custom voice endpoint."
 ASYNC_CUSTOM_SMOKE_TEXT = "Smoke async job test for local custom voice endpoint."
 SMOKE_TARGETS: dict[str, dict[str, str | Path | bool | dict[str, object]]] = {
@@ -124,9 +124,9 @@ SMOKE_TARGETS: dict[str, dict[str, str | Path | bool | dict[str, object]]] = {
 }
 SUPPORTED_SMOKE_MODEL_IDS = set(SMOKE_TARGETS)
 ASYNC_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timeout"}
-ASYNC_POLL_ATTEMPTS = int(os.getenv("QWEN_TTS_SMOKE_ASYNC_POLL_ATTEMPTS", "60"))
+ASYNC_POLL_ATTEMPTS = int(os.getenv("TTS_SMOKE_ASYNC_POLL_ATTEMPTS", "60"))
 ASYNC_POLL_INTERVAL_SECONDS = float(
-    os.getenv("QWEN_TTS_SMOKE_ASYNC_POLL_INTERVAL_SECONDS", "1.0")
+    os.getenv("TTS_SMOKE_ASYNC_POLL_INTERVAL_SECONDS", "1.0")
 )
 
 

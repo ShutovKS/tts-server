@@ -157,10 +157,10 @@ def _run_plan_run(
         launcher_main.os,
         "environ",
         {
-            "QWEN_TTS_ACTIVE_FAMILY": family,
-            "QWEN_TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit" if family == "qwen" else "Piper-en_US-lessac-medium" if family == "piper" else "OmniVoice",
-            "QWEN_TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit" if family == "qwen" else "OmniVoice" if family == "omnivoice" else "",
-            "QWEN_TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit" if family == "qwen" else "OmniVoice" if family == "omnivoice" else "",
+            "TTS_ACTIVE_FAMILY": family,
+            "TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit" if family == "qwen" else "Piper-en_US-lessac-medium" if family == "piper" else "OmniVoice",
+            "TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit" if family == "qwen" else "OmniVoice" if family == "omnivoice" else "",
+            "TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit" if family == "qwen" else "OmniVoice" if family == "omnivoice" else "",
         },
     )
     monkeypatch.setattr(
@@ -211,9 +211,9 @@ def test_launcher_plan_run_outputs_deterministic_qwen_server_launch_plan(
                 "clone_model": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
             },
             "capability_status": {
-                "custom": {"bound": True, "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit", "env_var": "QWEN_TTS_DEFAULT_CUSTOM_MODEL"},
-                "design": {"bound": True, "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit", "env_var": "QWEN_TTS_DEFAULT_DESIGN_MODEL"},
-                "clone": {"bound": True, "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit", "env_var": "QWEN_TTS_DEFAULT_CLONE_MODEL"},
+                "custom": {"bound": True, "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit", "env_var": "TTS_DEFAULT_CUSTOM_MODEL"},
+                "design": {"bound": True, "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit", "env_var": "TTS_DEFAULT_DESIGN_MODEL"},
+                "clone": {"bound": True, "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit", "env_var": "TTS_DEFAULT_CLONE_MODEL"},
             },
         },
     }
@@ -254,9 +254,9 @@ def test_launcher_plan_run_outputs_deterministic_piper_cli_launch_plan(
                 "clone_model": None,
             },
             "capability_status": {
-                "custom": {"bound": True, "model": "Piper-en_US-lessac-medium", "env_var": "QWEN_TTS_DEFAULT_CUSTOM_MODEL"},
-                "design": {"bound": False, "model": None, "env_var": "QWEN_TTS_DEFAULT_DESIGN_MODEL"},
-                "clone": {"bound": False, "model": None, "env_var": "QWEN_TTS_DEFAULT_CLONE_MODEL"},
+                "custom": {"bound": True, "model": "Piper-en_US-lessac-medium", "env_var": "TTS_DEFAULT_CUSTOM_MODEL"},
+                "design": {"bound": False, "model": None, "env_var": "TTS_DEFAULT_DESIGN_MODEL"},
+                "clone": {"bound": False, "model": None, "env_var": "TTS_DEFAULT_CLONE_MODEL"},
             },
         },
     }
@@ -297,9 +297,9 @@ def test_launcher_plan_run_outputs_deterministic_omnivoice_cli_launch_plan(
                 "clone_model": "OmniVoice",
             },
             "capability_status": {
-                "custom": {"bound": True, "model": "OmniVoice", "env_var": "QWEN_TTS_DEFAULT_CUSTOM_MODEL"},
-                "design": {"bound": True, "model": "OmniVoice", "env_var": "QWEN_TTS_DEFAULT_DESIGN_MODEL"},
-                "clone": {"bound": True, "model": "OmniVoice", "env_var": "QWEN_TTS_DEFAULT_CLONE_MODEL"},
+                "custom": {"bound": True, "model": "OmniVoice", "env_var": "TTS_DEFAULT_CUSTOM_MODEL"},
+                "design": {"bound": True, "model": "OmniVoice", "env_var": "TTS_DEFAULT_DESIGN_MODEL"},
+                "clone": {"bound": True, "model": "OmniVoice", "env_var": "TTS_DEFAULT_CLONE_MODEL"},
             },
         },
     }

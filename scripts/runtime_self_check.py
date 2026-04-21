@@ -186,8 +186,6 @@ def _classify_representative_target(item: dict[str, Any] | None) -> dict[str, An
     available = item.get("available") is True
     loadable = item.get("loadable") is True
     runtime_ready = item.get("runtime_ready") is True
-    runtime_blockers = list(item.get("runtime_blockers") or [])
-
     if runtime_ready:
         return {
             "status": "ready",
@@ -394,7 +392,7 @@ def build_self_check_payload(
             "configured_backend": settings.backend,
             "backend_autoselect": settings.backend_autoselect,
             "qwen_fast_enabled": settings.qwen_fast_enabled,
-            "qwen_fast_test_mode": env.get("QWEN_TTS_QWEN_FAST_TEST_MODE") or None,
+            "qwen_fast_test_mode": env.get("TTS_QWEN_FAST_TEST_MODE") or None,
             "model_preload_policy": settings.model_preload_policy,
             "model_preload_ids": list(settings.model_preload_ids),
         },

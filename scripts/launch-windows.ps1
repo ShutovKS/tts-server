@@ -23,7 +23,7 @@
 #   Test-ModelArtifacts - Validate a model folder or Hugging Face snapshot layout against required artifact groups.
 #   Ensure-FamilyEnvironment - Create and verify the dedicated family environment through launcher create-env/check-env flows.
 #   Ensure-ModelAvailability - Validate local model artifacts and optionally download missing assets through family-aware strategies.
-#   Configure-ServiceEnvironment - Apply transient QWEN_TTS_* and Telegram settings for the selected launch contour.
+#   Configure-ServiceEnvironment - Apply transient TTS_* and Telegram settings for the selected launch contour.
 #   Get-RuntimeCapabilityBindings - Derive runtime capability bindings from ensured models and selected family.
 #   Show-RuntimeCapabilityBindings - Print the final runtime capability binding summary before launch.
 #   Wait-HttpHealthCheck - Probe the configured HTTP server until /health/live responds or timeout elapses.
@@ -60,12 +60,12 @@ function Get-ProjectRoot {
         return (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
     }
 
-    $fallbackRoot = $env:QWEN_TTS_LAUNCH_PROJECT_ROOT
+    $fallbackRoot = $env:TTS_LAUNCH_PROJECT_ROOT
     if (-not [string]::IsNullOrWhiteSpace($fallbackRoot) -and (Test-Path $fallbackRoot)) {
         return (Resolve-Path $fallbackRoot).Path
     }
 
-    throw 'Unable to resolve project root: neither $PSScriptRoot nor QWEN_TTS_LAUNCH_PROJECT_ROOT is available.'
+    throw 'Unable to resolve project root: neither $PSScriptRoot nor TTS_LAUNCH_PROJECT_ROOT is available.'
 }
 
 function ConvertTo-PlainText {
@@ -388,10 +388,10 @@ function Show-RuntimeCapabilityBindings {
 
     Write-Host ''
     Write-Host 'Runtime capability bindings:' -ForegroundColor Cyan
-    Write-Host ('  QWEN_TTS_ACTIVE_FAMILY={0}' -f $Bindings.family)
-    Write-Host ('  QWEN_TTS_DEFAULT_CUSTOM_MODEL={0}' -f ($(if ($Bindings.custom_model) { $Bindings.custom_model } else { '<unbound>' })))
-    Write-Host ('  QWEN_TTS_DEFAULT_DESIGN_MODEL={0}' -f ($(if ($Bindings.design_model) { $Bindings.design_model } else { '<unbound>' })))
-    Write-Host ('  QWEN_TTS_DEFAULT_CLONE_MODEL={0}' -f ($(if ($Bindings.clone_model) { $Bindings.clone_model } else { '<unbound>' })))
+    Write-Host ('  TTS_ACTIVE_FAMILY={0}' -f $Bindings.family)
+    Write-Host ('  TTS_DEFAULT_CUSTOM_MODEL={0}' -f ($(if ($Bindings.custom_model) { $Bindings.custom_model } else { '<unbound>' })))
+    Write-Host ('  TTS_DEFAULT_DESIGN_MODEL={0}' -f ($(if ($Bindings.design_model) { $Bindings.design_model } else { '<unbound>' })))
+    Write-Host ('  TTS_DEFAULT_CLONE_MODEL={0}' -f ($(if ($Bindings.clone_model) { $Bindings.clone_model } else { '<unbound>' })))
 }
 
 function Configure-ServiceEnvironment {
@@ -402,41 +402,41 @@ function Configure-ServiceEnvironment {
         [Parameter(Mandatory = $true)][object]$Bindings
     )
 
-    $env:QWEN_TTS_MODELS_DIR = Join-Path $ProjectRoot '.models'
-    $env:QWEN_TTS_OUTPUTS_DIR = Join-Path $ProjectRoot '.outputs'
-    $env:QWEN_TTS_VOICES_DIR = Join-Path $ProjectRoot '.voices'
-    $env:QWEN_TTS_UPLOAD_STAGING_DIR = Join-Path $ProjectRoot '.uploads'
-    $env:QWEN_TTS_ACTIVE_FAMILY = [string]$Bindings.family
-    if ($Bindings.custom_model) { $env:QWEN_TTS_DEFAULT_CUSTOM_MODEL = [string]$Bindings.custom_model } else { Remove-Item Env:QWEN_TTS_DEFAULT_CUSTOM_MODEL -ErrorAction SilentlyContinue }
-    if ($Bindings.design_model) { $env:QWEN_TTS_DEFAULT_DESIGN_MODEL = [string]$Bindings.design_model } else { Remove-Item Env:QWEN_TTS_DEFAULT_DESIGN_MODEL -ErrorAction SilentlyContinue }
-    if ($Bindings.clone_model) { $env:QWEN_TTS_DEFAULT_CLONE_MODEL = [string]$Bindings.clone_model } else { Remove-Item Env:QWEN_TTS_DEFAULT_CLONE_MODEL -ErrorAction SilentlyContinue }
+    $env:TTS_MODELS_DIR = Join-Path $ProjectRoot '.models'
+    $env:TTS_OUTPUTS_DIR = Join-Path $ProjectRoot '.outputs'
+    $env:TTS_VOICES_DIR = Join-Path $ProjectRoot '.voices'
+    $env:TTS_UPLOAD_STAGING_DIR = Join-Path $ProjectRoot '.uploads'
+    $env:TTS_ACTIVE_FAMILY = [string]$Bindings.family
+    if ($Bindings.custom_model) { $env:TTS_DEFAULT_CUSTOM_MODEL = [string]$Bindings.custom_model } else { Remove-Item Env:TTS_DEFAULT_CUSTOM_MODEL -ErrorAction SilentlyContinue }
+    if ($Bindings.design_model) { $env:TTS_DEFAULT_DESIGN_MODEL = [string]$Bindings.design_model } else { Remove-Item Env:TTS_DEFAULT_DESIGN_MODEL -ErrorAction SilentlyContinue }
+    if ($Bindings.clone_model) { $env:TTS_DEFAULT_CLONE_MODEL = [string]$Bindings.clone_model } else { Remove-Item Env:TTS_DEFAULT_CLONE_MODEL -ErrorAction SilentlyContinue }
     if ($InspectPayload.selected_backend) {
-        $env:QWEN_TTS_BACKEND = [string]$InspectPayload.selected_backend
-        $env:QWEN_TTS_BACKEND_AUTOSELECT = 'false'
+        $env:TTS_BACKEND = [string]$InspectPayload.selected_backend
+        $env:TTS_BACKEND_AUTOSELECT = 'false'
     }
-    $env:QWEN_TTS_REQUEST_TIMEOUT_SECONDS = '300'
+    $env:TTS_REQUEST_TIMEOUT_SECONDS = '300'
 
     if ($Service.Key -eq 'server') {
         $bindHost = Read-TrimmedHostInput -Prompt 'Host for HTTP server [0.0.0.0]'
         $port = Read-TrimmedHostInput -Prompt 'Port for HTTP server [8000]'
-        $env:QWEN_TTS_HOST = if ([string]::IsNullOrWhiteSpace($bindHost)) { '0.0.0.0' } else { $bindHost }
-        $env:QWEN_TTS_PORT = if ([string]::IsNullOrWhiteSpace($port)) { '8000' } else { $port }
-        $env:QWEN_TTS_LOG_LEVEL = 'info'
+        $env:TTS_HOST = if ([string]::IsNullOrWhiteSpace($bindHost)) { '0.0.0.0' } else { $bindHost }
+        $env:TTS_PORT = if ([string]::IsNullOrWhiteSpace($port)) { '8000' } else { $port }
+        $env:TTS_LOG_LEVEL = 'info'
     }
     elseif ($Service.Key -eq 'telegram') {
-        if ([string]::IsNullOrWhiteSpace($env:QWEN_TTS_TELEGRAM_BOT_TOKEN)) { $env:QWEN_TTS_TELEGRAM_BOT_TOKEN = Read-TransientToken -Prompt 'Enter Telegram bot token (it will not be saved)' }
-        if ([string]::IsNullOrWhiteSpace($env:QWEN_TTS_TELEGRAM_BOT_TOKEN)) { throw 'QWEN_TTS_TELEGRAM_BOT_TOKEN is required for Telegram launch.' }
+        if ([string]::IsNullOrWhiteSpace($env:TTS_TELEGRAM_BOT_TOKEN)) { $env:TTS_TELEGRAM_BOT_TOKEN = Read-TransientToken -Prompt 'Enter Telegram bot token (it will not be saved)' }
+        if ([string]::IsNullOrWhiteSpace($env:TTS_TELEGRAM_BOT_TOKEN)) { throw 'TTS_TELEGRAM_BOT_TOKEN is required for Telegram launch.' }
         $allowedIds = Read-TrimmedHostInput -Prompt 'Allowed user IDs (comma-separated, optional)'
-        if (-not [string]::IsNullOrWhiteSpace($allowedIds)) { $env:QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS = $allowedIds }
+        if (-not [string]::IsNullOrWhiteSpace($allowedIds)) { $env:TTS_TELEGRAM_ALLOWED_USER_IDS = $allowedIds }
         $adminIds = Read-TrimmedHostInput -Prompt 'Admin user IDs (comma-separated, optional)'
-        if (-not [string]::IsNullOrWhiteSpace($adminIds)) { $env:QWEN_TTS_TELEGRAM_ADMIN_USER_IDS = $adminIds }
-        $env:QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED = 'true'
-        $env:QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE = '20'
-        $env:QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH = Join-Path $ProjectRoot '.state/telegram_delivery_store.json'
-        $env:QWEN_TTS_TELEGRAM_LOG_LEVEL = 'info'
+        if (-not [string]::IsNullOrWhiteSpace($adminIds)) { $env:TTS_TELEGRAM_ADMIN_USER_IDS = $adminIds }
+        $env:TTS_TELEGRAM_RATE_LIMIT_ENABLED = 'true'
+        $env:TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE = '20'
+        $env:TTS_TELEGRAM_DELIVERY_STORE_PATH = Join-Path $ProjectRoot '.state/telegram_delivery_store.json'
+        $env:TTS_TELEGRAM_LOG_LEVEL = 'info'
     }
     else {
-        $env:QWEN_TTS_AUTO_PLAY_CLI = 'true'
+        $env:TTS_AUTO_PLAY_CLI = 'true'
     }
 }
 
@@ -482,7 +482,7 @@ function Start-SelectedService {
     if ($Service.Key -eq 'server') {
         $process = Start-Process -FilePath 'py' -ArgumentList @('-3.11', '-m', 'launcher', '--project-root', $ProjectRoot, 'exec', '--family', $Family, '--module', $Module) -WorkingDirectory $ProjectRoot -PassThru
         Write-Host ("Server process started with PID {0}." -f $process.Id) -ForegroundColor Cyan
-        Wait-HttpHealthCheck -BindHost $env:QWEN_TTS_HOST -BindPort $env:QWEN_TTS_PORT | Out-Null
+        Wait-HttpHealthCheck -BindHost $env:TTS_HOST -BindPort $env:TTS_PORT | Out-Null
         return
     }
 

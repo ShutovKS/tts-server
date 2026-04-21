@@ -58,9 +58,9 @@ class ServerSettings(CoreSettings):
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "ServerSettings":
         return cls(
             **parse_core_settings_from_env(environ),
-            host=env_text("QWEN_TTS_HOST", "0.0.0.0", environ),
-            port=env_int("QWEN_TTS_PORT", 8000, environ),
-            log_level=env_text("QWEN_TTS_LOG_LEVEL", "info", environ),
+            host=env_text("TTS_HOST", "0.0.0.0", environ),
+            port=env_int("TTS_PORT", 8000, environ),
+            log_level=env_text("TTS_LOG_LEVEL", "info", environ),
         )
 
 

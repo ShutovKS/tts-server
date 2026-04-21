@@ -7,7 +7,7 @@
     "pack_refs": {
       "module": ["server"]
     },
-    "env_prefixes": ["QWEN_TTS_"]
+    "env_prefixes": ["TTS_"]
   },
   "cli": {
     "label": "CLI",
@@ -18,7 +18,7 @@
       "module": ["cli"]
     },
     "supported_families": ["qwen", "piper", "omnivoice"],
-    "env_prefixes": ["QWEN_TTS_"]
+    "env_prefixes": ["TTS_"]
   },
   "telegram": {
     "label": "Telegram Bot",
@@ -28,6 +28,6 @@
     "pack_refs": {
       "module": ["telegram"]
     },
-    "env_prefixes": ["QWEN_TTS_", "QWEN_TTS_TELEGRAM_"]
+    "env_prefixes": ["TTS_", "TTS_TELEGRAM_"]
   }
 }

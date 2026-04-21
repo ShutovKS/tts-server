@@ -83,7 +83,7 @@ class TestStartupCheckResult:
             success=False,
             phase=StartupCheckPhase.CONFIG,
         )
-        result.errors.append("FATAL: QWEN_TTS_TELEGRAM_BOT_TOKEN not set")
+        result.errors.append("FATAL: TTS_TELEGRAM_BOT_TOKEN not set")
 
         assert not result.success
         assert not result.is_success
@@ -186,7 +186,7 @@ class TestRunStartupSelfChecks:
         settings.telegram_default_speaker = "af_bella"
         settings.telegram_max_text_length = 1000
         settings.backend = "mlx"
-        settings.validate.return_value = ["QWEN_TTS_TELEGRAM_BOT_TOKEN is required"]
+        settings.validate.return_value = ["TTS_TELEGRAM_BOT_TOKEN is required"]
         return settings
 
     def test_all_checks_pass(self, mock_settings):
@@ -217,7 +217,7 @@ class TestRunStartupSelfChecks:
     def test_short_bot_token_validation_is_fatal(self, mock_settings):
         """Invalid short Telegram token from settings validation is fatal."""
         mock_settings.validate.return_value = [
-            "QWEN_TTS_TELEGRAM_BOT_TOKEN appears to be invalid (too short)"
+            "TTS_TELEGRAM_BOT_TOKEN appears to be invalid (too short)"
         ]
 
         with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
@@ -231,7 +231,7 @@ class TestRunStartupSelfChecks:
     def test_invalid_text_length_validation_is_fatal(self, mock_settings):
         """Settings validation errors for impossible text length abort startup."""
         mock_settings.validate.return_value = [
-            "QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH must be positive"
+            "TTS_TELEGRAM_MAX_TEXT_LENGTH must be positive"
         ]
         mock_settings.telegram_max_text_length = -1
 

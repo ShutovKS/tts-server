@@ -30,19 +30,19 @@
 Telegram bot configuration settings.
 
 Environment variables:
-- QWEN_TTS_TELEGRAM_BOT_TOKEN: Bot token from @BotFather (required)
-- QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS: Comma-separated list of Telegram user IDs (optional, empty = all users allowed)
-- QWEN_TTS_TELEGRAM_LOG_LEVEL: Log level (default: info)
-- QWEN_TTS_TELEGRAM_DEFAULT_SPEAKER: Default speaker name (default: Vivian)
-- QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH: Maximum text length for /tts command (default: 1000)
-- QWEN_TTS_TELEGRAM_DEV_MODE: Enable dev mode with relaxed security (default: false)
-- QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED: Enable per-user rate limiting (default: true)
-- QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE: Max requests per user per minute (default: 20)
-- QWEN_TTS_TELEGRAM_JOB_TIMEOUT_SECONDS: Job execution timeout (default: from core settings)
-- QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH: Path for delivery metadata store (optional)
-- QWEN_TTS_TELEGRAM_POLL_INTERVAL_SECONDS: Job poller interval (default: 1.0)
-- QWEN_TTS_TELEGRAM_MAX_RETRIES: Max retry attempts for API calls (default: 3)
-- QWEN_TTS_TELEGRAM_ADMIN_USER_IDS: Comma-separated admin user IDs with elevated access (optional)
+- TTS_TELEGRAM_BOT_TOKEN: Bot token from @BotFather (required)
+- TTS_TELEGRAM_ALLOWED_USER_IDS: Comma-separated list of Telegram user IDs (optional, empty = all users allowed)
+- TTS_TELEGRAM_LOG_LEVEL: Log level (default: info)
+- TTS_TELEGRAM_DEFAULT_SPEAKER: Default speaker name (default: Vivian)
+- TTS_TELEGRAM_MAX_TEXT_LENGTH: Maximum text length for /tts command (default: 1000)
+- TTS_TELEGRAM_DEV_MODE: Enable dev mode with relaxed security (default: false)
+- TTS_TELEGRAM_RATE_LIMIT_ENABLED: Enable per-user rate limiting (default: true)
+- TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE: Max requests per user per minute (default: 20)
+- TTS_TELEGRAM_JOB_TIMEOUT_SECONDS: Job execution timeout (default: from core settings)
+- TTS_TELEGRAM_DELIVERY_STORE_PATH: Path for delivery metadata store (optional)
+- TTS_TELEGRAM_POLL_INTERVAL_SECONDS: Job poller interval (default: 1.0)
+- TTS_TELEGRAM_MAX_RETRIES: Max retry attempts for API calls (default: 3)
+- TTS_TELEGRAM_ADMIN_USER_IDS: Comma-separated admin user IDs with elevated access (optional)
 """
 
 from __future__ import annotations
@@ -52,14 +52,10 @@ from typing import Mapping
 
 from core.config import (
     CoreSettings,
-    DEFAULT_MODELS_DIR,
-    DEFAULT_OUTPUTS_DIR,
-    DEFAULT_VOICES_DIR,
     parse_core_settings_from_env,
     env_text,
     env_int,
     env_bool,
-    env_path,
     _parse_csv_env,
 )
 
@@ -211,7 +207,7 @@ class TelegramSettings(CoreSettings):
         Uses parse_core_settings_from_env() to ensure consistency with core settings
         parsing, then adds Telegram-specific settings.
         """
-        bot_token = env_text("QWEN_TTS_TELEGRAM_BOT_TOKEN", "", environ).strip()
+        bot_token = env_text("TTS_TELEGRAM_BOT_TOKEN", "", environ).strip()
 
         # Parse core settings using the shared parser for consistency
         core_settings = parse_core_settings_from_env(environ)
@@ -221,51 +217,51 @@ class TelegramSettings(CoreSettings):
             # Telegram-specific settings
             telegram_bot_token=bot_token,
             telegram_allowed_user_ids=_parse_csv_env(
-                "QWEN_TTS_TELEGRAM_ALLOWED_USER_IDS", environ
+                "TTS_TELEGRAM_ALLOWED_USER_IDS", environ
             ),
             telegram_log_level=env_text(
-                "QWEN_TTS_TELEGRAM_LOG_LEVEL", DEFAULT_TELEGRAM_LOG_LEVEL, environ
+                "TTS_TELEGRAM_LOG_LEVEL", DEFAULT_TELEGRAM_LOG_LEVEL, environ
             ),
             telegram_default_speaker=env_text(
-                "QWEN_TTS_TELEGRAM_DEFAULT_SPEAKER",
+                "TTS_TELEGRAM_DEFAULT_SPEAKER",
                 DEFAULT_TELEGRAM_DEFAULT_SPEAKER,
                 environ,
             ),
             telegram_max_text_length=env_int(
-                "QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH",
+                "TTS_TELEGRAM_MAX_TEXT_LENGTH",
                 DEFAULT_TELEGRAM_MAX_TEXT_LENGTH,
                 environ,
             ),
             # Security policy settings
             telegram_dev_mode=env_bool(
-                "QWEN_TTS_TELEGRAM_DEV_MODE", DEFAULT_TELEGRAM_DEV_MODE, environ
+                "TTS_TELEGRAM_DEV_MODE", DEFAULT_TELEGRAM_DEV_MODE, environ
             ),
             telegram_rate_limit_enabled=env_bool(
-                "QWEN_TTS_TELEGRAM_RATE_LIMIT_ENABLED",
+                "TTS_TELEGRAM_RATE_LIMIT_ENABLED",
                 DEFAULT_TELEGRAM_RATE_LIMIT_ENABLED,
                 environ,
             ),
             telegram_rate_limit_per_user_per_minute=env_int(
-                "QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE",
+                "TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE",
                 DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE,
                 environ,
             ),
             telegram_admin_user_ids=_parse_csv_env(
-                "QWEN_TTS_TELEGRAM_ADMIN_USER_IDS", environ
+                "TTS_TELEGRAM_ADMIN_USER_IDS", environ
             ),
             # Operational settings
             telegram_delivery_store_path=env_text(
-                "QWEN_TTS_TELEGRAM_DELIVERY_STORE_PATH", "", environ
+                "TTS_TELEGRAM_DELIVERY_STORE_PATH", "", environ
             ),
             telegram_poll_interval_seconds=float(
                 env_text(
-                    "QWEN_TTS_TELEGRAM_POLL_INTERVAL_SECONDS",
+                    "TTS_TELEGRAM_POLL_INTERVAL_SECONDS",
                     str(DEFAULT_TELEGRAM_POLL_INTERVAL_SECONDS),
                     environ,
                 )
             ),
             telegram_max_retries=env_int(
-                "QWEN_TTS_TELEGRAM_MAX_RETRIES", DEFAULT_TELEGRAM_MAX_RETRIES, environ
+                "TTS_TELEGRAM_MAX_RETRIES", DEFAULT_TELEGRAM_MAX_RETRIES, environ
             ),
         )
 
@@ -321,31 +317,31 @@ class TelegramSettings(CoreSettings):
 
         # Token validation
         if not self.telegram_bot_token or not self.telegram_bot_token.strip():
-            errors.append("QWEN_TTS_TELEGRAM_BOT_TOKEN is required")
+            errors.append("TTS_TELEGRAM_BOT_TOKEN is required")
         elif len(self.telegram_bot_token) < 20 and not self.telegram_dev_mode:
             errors.append(
-                "QWEN_TTS_TELEGRAM_BOT_TOKEN appears to be invalid (too short)"
+                "TTS_TELEGRAM_BOT_TOKEN appears to be invalid (too short)"
             )
 
         # Text length validation
         if self.telegram_max_text_length <= 0:
-            errors.append("QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH must be positive")
+            errors.append("TTS_TELEGRAM_MAX_TEXT_LENGTH must be positive")
         elif self.telegram_max_text_length > 5000:
-            errors.append("QWEN_TTS_TELEGRAM_MAX_TEXT_LENGTH exceeds maximum (5000)")
+            errors.append("TTS_TELEGRAM_MAX_TEXT_LENGTH exceeds maximum (5000)")
 
         # Rate limit validation
         if self.telegram_rate_limit_per_user_per_minute <= 0:
             errors.append(
-                "QWEN_TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE must be positive"
+                "TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE must be positive"
             )
 
         # Poll interval validation
         if self.telegram_poll_interval_seconds <= 0:
-            errors.append("QWEN_TTS_TELEGRAM_POLL_INTERVAL_SECONDS must be positive")
+            errors.append("TTS_TELEGRAM_POLL_INTERVAL_SECONDS must be positive")
 
         # Max retries validation
         if self.telegram_max_retries < 0:
-            errors.append("QWEN_TTS_TELEGRAM_MAX_RETRIES must be non-negative")
+            errors.append("TTS_TELEGRAM_MAX_RETRIES must be non-negative")
 
         # Dev mode with empty allowlist is acceptable for testing/development
         # In production, users should set proper allowlist or admin users

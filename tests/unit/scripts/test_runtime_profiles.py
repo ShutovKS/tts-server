@@ -111,7 +111,7 @@ def test_profile_schema_dataclasses_serialize_nested_payloads_without_aliasing_m
         docker_supported=True,
         pack_refs={"module": ("server",)},
         supported_families=("qwen", "omnivoice"),
-        env_prefixes=("QWEN_TTS_",),
+        env_prefixes=("TTS_",),
     )
     resolved = ResolvedLaunchProfile(
         host=host,
@@ -355,7 +355,7 @@ def test_runtime_self_check_builds_profile_payload_from_resolver_surface(
                     transport="http",
                     docker_supported=True,
                     pack_refs={"module": ("server",)},
-                    env_prefixes=("QWEN_TTS_",),
+                    env_prefixes=("TTS_",),
                 ),
                 ModuleProfile(
                     key="cli",
@@ -365,7 +365,7 @@ def test_runtime_self_check_builds_profile_payload_from_resolver_surface(
                     docker_supported=False,
                     pack_refs={"module": ("cli",)},
                     supported_families=("qwen", "omnivoice"),
-                    env_prefixes=("QWEN_TTS_",),
+                    env_prefixes=("TTS_",),
                 ),
             )
 
@@ -414,7 +414,7 @@ def test_runtime_self_check_builds_profile_payload_from_resolver_surface(
     # START_BLOCK_ASSERT_SELF_CHECK_PROFILE_PAYLOAD
     payload = runtime_self_check.build_self_check_payload(
         {
-            "QWEN_TTS_QWEN_FAST_TEST_MODE": "simulated",
+            "TTS_QWEN_FAST_TEST_MODE": "simulated",
         }
     )
     profiles_payload = payload["profiles"]
