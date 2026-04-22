@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FILE: scripts/launch-linux.sh
-# VERSION: 1.1.6
+# VERSION: 1.1.7
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide an interactive Linux launcher that orchestrates profile-aware environment setup, optional model downloads, and adapter startup.
 #   SCOPE: Linux-only preflight checks, package-manager-specific system dependency guidance, service/model prompts, launcher CLI orchestration, family-env bootstrap, model artifact validation, optional Hugging Face and Piper downloads, and final adapter execution.
@@ -37,7 +37,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.6 - Added launcher-managed HTTP server PID lifecycle so reruns restart owned processes and prompt when foreign listeners occupy the target port]
+#   LAST_CHANGE: [v1.1.7 - Stopped and persisted the real HTTP listener PID so launcher-managed restarts do not misclassify inherited listeners as foreign processes]
 # END_CHANGE_SUMMARY
 
 set -euo pipefail
@@ -756,6 +756,34 @@ process_is_running() {
     kill -0 "$pid" 2>/dev/null
 }
 
+resolve_http_server_port_owner_pid() {
+    local bind_host="$1"
+    local bind_port="$2"
+    local probe_host
+    probe_host="$(resolve_http_probe_host "$bind_host")"
+
+    python3.11 -c 'import socket, sys
+host, port = sys.argv[1], int(sys.argv[2])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.settimeout(1.0)
+    if sock.connect_ex((host, port)) != 0:
+        raise SystemExit(1)
+' "$probe_host" "$bind_port" >/dev/null 2>&1 || return 1
+
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -tiTCP:"$bind_port" -sTCP:LISTEN 2>/dev/null | python3.11 -c 'import sys
+for line in sys.stdin:
+    value = line.strip()
+    if value:
+        print(value)
+        raise SystemExit(0)
+raise SystemExit(1)'
+        return $?
+    fi
+
+    return 1
+}
+
 stop_http_server_pid() {
     local pid="$1"
     local project_root="$2"
@@ -778,6 +806,22 @@ stop_http_server_pid() {
     clear_http_server_pid_file "$project_root"
 }
 
+stop_http_server_listener_pid() {
+    local bind_host="$1"
+    local bind_port="$2"
+    local project_root="$3"
+    local exclude_pid="${4:-}"
+    local listener_pid
+
+    listener_pid="$(resolve_http_server_port_owner_pid "$bind_host" "$bind_port" 2>/dev/null || true)"
+    if [[ -z "$listener_pid" || "$listener_pid" == "${exclude_pid:-}" ]]; then
+        return 0
+    fi
+
+    printf 'Stopping existing launcher-managed HTTP listener (PID %s) on %s:%s.\n' "$listener_pid" "$(resolve_http_probe_host "$bind_host")" "$bind_port"
+    stop_http_server_pid "$listener_pid" "$project_root"
+}
+
 ensure_http_server_launch_target() {
     local project_root="$1"
     local bind_host="$2"
@@ -789,8 +833,36 @@ ensure_http_server_launch_target() {
 
     if load_http_server_pid_file "$pid_file"; then
         if process_is_running "$HTTP_SERVER_PID"; then
-            printf 'Stopping existing launcher-managed HTTP server (PID %s) before restart.\n' "$HTTP_SERVER_PID"
-            stop_http_server_pid "$HTTP_SERVER_PID" "$project_root"
+            while true; do
+                local managed_decision
+                read -r -p 'Launcher-managed HTTP server is already running. [R]estart / [K]eep existing / [C]hange port: ' managed_decision || managed_decision=""
+                managed_decision="$(trim_string "$managed_decision")"
+                case "${managed_decision,,}" in
+                    r|restart)
+                        printf 'Stopping existing launcher-managed HTTP server (PID %s) before restart.\n' "$HTTP_SERVER_PID"
+                        stop_http_server_pid "$HTTP_SERVER_PID" "$project_root"
+                        stop_http_server_listener_pid "$bind_host" "$bind_port" "$project_root" "$HTTP_SERVER_PID"
+                        break
+                        ;;
+                    c|change)
+                        local managed_replacement_port
+                        managed_replacement_port="$(read_trimmed_input 'New port for HTTP server: ')"
+                        if [[ -z "$managed_replacement_port" ]]; then
+                            printf 'A new port is required to continue.\n' >&2
+                            continue
+                        fi
+                        export TTS_PORT="$managed_replacement_port"
+                        return 0
+                        ;;
+                    k|keep|'')
+                        printf 'Launch cancelled: existing launcher-managed HTTP server remains active on %s:%s.\n' "$(resolve_http_probe_host "$bind_host")" "$bind_port" >&2
+                        return 1
+                        ;;
+                    *)
+                        printf 'Enter R to restart, K to keep the existing server, or C to choose a new port.\n' >&2
+                        ;;
+                esac
+            done
         else
             clear_http_server_pid_file "$project_root"
         fi
@@ -802,8 +874,28 @@ ensure_http_server_launch_target() {
 
     while true; do
         local decision
-        decision="$(read_trimmed_input 'Port is occupied by a non-launcher process. [K]eep existing / [C]hange port: ')"
+        read -r -p 'Port is occupied by a non-launcher process. [S]top and restart / [K]eep existing / [C]hange port: ' decision || decision=""
+        decision="$(trim_string "$decision")"
         case "${decision,,}" in
+            s|stop)
+                local owner_pid
+                owner_pid="$(resolve_http_server_port_owner_pid "$bind_host" "$bind_port" 2>/dev/null || true)"
+                printf 'Force-stop requested for the process currently occupying %s:%s.\n' "$(resolve_http_probe_host "$bind_host")" "$bind_port"
+                if python3.11 -c 'import os, signal, sys
+target = sys.argv[1]
+if not target or target == "0":
+    raise SystemExit(1)
+os.kill(int(target), signal.SIGTERM)
+' "$owner_pid" 2>/dev/null; then
+                    sleep 1
+                    if assert_http_server_port_available "$bind_host" "$bind_port"; then
+                        return 0
+                    fi
+                    printf 'The foreign process did not release the port cleanly.\n' >&2
+                else
+                    printf 'Unable to stop the process currently occupying %s:%s.\n' "$(resolve_http_probe_host "$bind_host")" "$bind_port" >&2
+                fi
+                ;;
             c|change)
                 local replacement_port
                 replacement_port="$(read_trimmed_input 'New port for HTTP server: ')"
@@ -821,7 +913,7 @@ ensure_http_server_launch_target() {
                 return 1
                 ;;
             *)
-                printf 'Enter K to keep the existing server or C to choose a new port.\n' >&2
+                printf 'Enter S to stop and restart, K to keep the existing server, or C to choose a new port.\n' >&2
                 ;;
         esac
     done
@@ -848,6 +940,11 @@ start_selected_service() {
         if ! wait_http_health_check "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}"; then
             stop_http_server_pid "$server_pid" "$project_root" 2>/dev/null || true
             return 1
+        fi
+        local listener_pid
+        listener_pid="$(resolve_http_server_port_owner_pid "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}" 2>/dev/null || true)"
+        if [[ -n "$listener_pid" ]]; then
+            server_pid="$listener_pid"
         fi
         mkdir -p "$project_root/.state/launcher"
         cat > "$(http_server_pid_file_path "$project_root")" <<EOF

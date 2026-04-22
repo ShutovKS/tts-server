@@ -1,5 +1,5 @@
 # FILE: tests/unit/scripts/test_unix_launcher_scripts.py
-# VERSION: 1.1.5
+# VERSION: 1.1.6
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the macOS and Linux launcher entrypoints stay aligned with the documented profile-aware guided launch flow.
 #   SCOPE: launcher-script presence, shell orchestration markers, curated family/model menu anchors, runtime capability binding markers, platform-specific dependency guidance, and bounded secret-handling command references
@@ -23,7 +23,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.5 - Added regression coverage for launcher-managed HTTP server PID files so reruns can restart owned processes and prompt on foreign listeners]
+#   LAST_CHANGE: [v1.1.6 - Strengthened Unix launcher regression coverage so restart flows track and stop the real HTTP listener PID instead of only the launcher wrapper]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -170,8 +170,15 @@ def test_unix_launcher_server_restart_uses_pid_file_management():
         assert "http_server_pid_file_path()" in contents
         assert "load_http_server_pid_file()" in contents
         assert "stop_http_server_pid()" in contents
+        assert "stop_http_server_listener_pid()" in contents
+        assert "resolve_http_server_port_owner_pid()" in contents
         assert "ensure_http_server_launch_target()" in contents
         assert ".state/launcher/http-server.pid" in contents
+        assert "Launcher-managed HTTP server is already running. [R]estart / [K]eep existing / [C]hange port:" in contents
         assert "Stopping existing launcher-managed HTTP server" in contents
-        assert "Port is occupied by a non-launcher process. [K]eep existing / [C]hange port:" in contents
+        assert "Stopping existing launcher-managed HTTP listener" in contents
+        assert 'stop_http_server_listener_pid "$bind_host" "$bind_port" "$project_root" "$HTTP_SERVER_PID"' in contents
+        assert "Port is occupied by a non-launcher process. [S]top and restart / [K]eep existing / [C]hange port:" in contents
+        assert 'listener_pid="$(resolve_http_server_port_owner_pid "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}" 2>/dev/null || true)"' in contents
+        assert 'if [[ -n "$listener_pid" ]]; then' in contents
         assert 'exec --family "$family" --module "$module" >/dev/null 2>&1 &' in contents
