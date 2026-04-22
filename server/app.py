@@ -1,5 +1,5 @@
 # FILE: server/app.py
-# VERSION: 1.0.0
+# VERSION: 1.0.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Compose the FastAPI application with all routes, middleware, and error handlers.
 #   SCOPE: FastAPI app factory, route registration, middleware setup, lifespan management
@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+#   LAST_CHANGE: [v1.0.1 - Added the static demo origin http://0.0.0.0:8030 to development CORS so browser health and clone probes work when the demo is served from that host alias]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ def create_app(settings: Optional[ServerSettings] = None) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:8030", "http://localhost:8030"],
+        allow_origins=["http://127.0.0.1:8030", "http://localhost:8030", "http://0.0.0.0:8030"],
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],

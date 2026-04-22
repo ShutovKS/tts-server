@@ -61,6 +61,7 @@ To support that local split, the server exposes development CORS for:
 
 - `http://127.0.0.1:8030`
 - `http://localhost:8030`
+- `http://0.0.0.0:8030`
 
 For a fully working clone demo on this host, run the server in the qwen isolated contour rather than the generic base runtime. The launcher-approved path is:
 

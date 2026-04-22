@@ -201,6 +201,16 @@ def test_ready_endpoint_exposes_family_profile_metadata(client: TestClient):
     assert payload["checks"]["models"]["family_profiles"]["piper"]["key"] == "piper"
 
 
+def test_ready_endpoint_allows_frontend_demo_origin_0_0_0_0(client: TestClient):
+    response = client.get(
+        "/health/ready",
+        headers={"Origin": "http://0.0.0.0:8030"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://0.0.0.0:8030"
+
+
 def test_design_tts_rejects_model_without_design_capability(client: TestClient):
     response = client.post(
         "/api/v1/tts/design",
