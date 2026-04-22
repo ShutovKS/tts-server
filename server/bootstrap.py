@@ -1,5 +1,5 @@
 # FILE: server/bootstrap.py
-# VERSION: 1.0.0
+# VERSION: 1.0.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Extend CoreSettings with server-specific configuration and build server runtime.
 #   SCOPE: ServerSettings, build_server_runtime factory
@@ -17,7 +17,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.0.1 - Added explicit server-side CORS origin configuration so browser demos can work across local and forwarded remote hosts without code edits]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ LOGGER = get_logger(__name__)
 @dataclass(frozen=True)
 # START_CONTRACT: ServerSettings
 #   PURPOSE: Represent server-specific configuration layered on top of shared core settings.
-#   INPUTS: { host: str - bind host, port: int - bind port, log_level: str - uvicorn log verbosity }
+#   INPUTS: { host: str - bind host, port: int - bind port, log_level: str - uvicorn log verbosity, cors_allowed_origins: tuple[str, ...] - explicit browser origins allowed by server CORS }
 #   OUTPUTS: { ServerSettings - immutable server settings object }
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER, M-CONFIG

@@ -1,5 +1,5 @@
 # FILE: tests/unit/core/test_config_and_bootstrap.py
-# VERSION: 1.0.0
+# VERSION: 1.0.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for core settings parsing and runtime bootstrap.
 #   SCOPE: Environment parsing, backend wiring, runtime construction
@@ -18,7 +18,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.0 - Removed deprecated alias coverage and locked parsing to canonical TTS_* names only]
+#   LAST_CHANGE: [v1.2.1 - Added coverage for canonical TTS_CORS_ALLOWED_ORIGINS parsing so transport adapters can read explicit browser origin allowlists from shared config]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -68,6 +68,7 @@ def test_parse_core_settings_from_env_uses_local_job_backend_defaults():
     assert values["job_artifact_backend"] == LOCAL_JOB_ARTIFACT_BACKEND
     assert values["auth_mode"] == "off"
     assert values["auth_static_bearer_token"] is None
+    assert values["cors_allowed_origins"] == ()
     assert values["mlx_models_dir"] == (DEFAULT_MODELS_DIR / "mlx").resolve()
     assert values["active_family"] is None
     assert values["default_custom_model"] is None
@@ -111,6 +112,7 @@ def test_parse_core_settings_from_env_reads_explicit_job_backends(tmp_path: Path
             "TTS_AUTH_STATIC_BEARER_TOKEN": "secret-token",
             "TTS_AUTH_STATIC_BEARER_PRINCIPAL_ID": "principal-configured",
             "TTS_AUTH_STATIC_BEARER_CREDENTIAL_ID": "cred-configured",
+            "TTS_CORS_ALLOWED_ORIGINS": "http://127.0.0.1:8030, http://185.186.142.205:8030,http://127.0.0.1:8030",
             "TTS_RATE_LIMIT_ENABLED": "true",
             "TTS_RATE_LIMIT_BACKEND": "future-rate-limit",
             "TTS_RATE_LIMIT_SYNC_TTS_PER_MINUTE": "11",
@@ -142,6 +144,10 @@ def test_parse_core_settings_from_env_reads_explicit_job_backends(tmp_path: Path
     assert values["auth_static_bearer_token"] == "secret-token"
     assert values["auth_static_bearer_principal_id"] == "principal-configured"
     assert values["auth_static_bearer_credential_id"] == "cred-configured"
+    assert values["cors_allowed_origins"] == (
+        "http://127.0.0.1:8030",
+        "http://185.186.142.205:8030",
+    )
     assert values["rate_limit_enabled"] is True
     assert values["rate_limit_backend"] == "future-rate-limit"
     assert values["rate_limit_sync_tts_per_minute"] == 11

@@ -1,5 +1,5 @@
 # FILE: core/config.py
-# VERSION: 1.3.0
+# VERSION: 1.3.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Parse and validate environment-based runtime configuration for all components.
 #   SCOPE: CoreSettings dataclass, environment parsing helpers, typed settings dict
@@ -32,7 +32,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.3.0 - Removed the unused public TTS_ENABLE_STREAMING contract so runtime settings no longer imply unsupported HTTP streaming behavior]
+#   LAST_CHANGE: [v1.3.1 - Added canonical CSV parsing support for transport-level origin allowlists so adapters can read explicit browser-facing origin configuration from TTS_* variables]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Mapping, TypedDict
+from typing import Literal, Mapping, TypedDict, cast
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -83,6 +83,7 @@ class CoreSettingsEnv(TypedDict):
     auth_static_bearer_token: str | None
     auth_static_bearer_principal_id: str | None
     auth_static_bearer_credential_id: str | None
+    cors_allowed_origins: tuple[str, ...]
     rate_limit_enabled: bool
     rate_limit_backend: str
     rate_limit_sync_tts_per_minute: int
@@ -138,6 +139,7 @@ class CoreSettings:
     auth_static_bearer_token: str | None = None
     auth_static_bearer_principal_id: str | None = None
     auth_static_bearer_credential_id: str | None = None
+    cors_allowed_origins: tuple[str, ...] = ()
     rate_limit_enabled: bool = False
     rate_limit_backend: str = LOCAL_RATE_LIMIT_BACKEND
     rate_limit_sync_tts_per_minute: int = 0
@@ -272,7 +274,10 @@ def parse_core_settings_from_env(
 ) -> CoreSettingsEnv:
     # START_BLOCK_PARSE_AUTH_SETTINGS
     backend = env_text("TTS_BACKEND", "", environ).strip() or None
-    auth_mode = env_text("TTS_AUTH_MODE", "off", environ).strip().lower() or "off"
+    auth_mode = cast(
+        AuthMode,
+        env_text("TTS_AUTH_MODE", "off", environ).strip().lower() or "off",
+    )
     if auth_mode not in {"off", "static_bearer"}:
         raise ValueError(f"Unsupported auth mode: {auth_mode}")
     auth_static_bearer_token = (
@@ -350,6 +355,7 @@ def parse_core_settings_from_env(
         "auth_static_bearer_token": auth_static_bearer_token,
         "auth_static_bearer_principal_id": auth_static_bearer_principal_id,
         "auth_static_bearer_credential_id": auth_static_bearer_credential_id,
+        "cors_allowed_origins": _parse_csv_env("TTS_CORS_ALLOWED_ORIGINS", environ),
         "rate_limit_enabled": env_bool("TTS_RATE_LIMIT_ENABLED", False, environ),
         "rate_limit_backend": env_text(
             "TTS_RATE_LIMIT_BACKEND", LOCAL_RATE_LIMIT_BACKEND, environ
