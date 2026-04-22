@@ -86,8 +86,9 @@ def test_windows_launcher_script_manages_http_server_pid_restart():
     assert "Stop-HttpServerProcess" in contents
     assert "Ensure-HttpServerLaunchTarget" in contents
     assert ".state/launcher/http-server.pid" in contents
+    assert "Launcher-managed HTTP server is already running. [R]estart / [K]eep existing / [C]hange port" in contents
     assert "Stopping existing launcher-managed HTTP server" in contents
-    assert "Port is occupied by a non-launcher process. [K]eep existing / [C]hange port" in contents
+    assert "Port is occupied by a non-launcher process. [S]top and restart / [K]eep existing / [C]hange port" in contents
 
 
 def test_windows_cmd_launcher_wraps_powershell_script_without_file_execution():
