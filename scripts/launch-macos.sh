@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FILE: scripts/launch-macos.sh
-# VERSION: 1.1.0
+# VERSION: 1.1.5
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide an interactive macOS launcher that orchestrates profile-aware environment setup, optional model downloads, and adapter startup.
 #   SCOPE: macOS-only preflight checks, optional Homebrew-assisted system dependency installs, service/model prompts, launcher CLI orchestration, family-env bootstrap, model artifact validation, optional Hugging Face and Piper downloads, and final adapter execution.
@@ -27,12 +27,18 @@
 #   show_runtime_capability_bindings - Print the final runtime capability binding summary before launch.
 #   configure_service_environment - Apply transient TTS_* and Telegram settings for the selected launch contour and runtime capability bindings.
 #   wait_http_health_check - Probe the configured HTTP server until /health/live responds or timeout elapses.
+#   http_server_pid_file_path - Resolve the repo-local PID metadata file for launcher-managed HTTP server instances.
+#   load_http_server_pid_file - Load launcher-managed HTTP server PID metadata into process-local variables.
+#   clear_http_server_pid_file - Remove stale or completed launcher-managed HTTP server PID metadata.
+#   process_is_running - Check whether a PID is currently alive.
+#   stop_http_server_pid - Gracefully stop a launcher-managed HTTP server PID and clean up when needed.
+#   ensure_http_server_launch_target - Stop an existing launcher-managed server on rerun, or prompt when a foreign process occupies the target port.
 #   start_selected_service - Launch the selected adapter through the profile-aware launcher exec command.
 #   main - Run the interactive launcher flow end-to-end.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Restored Windows flow parity by making macOS choose family first, support multi-model preparation per family, and export runtime capability bindings before launch]
+#   LAST_CHANGE: [v1.1.5 - Added launcher-managed HTTP server PID lifecycle so reruns restart owned processes and prompt when foreign listeners occupy the target port]
 # END_CHANGE_SUMMARY
 
 set -euo pipefail
@@ -45,14 +51,14 @@ EOF
 )
 
 MODEL_OPTIONS_DATA=$(cat <<'EOF'
-qwen-custom-17b|Qwen Custom 1.7B|qwen|Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|
-qwen-design-17b|Qwen Design 1.7B|qwen|Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|
-qwen-clone-17b|Qwen Clone 1.7B|qwen|Qwen3-TTS-12Hz-1.7B-Base-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|
-qwen-custom-06b|Qwen Custom 0.6B|qwen|Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|
-qwen-design-06b|Qwen Design 0.6B|qwen|Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|
-qwen-clone-06b|Qwen Clone 0.6B|qwen|Qwen3-TTS-12Hz-0.6B-Base-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|
-omnivoice|OmniVoice|omnivoice|OmniVoice|huggingface|config.json;model.safetensors,model.safetensors.index.json;tokenizer_config.json,tokenizer.json;audio_tokenizer/config.json;audio_tokenizer/model.safetensors;audio_tokenizer/preprocessor_config.json|
-piper-lessac|Piper en_US lessac medium|piper|Piper-en_US-lessac-medium|piper|model.onnx;model.onnx.json|en_US-lessac-medium
+qwen-custom-17b|Qwen Custom 1.7B|qwen|Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice|
+qwen-design-17b|Qwen Design 1.7B|qwen|Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign|
+qwen-clone-17b|Qwen Clone 1.7B|qwen|Qwen3-TTS-12Hz-1.7B-Base-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|Qwen/Qwen3-TTS-12Hz-1.7B-Base|
+qwen-custom-06b|Qwen Custom 0.6B|qwen|Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice|
+qwen-design-06b|Qwen Design 0.6B|qwen|Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json||
+qwen-clone-06b|Qwen Clone 0.6B|qwen|Qwen3-TTS-12Hz-0.6B-Base-8bit|huggingface|config.json;model.safetensors,model.safetensors.index.json;preprocessor_config.json;tokenizer_config.json,vocab.json|Qwen/Qwen3-TTS-12Hz-0.6B-Base|
+omnivoice|OmniVoice|omnivoice|OmniVoice|huggingface|config.json;model.safetensors,model.safetensors.index.json;tokenizer_config.json,tokenizer.json;audio_tokenizer/config.json;audio_tokenizer/model.safetensors;audio_tokenizer/preprocessor_config.json|k2-fsa/OmniVoice|
+piper-lessac|Piper en_US lessac medium|piper|Piper-en_US-lessac-medium|piper|model.onnx;model.onnx.json||en_US-lessac-medium
 EOF
 )
 
@@ -149,12 +155,12 @@ select_menu_option() {
     local count=0
     local line
 
-    printf '\n%s\n' "$prompt"
+    printf '\n%s\n' "$prompt" >&2
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         count=$((count + 1))
         IFS='|' read -r _key label _rest <<<"$line"
-        printf '[%d] %s\n' "$count" "$label"
+        printf '[%d] %s\n' "$count" "$label" >&2
     done <<< "$options_data"
 
     while true; do
@@ -183,12 +189,12 @@ select_multiple_menu_options() {
     local raw
     local selection_output=""
 
-    printf '\n%s\n' "$prompt"
+    printf '\n%s\n' "$prompt" >&2
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         count=$((count + 1))
         IFS='|' read -r _key label _rest <<<"$line"
-        printf '[%d] %s\n' "$count" "$label"
+        printf '[%d] %s\n' "$count" "$label" >&2
     done <<< "$options_data"
 
     if (( count == 0 )); then
@@ -249,7 +255,7 @@ select_multiple_menu_options() {
         done <<< "$options_data"
 
         if [[ -n "$selection_output" ]]; then
-            printf '%s' "$selection_output"
+            printf '%s\n' "$selection_output"
             return 0
         fi
     done
@@ -456,8 +462,9 @@ ensure_model_availability() {
     local folder="$3"
     local download_strategy="$4"
     local artifact_groups="$5"
-    local piper_voice="$6"
-    local models_dir="$7"
+    local repo_id="$6"
+    local piper_voice="$7"
+    local models_dir="$8"
 
     local validation
     validation="$(test_model_artifacts "$folder" "$artifact_groups" "$models_dir")"
@@ -476,8 +483,12 @@ ensure_model_availability() {
     if [[ "$download_strategy" == "piper" ]]; then
         invoke_piper_download "$python_path" "$piper_voice" "$expected_path"
     elif [[ "$download_strategy" == "huggingface" ]]; then
-        local repo_id token use_token
-        repo_id="$(read_trimmed_input 'Enter the Hugging Face repo ID for this model: ')"
+        local token use_token
+        if [[ -n "$repo_id" ]]; then
+            printf 'Using built-in Hugging Face repo ID for %s: %s\n' "$label" "$repo_id"
+        else
+            repo_id="$(read_trimmed_input 'Enter the Hugging Face repo ID for this model: ')"
+        fi
         if [[ -z "$repo_id" ]]; then
             printf 'A Hugging Face repo ID is required for this download.\n' >&2
             return 1
@@ -655,6 +666,141 @@ raise SystemExit(1)
 ' "$probe_host" "$bind_port" "$timeout_seconds"
 }
 
+assert_http_server_port_available() {
+    local bind_host="$1"
+    local bind_port="$2"
+    local probe_host
+    probe_host="$(resolve_http_probe_host "$bind_host")"
+
+    python3.11 -c 'import socket, sys
+host, port = sys.argv[1], int(sys.argv[2])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.settimeout(1.0)
+    if sock.connect_ex((host, port)) == 0:
+        print(f"HTTP server port is already in use at {host}:{port}.", file=sys.stderr)
+        raise SystemExit(1)
+raise SystemExit(0)
+' "$probe_host" "$bind_port"
+}
+
+http_server_pid_file_path() {
+    local project_root="$1"
+    printf '%s/.state/launcher/http-server.pid' "$project_root"
+}
+
+HTTP_SERVER_PID=""
+HTTP_SERVER_BIND_HOST=""
+HTTP_SERVER_BIND_PORT=""
+HTTP_SERVER_FAMILY=""
+HTTP_SERVER_MODULE=""
+
+load_http_server_pid_file() {
+    local pid_file="$1"
+    HTTP_SERVER_PID=""
+    HTTP_SERVER_BIND_HOST=""
+    HTTP_SERVER_BIND_PORT=""
+    HTTP_SERVER_FAMILY=""
+    HTTP_SERVER_MODULE=""
+    [[ -f "$pid_file" ]] || return 1
+
+    local key value
+    while IFS='=' read -r key value; do
+        case "$key" in
+            PID) HTTP_SERVER_PID="$value" ;;
+            BIND_HOST) HTTP_SERVER_BIND_HOST="$value" ;;
+            BIND_PORT) HTTP_SERVER_BIND_PORT="$value" ;;
+            FAMILY) HTTP_SERVER_FAMILY="$value" ;;
+            MODULE) HTTP_SERVER_MODULE="$value" ;;
+        esac
+    done < "$pid_file"
+
+    [[ -n "$HTTP_SERVER_PID" ]]
+}
+
+clear_http_server_pid_file() {
+    local project_root="$1"
+    local pid_file
+    pid_file="$(http_server_pid_file_path "$project_root")"
+    rm -f "$pid_file"
+}
+
+process_is_running() {
+    local pid="$1"
+    [[ -n "$pid" ]] || return 1
+    kill -0 "$pid" 2>/dev/null
+}
+
+stop_http_server_pid() {
+    local pid="$1"
+    local project_root="$2"
+    local wait_seconds="${3:-10}"
+    local elapsed=0
+
+    if ! process_is_running "$pid"; then
+        clear_http_server_pid_file "$project_root"
+        return 0
+    fi
+
+    kill "$pid" 2>/dev/null || true
+    while process_is_running "$pid" && (( elapsed < wait_seconds )); do
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    if process_is_running "$pid"; then
+        kill -9 "$pid" 2>/dev/null || true
+    fi
+    clear_http_server_pid_file "$project_root"
+}
+
+ensure_http_server_launch_target() {
+    local project_root="$1"
+    local bind_host="$2"
+    local bind_port="$3"
+    local family="$4"
+    local module="$5"
+    local pid_file
+    pid_file="$(http_server_pid_file_path "$project_root")"
+
+    if load_http_server_pid_file "$pid_file"; then
+        if process_is_running "$HTTP_SERVER_PID"; then
+            printf 'Stopping existing launcher-managed HTTP server (PID %s) before restart.\n' "$HTTP_SERVER_PID"
+            stop_http_server_pid "$HTTP_SERVER_PID" "$project_root"
+        else
+            clear_http_server_pid_file "$project_root"
+        fi
+    fi
+
+    if assert_http_server_port_available "$bind_host" "$bind_port"; then
+        return 0
+    fi
+
+    while true; do
+        local decision
+        decision="$(read_trimmed_input 'Port is occupied by a non-launcher process. [K]eep existing / [C]hange port: ')"
+        case "${decision,,}" in
+            c|change)
+                local replacement_port
+                replacement_port="$(read_trimmed_input 'New port for HTTP server: ')"
+                if [[ -z "$replacement_port" ]]; then
+                    printf 'A new port is required to continue.\n' >&2
+                    continue
+                fi
+                export TTS_PORT="$replacement_port"
+                if assert_http_server_port_available "$bind_host" "$replacement_port"; then
+                    return 0
+                fi
+                ;;
+            k|keep|'')
+                printf 'Launch cancelled: existing non-launcher HTTP server remains active on %s:%s.\n' "$(resolve_http_probe_host "$bind_host")" "$bind_port" >&2
+                return 1
+                ;;
+            *)
+                printf 'Enter K to keep the existing server or C to choose a new port.\n' >&2
+                ;;
+        esac
+    done
+}
+
 start_selected_service() {
     local project_root="$1"
     local family="$2"
@@ -667,11 +813,24 @@ start_selected_service() {
     printf '\nLaunching: %s\n' "$launch_command"
 
     if [[ "$service_key" == "server" ]]; then
-        python3.11 -m launcher --project-root "$project_root" exec --family "$family" --module "$module" &
-        local server_pid=$!
+        ensure_http_server_launch_target "$project_root" "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}" "$family" "$module"
+        local server_pid
+        python3.11 -m launcher --project-root "$project_root" exec --family "$family" --module "$module" >/dev/null 2>&1 &
+        server_pid=$!
         disown "$server_pid" 2>/dev/null || true
         printf 'Server process started with PID %s.\n' "$server_pid"
-        wait_http_health_check "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}" || true
+        if ! wait_http_health_check "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}"; then
+            stop_http_server_pid "$server_pid" "$project_root" 2>/dev/null || true
+            return 1
+        fi
+        mkdir -p "$project_root/.state/launcher"
+        cat > "$(http_server_pid_file_path "$project_root")" <<EOF
+PID=$server_pid
+BIND_HOST=${TTS_HOST:-0.0.0.0}
+BIND_PORT=${TTS_PORT:-8000}
+FAMILY=$family
+MODULE=$module
+EOF
         return 0
     fi
 
@@ -720,7 +879,7 @@ EOF
 
     if (( family_model_count == 1 )); then
         models_to_ensure=("$family_models")
-        IFS='|' read -r _single_key single_label _single_family _single_folder _single_strategy _single_groups _single_voice <<< "$family_models"
+        IFS='|' read -r _single_key single_label _single_family _single_folder _single_strategy _single_groups _single_repo_id _single_voice <<< "$family_models"
         printf '\nAutomatically preparing the only model for %s: %s\n' "$family_label" "$single_label"
     else
         while IFS= read -r model_record; do
@@ -748,10 +907,10 @@ EOF
     models_dir="$project_root/.models"
     mkdir -p "$models_dir"
     for model_record in "${models_to_ensure[@]}"; do
-        local model_key model_label model_family model_folder download_strategy artifact_groups piper_voice
-        IFS='|' read -r model_key model_label model_family model_folder download_strategy artifact_groups piper_voice <<< "$model_record"
+        local model_key model_label model_family model_folder download_strategy artifact_groups repo_id piper_voice
+        IFS='|' read -r model_key model_label model_family model_folder download_strategy artifact_groups repo_id piper_voice <<< "$model_record"
         printf 'Ensuring model: %s\n' "$model_label"
-        ensure_model_availability "$family_python" "$model_label" "$model_folder" "$download_strategy" "$artifact_groups" "$piper_voice" "$models_dir"
+        ensure_model_availability "$family_python" "$model_label" "$model_folder" "$download_strategy" "$artifact_groups" "$repo_id" "$piper_voice" "$models_dir"
     done
 
     runtime_bindings="$(get_runtime_capability_bindings "$family_key" "${models_to_ensure[@]}")"
