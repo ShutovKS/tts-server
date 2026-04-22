@@ -45,10 +45,18 @@ Then open:
 http://127.0.0.1:8030/frontend_demo/
 ```
 
-By default the demo targets:
+By default the demo resolves the API base by deployment mode:
+
+- local browser host (`127.0.0.1`, `localhost`, `0.0.0.0`) -> same host on port `8000`
+- non-local HTTP host -> same host on port `8000`
+- non-local HTTPS host -> same origin with no explicit port so reverse proxies can terminate TLS and route `/health`, `/api`, and `/v1` server-side
+
+Examples:
 
 ```text
 http://127.0.0.1:8000
+http://185.186.142.205:8000
+https://split-tts.drive-vr.ru
 ```
 
 You can override the API base URL by opening the page with a query parameter:
@@ -56,6 +64,30 @@ You can override the API base URL by opening the page with a query parameter:
 ```text
 http://127.0.0.1:8030/frontend_demo/?apiBaseUrl=http://127.0.0.1:8020
 ```
+
+This is the recommended escape hatch when your frontend and backend are forwarded through different ports or hosts.
+
+## Browser access through SSH forwarding or a public host
+
+When you open the static demo through a forwarded or public browser origin such as:
+
+```text
+http://185.186.142.205:8030/frontend_demo/
+```
+
+the server must explicitly allow that origin through CORS. Configure the backend with:
+
+```text
+TTS_CORS_ALLOWED_ORIGINS=http://127.0.0.1:8030,http://localhost:8030,http://0.0.0.0:8030,http://185.186.142.205:8030,https://split-tts.drive-vr.ru
+```
+
+If the backend is reachable through a different forwarded address or port than the page default, open the demo with an explicit API base URL:
+
+```text
+http://185.186.142.205:8030/frontend_demo/?apiBaseUrl=http://185.186.142.205:8000
+```
+
+Important: when the page itself is served over HTTPS, the browser will block direct requests to a plain HTTP API as mixed content. In that deployment shape, expose the API over HTTPS too, or publish it through the same HTTPS reverse proxy/domain as the frontend.
 
 ## Important note
 

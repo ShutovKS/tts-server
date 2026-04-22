@@ -9,7 +9,24 @@ const resultAudio = document.getElementById("result-audio");
 const downloadLink = document.getElementById("download-link");
 
 const searchParams = new URLSearchParams(window.location.search);
-const apiBaseUrl = (searchParams.get("apiBaseUrl") || "http://127.0.0.1:8000").replace(/\/$/, "");
+
+function resolveDefaultApiBaseUrl() {
+  const protocol = window.location.protocol || "http:";
+  const hostname = window.location.hostname || "127.0.0.1";
+  const isLocalHost = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "0.0.0.0";
+
+  if (isLocalHost) {
+    return `${protocol}//${hostname}:8000`;
+  }
+
+  if (protocol === "https:") {
+    return `${protocol}//${hostname}`;
+  }
+
+  return `${protocol}//${hostname}:8000`;
+}
+
+const apiBaseUrl = (searchParams.get("apiBaseUrl") || resolveDefaultApiBaseUrl()).replace(/\/$/, "");
 
 let presets = [];
 let selectedPresetId = null;
