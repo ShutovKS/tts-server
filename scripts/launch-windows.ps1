@@ -561,8 +561,43 @@ function Ensure-HttpServerLaunchTarget {
     if ($null -ne $pidInfo) {
         $ownedProcess = Get-Process -Id ([int]$pidInfo.PID) -ErrorAction SilentlyContinue
         if ($null -ne $ownedProcess) {
-            Write-Host ("Stopping existing launcher-managed HTTP server (PID {0}) before restart." -f $pidInfo.PID) -ForegroundColor Cyan
-            Stop-HttpServerProcess -Pid ([int]$pidInfo.PID) -ProjectRoot $ProjectRoot
+            while ($true) {
+                $managedDecision = Read-TrimmedHostInput -Prompt 'Launcher-managed HTTP server is already running. [R]estart / [K]eep existing / [C]hange port'
+                switch ($managedDecision.Trim().ToLower()) {
+                    'r' {
+                        Write-Host ("Stopping existing launcher-managed HTTP server (PID {0}) before restart." -f $pidInfo.PID) -ForegroundColor Cyan
+                        Stop-HttpServerProcess -Pid ([int]$pidInfo.PID) -ProjectRoot $ProjectRoot
+                        break
+                    }
+                    'restart' {
+                        Write-Host ("Stopping existing launcher-managed HTTP server (PID {0}) before restart." -f $pidInfo.PID) -ForegroundColor Cyan
+                        Stop-HttpServerProcess -Pid ([int]$pidInfo.PID) -ProjectRoot $ProjectRoot
+                        break
+                    }
+                    'c' {
+                        $replacementPort = Read-TrimmedHostInput -Prompt 'New port for HTTP server'
+                        if ([string]::IsNullOrWhiteSpace($replacementPort)) {
+                            Write-Warning 'A new port is required to continue.'
+                            continue
+                        }
+                        $env:TTS_PORT = $replacementPort
+                        return
+                    }
+                    'change' {
+                        $replacementPort = Read-TrimmedHostInput -Prompt 'New port for HTTP server'
+                        if ([string]::IsNullOrWhiteSpace($replacementPort)) {
+                            Write-Warning 'A new port is required to continue.'
+                            continue
+                        }
+                        $env:TTS_PORT = $replacementPort
+                        return
+                    }
+                    'k' { throw "Launch cancelled: existing launcher-managed HTTP server remains active on $(Resolve-HttpProbeHost -BindHost $BindHost):$BindPort." }
+                    'keep' { throw "Launch cancelled: existing launcher-managed HTTP server remains active on $(Resolve-HttpProbeHost -BindHost $BindHost):$BindPort." }
+                    '' { throw "Launch cancelled: existing launcher-managed HTTP server remains active on $(Resolve-HttpProbeHost -BindHost $BindHost):$BindPort." }
+                    default { Write-Warning 'Enter R to restart, K to keep the existing server, or C to choose a new port.' }
+                }
+            }
         }
         else {
             Clear-HttpServerPidFile -ProjectRoot $ProjectRoot
@@ -577,8 +612,28 @@ function Ensure-HttpServerLaunchTarget {
             return
         }
 
-        $decision = Read-TrimmedHostInput -Prompt 'Port is occupied by a non-launcher process. [K]eep existing / [C]hange port'
+        $decision = Read-TrimmedHostInput -Prompt 'Port is occupied by a non-launcher process. [S]top and restart / [K]eep existing / [C]hange port'
         switch ($decision.Trim().ToLower()) {
+            's' {
+                try {
+                    Stop-Process -Id $ownerPid -ErrorAction Stop
+                    Start-Sleep -Seconds 1
+                }
+                catch {
+                    Write-Warning ("Unable to stop the process currently occupying {0}:{1}." -f (Resolve-HttpProbeHost -BindHost $BindHost), $resolvedPort)
+                    continue
+                }
+            }
+            'stop' {
+                try {
+                    Stop-Process -Id $ownerPid -ErrorAction Stop
+                    Start-Sleep -Seconds 1
+                }
+                catch {
+                    Write-Warning ("Unable to stop the process currently occupying {0}:{1}." -f (Resolve-HttpProbeHost -BindHost $BindHost), $resolvedPort)
+                    continue
+                }
+            }
             'c' {
                 $replacementPort = Read-TrimmedHostInput -Prompt 'New port for HTTP server'
                 if ([string]::IsNullOrWhiteSpace($replacementPort)) {
@@ -598,7 +653,7 @@ function Ensure-HttpServerLaunchTarget {
             'k' { throw "Launch cancelled: existing non-launcher HTTP server remains active on $(Resolve-HttpProbeHost -BindHost $BindHost):$resolvedPort." }
             'keep' { throw "Launch cancelled: existing non-launcher HTTP server remains active on $(Resolve-HttpProbeHost -BindHost $BindHost):$resolvedPort." }
             '' { throw "Launch cancelled: existing non-launcher HTTP server remains active on $(Resolve-HttpProbeHost -BindHost $BindHost):$resolvedPort." }
-            default { Write-Warning 'Enter K to keep the existing server or C to choose a new port.' }
+            default { Write-Warning 'Enter S to stop and restart, K to keep the existing server, or C to choose a new port.' }
         }
     }
 }
