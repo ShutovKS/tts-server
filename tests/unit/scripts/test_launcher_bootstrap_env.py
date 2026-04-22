@@ -1,5 +1,5 @@
 # FILE: tests/unit/scripts/test_launcher_bootstrap_env.py
-# VERSION: 1.1.1
+# VERSION: 1.1.3
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the launcher bootstrap-env command for isolated family environment planning.
 #   SCOPE: bootstrap command output for family runtime contours
@@ -18,10 +18,11 @@
 #   _assert_bootstrap_payload - Verify bootstrap-env payload structure and the launcher's current guidance-string semantics
 #   test_launcher_bootstrap_env_outputs_qwen_commands - Verifies qwen bootstrap guidance stays host-aware for paths while pinning the launcher's current command strings
 #   test_launcher_bootstrap_env_outputs_omnivoice_commands - Verifies omnivoice bootstrap guidance keeps deterministic structured payload fields and current command strings
+#   test_launcher_bootstrap_env_avoids_runtime_bootstrap_imports - Verifies bootstrap-env can emit JSON even when runtime-heavy imports are blocked during launcher startup.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.1 - Aligned module verification links and constrained bootstrap command assertions to the launcher's current Windows-oriented guidance strings]
+#   LAST_CHANGE: [v1.1.3 - Updated bootstrap-env assertions for host-aware venv creation commands while preserving runtime-import isolation coverage]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -129,8 +130,12 @@ def _assert_bootstrap_payload(payload: dict[str, object], *, family: str, module
         "upgrade_pip",
         "install_compiled_requirements",
     }
-    # The launcher currently emits Windows-oriented operator guidance strings verbatim.
-    assert commands["create_env"] == f"py -3.11 -m venv {bootstrap['expected_env_root']}"
+    expected_create_env_command = (
+        f"py -3.11 -m venv {bootstrap['expected_env_root']}"
+        if os.name == "nt"
+        else f"{sys.executable} -m venv {bootstrap['expected_env_root']}"
+    )
+    assert commands["create_env"] == expected_create_env_command
     assert commands["set_backend"] == f"set TTS_BACKEND={bootstrap['suggested_backend_env']}"
     assert commands["upgrade_pip"] == f"{bootstrap['expected_python_path']} -m pip install --upgrade pip"
     assert (
@@ -152,3 +157,53 @@ def test_launcher_bootstrap_env_outputs_omnivoice_commands():
 
     _assert_bootstrap_payload(payload, family="omnivoice", module="telegram")
     assert payload["bootstrap_env"]["suggested_backend_env"] == "torch"
+
+
+def test_launcher_bootstrap_env_avoids_runtime_bootstrap_imports(tmp_path: Path):
+    sitecustomize_path = tmp_path / "sitecustomize.py"
+    sitecustomize_path.write_text(
+        "import builtins\n"
+        "import os\n"
+        "\n"
+        "_real_import = builtins.__import__\n"
+        "_blocked = tuple(filter(None, os.environ.get('TTS_BLOCKED_IMPORTS', '').split(',')))\n"
+        "\n"
+        "def _guard(name, globals=None, locals=None, fromlist=(), level=0):\n"
+        "    for blocked in _blocked:\n"
+        "        if name == blocked or name.startswith(blocked + '.'):\n"
+        "            raise RuntimeError(f'blocked import: {name}')\n"
+        "    return _real_import(name, globals, locals, fromlist, level)\n"
+        "\n"
+        "builtins.__import__ = _guard\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        f"{tmp_path}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(tmp_path)
+    )
+    env["TTS_BLOCKED_IMPORTS"] = "numpy,torch,core.bootstrap,core.backends,core.backends.torch_backend"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "launcher",
+            "--project-root",
+            str(PROJECT_ROOT),
+            "bootstrap-env",
+            "--family",
+            "qwen",
+            "--module",
+            "server",
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["bootstrap_env"]["family"] == "qwen"

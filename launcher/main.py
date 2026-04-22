@@ -1,5 +1,5 @@
 # FILE: launcher/main.py
-# VERSION: 1.2.0
+# VERSION: 1.2.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide the profile-aware launcher CLI for inspecting, planning, validating, executing, and dispatching runtime contours.
 #   SCOPE: CLI parsing and command dispatch for inspect, plan-run, doctor, bootstrap-env, check-env, exec, create-env, and universal interactive launch flows including CUDA-aware Qwen environment bootstrap verification
@@ -22,12 +22,14 @@
 #   _write_compiled_requirements_file - Materialize a temporary compiled requirements file for create-env execution
 #   _interactive_launcher_command - Build the platform-specific wrapper command for the universal interactive launch entrypoint
 #   _interactive_launcher_env - Build the environment overrides required by the universal interactive launch entrypoint
+#   _venv_creation_command - Build the host-aware command used to create an isolated family environment.
+#   _load_model_specs - Lazily load model specs so env-planning commands do not import runtime-heavy modules during launcher bootstrap.
 #   parse_args - Parse launcher CLI arguments and subcommands
 #   main - Resolve the requested launcher command and emit JSON payloads or process exit codes
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.0 - Added a universal interactive launch subcommand that dispatches to the existing platform-specific wrapper scripts without duplicating their host-specific logic]
+#   LAST_CHANGE: [v1.2.2 - Made create-env use a host-aware venv creation command while preserving deferred runtime imports for env-planning flows]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -39,8 +41,9 @@ import os
 import platform
 from pathlib import Path
 import subprocess
+import sys
+from typing import Any, Mapping
 
-from core.models.catalog import MODEL_SPECS
 from profiles import ProfileResolver
 
 
@@ -284,11 +287,24 @@ def _interactive_launcher_env(project_root: Path) -> dict[str, str]:
     return env
 
 
+def _venv_creation_command(env_root: Path) -> list[str]:
+    if platform.system().lower() == "windows":
+        return ["py", "-3.11", "-m", "venv", str(env_root)]
+    return [sys.executable, "-m", "venv", str(env_root)]
+
+
+def _load_model_specs() -> Mapping[str, Any]:
+    from core.models.catalog import MODEL_SPECS
+
+    return MODEL_SPECS
+
+
 def _runtime_bindings_payload(resolved: object) -> dict[str, object]:
+    model_specs = _load_model_specs()
     default_bindings_by_family = {
         "piper": {
             "custom_model": next(
-                (spec.model_id for spec in MODEL_SPECS.values() if spec.family == "Piper" and spec.mode == "custom"),
+                (spec.model_id for spec in model_specs.values() if spec.family == "Piper" and spec.mode == "custom"),
                 None,
             ),
             "design_model": None,
@@ -296,15 +312,15 @@ def _runtime_bindings_payload(resolved: object) -> dict[str, object]:
         },
         "omnivoice": {
             "custom_model": next(
-                (spec.model_id for spec in MODEL_SPECS.values() if spec.family == "OmniVoice" and spec.mode == "custom"),
+                (spec.model_id for spec in model_specs.values() if spec.family == "OmniVoice" and spec.mode == "custom"),
                 None,
             ),
             "design_model": next(
-                (spec.model_id for spec in MODEL_SPECS.values() if spec.family == "OmniVoice" and spec.mode == "design"),
+                (spec.model_id for spec in model_specs.values() if spec.family == "OmniVoice" and spec.mode == "design"),
                 None,
             ),
             "clone_model": next(
-                (spec.model_id for spec in MODEL_SPECS.values() if spec.family == "OmniVoice" and spec.mode == "clone"),
+                (spec.model_id for spec in model_specs.values() if spec.family == "OmniVoice" and spec.mode == "clone"),
                 None,
             ),
         },
@@ -510,6 +526,7 @@ def main() -> int:
         resolved = resolver.resolve(family=args.family, module=args.module)
         env_root = Path(resolved.expected_python_path).parent.parent
         runtime_bootstrap_steps = _build_runtime_bootstrap_steps(resolved, resolved.expected_python_path)
+        create_env_command = _venv_creation_command(env_root)
         bootstrap = {
             "family": resolved.family.key,
             "module": resolved.module.key,
@@ -519,7 +536,7 @@ def main() -> int:
             "backend_candidates": list(resolved.backend_candidates),
             "suggested_backend_env": resolved.selected_backend,
             "commands": {
-                "create_env": f"py -3.11 -m venv {env_root}",
+                "create_env": " ".join(create_env_command),
                 "set_backend": f"set TTS_BACKEND={resolved.selected_backend}" if resolved.selected_backend else None,
                 "upgrade_pip": f"{resolved.expected_python_path} -m pip install --upgrade pip",
                 "runtime_bootstrap": [" ".join(step) for step in runtime_bootstrap_steps],
@@ -597,6 +614,7 @@ def main() -> int:
         payload["runtime_bindings"] = _runtime_bindings_payload(resolved)
         compiled_requirements_path = _write_compiled_requirements_file(resolved)
         runtime_bootstrap_steps = _build_runtime_bootstrap_steps(resolved, str(expected_python))
+        create_env_command = _venv_creation_command(env_root)
         payload["create_env"] = {
             "family": resolved.family.key,
             "module": resolved.module.key,
@@ -608,7 +626,7 @@ def main() -> int:
             "runtime_bootstrap_steps": runtime_bootstrap_steps,
             "runtime_bindings": payload["runtime_bindings"],
             "steps": [
-                ["py", "-3.11", "-m", "venv", str(env_root)],
+                create_env_command,
                 [str(expected_python), "-m", "pip", "install", "--upgrade", "pip"],
                 [str(expected_python), "-m", "pip", "install", "-r", compiled_requirements_path],
             ],
@@ -617,7 +635,7 @@ def main() -> int:
         if not args.apply:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
-        create_env_command, upgrade_pip_command, install_compiled_requirements_command = payload["create_env"]["steps"]
+        _, upgrade_pip_command, install_compiled_requirements_command = payload["create_env"]["steps"]
         try:
             if not expected_python.exists():
                 subprocess.run(create_env_command, check=True)
