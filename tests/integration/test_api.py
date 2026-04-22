@@ -1,5 +1,5 @@
 # FILE: tests/integration/test_api.py
-# VERSION: 1.0.0
+# VERSION: 1.0.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Integration tests for HTTP API behavior and endpoint responses.
 #   SCOPE: Health checks, model listing, speech endpoints, request handling
@@ -23,7 +23,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.0.1 - Added coverage for configurable server CORS origins so forwarded browser hosts can access readiness without hardcoded source edits]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -209,6 +209,52 @@ def test_ready_endpoint_allows_frontend_demo_origin_0_0_0_0(client: TestClient):
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://0.0.0.0:8030"
+
+
+def test_ready_endpoint_allows_default_https_frontend_demo_origin(client: TestClient):
+    response = client.get(
+        "/health/ready",
+        headers={"Origin": "https://split-tts.drive-vr.ru"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://split-tts.drive-vr.ru"
+
+
+def test_ready_endpoint_allows_configured_forwarded_frontend_origin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    settings = ServerSettings(
+        models_dir=tmp_path / ".models",
+        outputs_dir=tmp_path / ".outputs",
+        voices_dir=tmp_path / ".voices",
+        upload_staging_dir=tmp_path / ".uploads",
+        default_save_output=False,
+        max_input_text_chars=32,
+        cors_allowed_origins=("http://185.186.142.205:8030",),
+    )
+    settings.models_dir.mkdir(parents=True, exist_ok=True)
+    settings.outputs_dir.mkdir(parents=True, exist_ok=True)
+    settings.voices_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("server.api.routes_health.check_ffmpeg_available", lambda: True)
+
+    app = create_app(settings)
+    app.state.registry = DummyRegistry(settings)
+    app.state.tts_service = DummyTTSService(settings)
+    app.state.application = DummyTTSService(settings)
+    object.__setattr__(
+        app.state.job_execution.manager.executor,
+        "application_service",
+        app.state.application,
+    )
+
+    with TestClient(app) as test_client:
+        response = test_client.get(
+            "/health/ready",
+            headers={"Origin": "http://185.186.142.205:8030"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://185.186.142.205:8030"
 
 
 def test_design_tts_rejects_model_without_design_capability(client: TestClient):

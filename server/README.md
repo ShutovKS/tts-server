@@ -57,11 +57,21 @@ The image exposes port `8000` and uses `python -m uvicorn server:app --host 0.0.
 
 The HTTP server no longer owns the demo UI or any other frontend assets. A standalone local demo frontend now lives in the repository root under `frontend_demo/` and calls the API over HTTP.
 
-To support that local split, the server exposes development CORS for:
+To support that local split, the server exposes development CORS for these default origins when `TTS_CORS_ALLOWED_ORIGINS` is unset:
 
 - `http://127.0.0.1:8030`
 - `http://localhost:8030`
 - `http://0.0.0.0:8030`
+
+For forwarded or public-host browser access, set `TTS_CORS_ALLOWED_ORIGINS` explicitly as a comma-separated list, for example:
+
+```text
+TTS_CORS_ALLOWED_ORIGINS=http://127.0.0.1:8030,http://localhost:8030,http://0.0.0.0:8030,http://185.186.142.205:8030,https://split-tts.drive-vr.ru
+```
+
+That setting controls browser CORS only; it does not change the server bind address. Keep using `TTS_HOST` and `TTS_PORT` for the actual listener.
+
+If the frontend is served over HTTPS, the browser also requires the API URL to be HTTPS. CORS alone does not permit `https://...` pages to call `http://...` APIs; use an HTTPS reverse proxy or publish the API over HTTPS directly.
 
 For a fully working clone demo on this host, run the server in the qwen isolated contour rather than the generic base runtime. The launcher-approved path is:
 

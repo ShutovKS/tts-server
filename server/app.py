@@ -1,5 +1,5 @@
 # FILE: server/app.py
-# VERSION: 1.0.1
+# VERSION: 1.0.2
 # START_MODULE_CONTRACT
 #   PURPOSE: Compose the FastAPI application with all routes, middleware, and error handlers.
 #   SCOPE: FastAPI app factory, route registration, middleware setup, lifespan management
@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Added the static demo origin http://0.0.0.0:8030 to development CORS so browser health and clone probes work when the demo is served from that host alias]
+#   LAST_CHANGE: [v1.0.2 - Switched server CORS to the explicit TTS_CORS_ALLOWED_ORIGINS setting with local demo defaults so forwarded public-host origins can be enabled without source edits]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -51,6 +51,12 @@ from server.bootstrap import ServerSettings, build_server_runtime
 
 
 LOGGER = get_logger(__name__)
+DEFAULT_DEMO_CORS_ORIGINS = (
+    "http://127.0.0.1:8030",
+    "http://localhost:8030",
+    "http://0.0.0.0:8030",
+    "https://split-tts.drive-vr.ru",
+)
 
 
 # START_CONTRACT: create_app
@@ -63,6 +69,7 @@ LOGGER = get_logger(__name__)
 def create_app(settings: Optional[ServerSettings] = None) -> FastAPI:
     runtime = build_server_runtime(settings)
     app_settings = runtime.settings
+    cors_allowed_origins = list(app_settings.cors_allowed_origins or DEFAULT_DEMO_CORS_ORIGINS)
 
     @asynccontextmanager
     # START_CONTRACT: lifespan
@@ -92,7 +99,7 @@ def create_app(settings: Optional[ServerSettings] = None) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:8030", "http://localhost:8030", "http://0.0.0.0:8030"],
+        allow_origins=cors_allowed_origins,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
