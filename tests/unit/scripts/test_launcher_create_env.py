@@ -1,5 +1,5 @@
 # FILE: tests/unit/scripts/test_launcher_create_env.py
-# VERSION: 1.1.1
+# VERSION: 1.1.3
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the launcher create-env command for isolated family environment planning and failure reporting.
 #   SCOPE: dry-run step output, platform-aware interpreter/env paths, requirements preview formatting, and deterministic apply failure payloads
@@ -15,16 +15,18 @@
 #   test_launcher_create_env_outputs_qwen_steps_without_apply - Verifies qwen dry-run output exposes the launcher's current bootstrap argv and pip install steps
 #   test_launcher_create_env_outputs_omnivoice_steps_without_apply - Verifies omnivoice dry-run output resolves the family-specific env root and dependency pack preview without claiming host-shell portability
 #   test_launcher_create_env_preview_uses_pip_safe_posix_paths_on_windows - Verifies preview requirements use pip-safe POSIX include paths on Windows while remaining stable elsewhere
+#   test_launcher_create_env_dry_run_avoids_runtime_bootstrap_imports - Verifies create-env dry-run can emit JSON even when runtime-heavy imports such as numpy and core.bootstrap are blocked.
 #   test_launcher_create_env_apply_reports_error_json_when_install_fails - Verifies apply mode reports a deterministic install failure envelope and removes the compiled requirements file
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.1 - Aligned module verification links and constrained create-env bootstrap assertions to the launcher's current argv planning behavior]
+#   LAST_CHANGE: [v1.1.3 - Updated create-env assertions for host-aware venv creation commands while preserving runtime-import isolation coverage]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -87,8 +89,10 @@ def test_launcher_create_env_outputs_qwen_steps_without_apply(capsys: pytest.Cap
     assert exit_code == 0
     assert payload["create_env"]["apply"] is False
     assert payload["create_env"]["family"] == "qwen"
-    # create-env serializes subprocess argv, and the bootstrap argv currently uses the Windows `py` launcher.
-    assert steps[0] == ["py", "-3.11", "-m", "venv", payload["create_env"]["expected_env_root"]]
+    if platform.system().lower() == "windows":
+        assert steps[0] == ["py", "-3.11", "-m", "venv", payload["create_env"]["expected_env_root"]]
+    else:
+        assert steps[0] == [sys.executable, "-m", "venv", payload["create_env"]["expected_env_root"]]
     assert steps[1][1:] == ["-m", "pip", "install", "--upgrade", "pip"]
     assert steps[2][-2:] == ["-r", payload["create_env"]["compiled_requirements_path"]]
     assert _preview_has_suffix(payload, "profiles\\packs\\family\\qwen.txt")
@@ -123,6 +127,57 @@ def test_launcher_create_env_preview_uses_pip_safe_posix_paths_on_windows(capsys
         assert all(line[3:].startswith("/") for line in preview_lines)
 
 
+def test_launcher_create_env_dry_run_avoids_runtime_bootstrap_imports(tmp_path: Path):
+    sitecustomize_path = tmp_path / "sitecustomize.py"
+    sitecustomize_path.write_text(
+        "import builtins\n"
+        "import os\n"
+        "\n"
+        "_real_import = builtins.__import__\n"
+        "_blocked = tuple(filter(None, os.environ.get('TTS_BLOCKED_IMPORTS', '').split(',')))\n"
+        "\n"
+        "def _guard(name, globals=None, locals=None, fromlist=(), level=0):\n"
+        "    for blocked in _blocked:\n"
+        "        if name == blocked or name.startswith(blocked + '.'):\n"
+        "            raise RuntimeError(f'blocked import: {name}')\n"
+        "    return _real_import(name, globals, locals, fromlist, level)\n"
+        "\n"
+        "builtins.__import__ = _guard\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        f"{tmp_path}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(tmp_path)
+    )
+    env["TTS_BLOCKED_IMPORTS"] = "numpy,torch,core.bootstrap,core.backends,core.backends.torch_backend"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "launcher",
+            "--project-root",
+            str(PROJECT_ROOT),
+            "create-env",
+            "--family",
+            "qwen",
+            "--module",
+            "server",
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["create_env"]["family"] == "qwen"
+    assert payload["create_env"]["apply"] is False
+
+
 def test_launcher_create_env_apply_reports_error_json_when_install_fails(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -153,7 +208,7 @@ def test_launcher_create_env_apply_reports_error_json_when_install_fails(
 
     def fake_run(cmd: list[str], check: bool, **kwargs: object) -> subprocess.CompletedProcess[str]:
         nonlocal install_command
-        if cmd[:4] == ["py", "-3.11", "-m", "venv"]:
+        if len(cmd) >= 4 and cmd[1:3] == ["-m", "venv"]:
             raise AssertionError("bootstrap step should be skipped when expected python already exists")
         if len(cmd) >= 3 and cmd[1] == "-c":
             return subprocess.CompletedProcess(
