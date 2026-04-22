@@ -1,5 +1,5 @@
 # FILE: scripts/launch-windows.ps1
-# VERSION: 1.1.0
+# VERSION: 1.1.2
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide an interactive Windows PowerShell launcher that orchestrates profile-aware environment setup, optional model downloads, and adapter startup.
 #   SCOPE: Windows-only preflight checks, service/model prompts, launcher CLI orchestration, family-env bootstrap, model artifact validation, optional Hugging Face and Piper downloads, inline-wrapper project-root fallback, and final adapter execution.
@@ -27,12 +27,18 @@
 #   Get-RuntimeCapabilityBindings - Derive runtime capability bindings from ensured models and selected family.
 #   Show-RuntimeCapabilityBindings - Print the final runtime capability binding summary before launch.
 #   Wait-HttpHealthCheck - Probe the configured HTTP server until /health/live responds or timeout elapses.
+#   Get-HttpServerPidFilePath - Resolve the repo-local PID metadata file for launcher-managed HTTP server instances.
+#   Read-HttpServerPidFile - Load launcher-managed HTTP server PID metadata when present.
+#   Clear-HttpServerPidFile - Remove stale or completed launcher-managed HTTP server PID metadata.
+#   Get-TcpOwningProcessId - Resolve the PID currently listening on a target TCP port when one exists.
+#   Stop-HttpServerProcess - Gracefully stop a launcher-managed HTTP server PID and clean up when needed.
+#   Ensure-HttpServerLaunchTarget - Restart an existing launcher-managed HTTP server or prompt when a foreign process occupies the target port.
 #   Start-SelectedService - Launch the selected adapter through the profile-aware launcher exec command.
 #   Main - Run the interactive launcher flow end-to-end.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Added inline-wrapper project-root fallback so the CMD launcher can execute this script content without relying on $PSScriptRoot]
+#   LAST_CHANGE: [v1.1.2 - Added launcher-managed HTTP server PID lifecycle so reruns restart owned processes and prompt when foreign listeners occupy the target port]
 # END_CHANGE_SUMMARY
 
 Set-StrictMode -Version 3.0
@@ -45,13 +51,13 @@ $SCRIPT:FAMILY_OPTIONS = @(
 )
 
 $SCRIPT:MODEL_OPTIONS = @(
-    [pscustomobject]@{ Key = 'qwen-custom-17b'; Label = 'Qwen Custom 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit'; Mode = 'custom'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-design-17b'; Label = 'Qwen Design 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit'; Mode = 'design'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-clone-17b'; Label = 'Qwen Clone 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-Base-8bit'; Mode = 'clone'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-custom-06b'; Label = 'Qwen Custom 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit'; Mode = 'custom'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-design-06b'; Label = 'Qwen Design 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit'; Mode = 'design'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'qwen-clone-06b'; Label = 'Qwen Clone 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-Base-8bit'; Mode = 'clone'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
-    [pscustomobject]@{ Key = 'omnivoice'; Label = 'OmniVoice'; Family = 'omnivoice'; Folder = 'OmniVoice'; Mode = 'all'; DownloadStrategy = 'huggingface'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('tokenizer_config.json', 'tokenizer.json'), @('audio_tokenizer/config.json'), @('audio_tokenizer/model.safetensors'), @('audio_tokenizer/preprocessor_config.json')) },
+    [pscustomobject]@{ Key = 'qwen-custom-17b'; Label = 'Qwen Custom 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit'; Mode = 'custom'; DownloadStrategy = 'huggingface'; RepoId = 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-design-17b'; Label = 'Qwen Design 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit'; Mode = 'design'; DownloadStrategy = 'huggingface'; RepoId = 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-clone-17b'; Label = 'Qwen Clone 1.7B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-1.7B-Base-8bit'; Mode = 'clone'; DownloadStrategy = 'huggingface'; RepoId = 'Qwen/Qwen3-TTS-12Hz-1.7B-Base'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-custom-06b'; Label = 'Qwen Custom 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit'; Mode = 'custom'; DownloadStrategy = 'huggingface'; RepoId = 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-design-06b'; Label = 'Qwen Design 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-VoiceDesign-8bit'; Mode = 'design'; DownloadStrategy = 'huggingface'; RepoId = $null; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'qwen-clone-06b'; Label = 'Qwen Clone 0.6B'; Family = 'qwen'; Folder = 'Qwen3-TTS-12Hz-0.6B-Base-8bit'; Mode = 'clone'; DownloadStrategy = 'huggingface'; RepoId = 'Qwen/Qwen3-TTS-12Hz-0.6B-Base'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('preprocessor_config.json'), @('tokenizer_config.json', 'vocab.json')) },
+    [pscustomobject]@{ Key = 'omnivoice'; Label = 'OmniVoice'; Family = 'omnivoice'; Folder = 'OmniVoice'; Mode = 'all'; DownloadStrategy = 'huggingface'; RepoId = 'k2-fsa/OmniVoice'; ArtifactGroups = @(@('config.json'), @('model.safetensors', 'model.safetensors.index.json'), @('tokenizer_config.json', 'tokenizer.json'), @('audio_tokenizer/config.json'), @('audio_tokenizer/model.safetensors'), @('audio_tokenizer/preprocessor_config.json')) },
     [pscustomobject]@{ Key = 'piper-lessac'; Label = 'Piper en_US lessac medium'; Family = 'piper'; Folder = 'Piper-en_US-lessac-medium'; Mode = 'custom'; DownloadStrategy = 'piper'; PiperVoice = 'en_US-lessac-medium'; ArtifactGroups = @(@('model.onnx'), @('model.onnx.json')) }
 )
 
@@ -335,7 +341,13 @@ function Ensure-ModelAvailability {
         Invoke-PiperDownload -PythonPath $PythonPath -Model $Model -ModelsDir $ModelsDir
     }
     elseif ($Model.DownloadStrategy -eq 'huggingface') {
-        $repoId = Read-TrimmedHostInput -Prompt 'Enter the Hugging Face repo ID for this model'
+        $repoId = $Model.RepoId
+        if (-not [string]::IsNullOrWhiteSpace($repoId)) {
+            Write-Host "Using built-in Hugging Face repo ID for $($Model.Label): $repoId" -ForegroundColor Cyan
+        }
+        else {
+            $repoId = Read-TrimmedHostInput -Prompt 'Enter the Hugging Face repo ID for this model'
+        }
         if ([string]::IsNullOrWhiteSpace($repoId)) { throw 'A Hugging Face repo ID is required for this download.' }
         $needsToken = Read-TrimmedHostInput -Prompt 'Use a temporary HF token for this download? [y/N]'
         $token = $null
@@ -467,6 +479,130 @@ function Wait-HttpHealthCheck {
     return $false
 }
 
+function Get-HttpServerPidFilePath {
+    param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+
+    return (Join-Path $ProjectRoot '.state/launcher/http-server.pid')
+}
+
+function Read-HttpServerPidFile {
+    param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+
+    $pidFile = Get-HttpServerPidFilePath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path $pidFile)) { return $null }
+
+    $payload = [ordered]@{}
+    foreach ($line in (Get-Content -Path $pidFile -ErrorAction SilentlyContinue)) {
+        if ([string]::IsNullOrWhiteSpace($line) -or $line -notmatch '=') { continue }
+        $parts = $line -split '=', 2
+        $payload[$parts[0]] = $parts[1]
+    }
+    if (-not $payload.Contains('PID')) { return $null }
+    return [pscustomobject]$payload
+}
+
+function Clear-HttpServerPidFile {
+    param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+
+    $pidFile = Get-HttpServerPidFilePath -ProjectRoot $ProjectRoot
+    Remove-Item -Path $pidFile -ErrorAction SilentlyContinue
+}
+
+function Get-TcpOwningProcessId {
+    param([Parameter(Mandatory = $true)][int]$Port)
+
+    try {
+        $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop | Select-Object -First 1
+        if ($null -ne $connection) { return [int]$connection.OwningProcess }
+    }
+    catch {
+        return $null
+    }
+    return $null
+}
+
+function Stop-HttpServerProcess {
+    param(
+        [Parameter(Mandatory = $true)][int]$Pid,
+        [Parameter(Mandatory = $true)][string]$ProjectRoot,
+        [int]$WaitSeconds = 10
+    )
+
+    $process = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+    if ($null -eq $process) {
+        Clear-HttpServerPidFile -ProjectRoot $ProjectRoot
+        return
+    }
+
+    Stop-Process -Id $Pid -ErrorAction SilentlyContinue
+    $deadline = (Get-Date).AddSeconds($WaitSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $process = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+        if ($null -eq $process) { break }
+        Start-Sleep -Seconds 1
+    }
+    $process = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+    if ($null -ne $process) {
+        Stop-Process -Id $Pid -Force -ErrorAction SilentlyContinue
+    }
+    Clear-HttpServerPidFile -ProjectRoot $ProjectRoot
+}
+
+function Ensure-HttpServerLaunchTarget {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectRoot,
+        [Parameter(Mandatory = $true)][string]$BindHost,
+        [Parameter(Mandatory = $true)][string]$BindPort,
+        [Parameter(Mandatory = $true)][string]$Family,
+        [Parameter(Mandatory = $true)][string]$Module
+    )
+
+    $pidInfo = Read-HttpServerPidFile -ProjectRoot $ProjectRoot
+    if ($null -ne $pidInfo) {
+        $ownedProcess = Get-Process -Id ([int]$pidInfo.PID) -ErrorAction SilentlyContinue
+        if ($null -ne $ownedProcess) {
+            Write-Host ("Stopping existing launcher-managed HTTP server (PID {0}) before restart." -f $pidInfo.PID) -ForegroundColor Cyan
+            Stop-HttpServerProcess -Pid ([int]$pidInfo.PID) -ProjectRoot $ProjectRoot
+        }
+        else {
+            Clear-HttpServerPidFile -ProjectRoot $ProjectRoot
+        }
+    }
+
+    $resolvedPort = [int]$BindPort
+    while ($true) {
+        $ownerPid = Get-TcpOwningProcessId -Port $resolvedPort
+        if ($null -eq $ownerPid) {
+            if ($env:TTS_PORT -ne [string]$resolvedPort) { $env:TTS_PORT = [string]$resolvedPort }
+            return
+        }
+
+        $decision = Read-TrimmedHostInput -Prompt 'Port is occupied by a non-launcher process. [K]eep existing / [C]hange port'
+        switch ($decision.Trim().ToLower()) {
+            'c' {
+                $replacementPort = Read-TrimmedHostInput -Prompt 'New port for HTTP server'
+                if ([string]::IsNullOrWhiteSpace($replacementPort)) {
+                    Write-Warning 'A new port is required to continue.'
+                    continue
+                }
+                $resolvedPort = [int]$replacementPort
+            }
+            'change' {
+                $replacementPort = Read-TrimmedHostInput -Prompt 'New port for HTTP server'
+                if ([string]::IsNullOrWhiteSpace($replacementPort)) {
+                    Write-Warning 'A new port is required to continue.'
+                    continue
+                }
+                $resolvedPort = [int]$replacementPort
+            }
+            'k' { throw "Launch cancelled: existing non-launcher HTTP server remains active on $(Resolve-HttpProbeHost -BindHost $BindHost):$resolvedPort." }
+            'keep' { throw "Launch cancelled: existing non-launcher HTTP server remains active on $(Resolve-HttpProbeHost -BindHost $BindHost):$resolvedPort." }
+            '' { throw "Launch cancelled: existing non-launcher HTTP server remains active on $(Resolve-HttpProbeHost -BindHost $BindHost):$resolvedPort." }
+            default { Write-Warning 'Enter K to keep the existing server or C to choose a new port.' }
+        }
+    }
+}
+
 function Start-SelectedService {
     param(
         [Parameter(Mandatory = $true)][string]$ProjectRoot,
@@ -480,9 +616,22 @@ function Start-SelectedService {
     Write-Host ("Launching: {0}" -f ($dryRun.Payload.exec.command -join ' ')) -ForegroundColor Yellow
 
     if ($Service.Key -eq 'server') {
+        Ensure-HttpServerLaunchTarget -ProjectRoot $ProjectRoot -BindHost $env:TTS_HOST -BindPort $env:TTS_PORT -Family $Family -Module $Module
         $process = Start-Process -FilePath 'py' -ArgumentList @('-3.11', '-m', 'launcher', '--project-root', $ProjectRoot, 'exec', '--family', $Family, '--module', $Module) -WorkingDirectory $ProjectRoot -PassThru
         Write-Host ("Server process started with PID {0}." -f $process.Id) -ForegroundColor Cyan
-        Wait-HttpHealthCheck -BindHost $env:TTS_HOST -BindPort $env:TTS_PORT | Out-Null
+        if (-not (Wait-HttpHealthCheck -BindHost $env:TTS_HOST -BindPort $env:TTS_PORT)) {
+            Stop-HttpServerProcess -Pid $process.Id -ProjectRoot $ProjectRoot
+            throw 'HTTP server failed to report live after startup.'
+        }
+        $pidFile = Get-HttpServerPidFilePath -ProjectRoot $ProjectRoot
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $pidFile) | Out-Null
+        @(
+            "PID=$($process.Id)"
+            "BIND_HOST=$($env:TTS_HOST)"
+            "BIND_PORT=$($env:TTS_PORT)"
+            "FAMILY=$Family"
+            "MODULE=$Module"
+        ) | Set-Content -Path $pidFile -Encoding utf8
         return
     }
 

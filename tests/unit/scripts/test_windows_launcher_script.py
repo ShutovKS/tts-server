@@ -1,5 +1,5 @@
 # FILE: tests/unit/scripts/test_windows_launcher_script.py
-# VERSION: 1.4.0
+# VERSION: 1.4.2
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the Windows PowerShell and CMD launcher entrypoints stay aligned with the documented profile-aware Windows launch flow.
 #   SCOPE: launcher-script presence, PowerShell orchestration markers, curated model menu anchors, CMD delegation shape, and bounded secret-handling command references
@@ -14,11 +14,12 @@
 #   CMD_SCRIPT_PATH - Canonical path to the Windows CMD wrapper.
 #   test_windows_launcher_script_exists_with_grace_contract - Verifies the PowerShell launcher file exists and retains top-level GRACE contract anchors.
 #   test_windows_launcher_script_reuses_profile_aware_launcher_and_family_download_paths - Verifies the PowerShell launcher delegates env setup and execution to launcher commands while keeping HF and Piper download flows explicit.
+#   test_windows_launcher_script_manages_http_server_pid_restart - Verifies the PowerShell launcher carries PID-file lifecycle helpers for restarting launcher-managed HTTP server processes and prompting on foreign listeners.
 #   test_windows_cmd_launcher_wraps_powershell_script_without_file_execution - Verifies the CMD wrapper executes the PowerShell launcher via an inline command string instead of PowerShell -File script execution.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.4.0 - Narrowed this suite back to Windows wrapper coverage after moving root-level launcher entrypoints into their own dedicated test module]
+#   LAST_CHANGE: [v1.4.2 - Added regression coverage for launcher-managed HTTP server PID files so reruns can restart owned processes and prompt on foreign listeners]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -63,10 +64,30 @@ def test_windows_launcher_script_reuses_profile_aware_launcher_and_family_downlo
     assert "TTS_DEFAULT_CLONE_MODEL" in contents
     assert "snapshot_download" in contents
     assert "piper.download_voices" in contents
+    assert "RepoId = 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice'" in contents
+    assert "RepoId = 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'" in contents
+    assert "RepoId = 'Qwen/Qwen3-TTS-12Hz-1.7B-Base'" in contents
+    assert "RepoId = 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice'" in contents
+    assert "RepoId = 'Qwen/Qwen3-TTS-12Hz-0.6B-Base'" in contents
+    assert "RepoId = 'k2-fsa/OmniVoice'" in contents
     assert "HF_TOKEN" in contents
     assert "Qwen Custom 1.7B" in contents
     assert "OmniVoice" in contents
     assert "Piper en_US lessac medium" in contents
+
+
+def test_windows_launcher_script_manages_http_server_pid_restart():
+    contents = SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "Get-HttpServerPidFilePath" in contents
+    assert "Read-HttpServerPidFile" in contents
+    assert "Clear-HttpServerPidFile" in contents
+    assert "Get-TcpOwningProcessId" in contents
+    assert "Stop-HttpServerProcess" in contents
+    assert "Ensure-HttpServerLaunchTarget" in contents
+    assert ".state/launcher/http-server.pid" in contents
+    assert "Stopping existing launcher-managed HTTP server" in contents
+    assert "Port is occupied by a non-launcher process. [K]eep existing / [C]hange port" in contents
 
 
 def test_windows_cmd_launcher_wraps_powershell_script_without_file_execution():
