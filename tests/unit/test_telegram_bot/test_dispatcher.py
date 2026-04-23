@@ -24,7 +24,7 @@ Tests message routing, command handling, and response generation.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.0.1 - Added duplicate delivery requeue coverage for remote /tts and /design job submits]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -378,14 +378,22 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.create = AsyncMock()
 
         dispatcher = CommandDispatcher(
             synthesizer=mock_synth,
             settings=mock_settings,
             sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
         )
 
         await dispatcher.handle_update(
@@ -398,8 +406,9 @@ class TestDispatcherTTSHandling:
 
         # Should send accepted message first
         assert mock_sender.send_text.called
-        # Should send voice message
-        assert mock_sender.send_voice.called
+        # Should enqueue remote job instead of local synthesis fallback
+        mock_orchestrator.submit_tts_job.assert_awaited_once()
+        mock_synth.synthesize.assert_not_called()
 
     @pytest.mark.anyio
     async def test_dispatcher_with_speaker_param(self):
@@ -414,14 +423,22 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.create = AsyncMock()
 
         dispatcher = CommandDispatcher(
             synthesizer=mock_synth,
             settings=mock_settings,
             sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
         )
 
         await dispatcher.handle_update(
@@ -433,7 +450,7 @@ class TestDispatcherTTSHandling:
         )
 
         # Should process the command
-        assert mock_sender.send_voice.called or mock_sender.send_text.called
+        mock_orchestrator.submit_tts_job.assert_awaited_once()
 
     @pytest.mark.anyio
     async def test_dispatcher_with_speed_param(self):
@@ -448,14 +465,22 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.create = AsyncMock()
 
         dispatcher = CommandDispatcher(
             synthesizer=mock_synth,
             settings=mock_settings,
             sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
         )
 
         await dispatcher.handle_update(
@@ -466,7 +491,7 @@ class TestDispatcherTTSHandling:
             chat_type="private",
         )
 
-        assert mock_sender.send_voice.called or mock_sender.send_text.called
+        mock_orchestrator.submit_tts_job.assert_awaited_once()
 
     @pytest.mark.anyio
     async def test_dispatcher_with_both_params(self):
@@ -481,14 +506,22 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.create = AsyncMock()
 
         dispatcher = CommandDispatcher(
             synthesizer=mock_synth,
             settings=mock_settings,
             sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
         )
 
         await dispatcher.handle_update(
@@ -499,7 +532,107 @@ class TestDispatcherTTSHandling:
             chat_type="private",
         )
 
-        assert mock_sender.send_voice.called or mock_sender.send_text.called
+        mock_orchestrator.submit_tts_job.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_tts_duplicate_requeues_delivery_metadata(self):
+        mock_synth = MagicMock()
+        mock_settings = MagicMock()
+        mock_settings.is_user_allowed.return_value = True
+        mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
+        mock_sender = MagicMock()
+        mock_sender.send_text = AsyncMock()
+        mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_orchestrator.submit_tts_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=True,
+                job_id="job-tts-dup-123",
+                submit_request_id="submit-tts-dup-123",
+            )
+        )
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.get = AsyncMock(return_value=None)
+        mock_delivery_store.create = AsyncMock()
+
+        dispatcher = CommandDispatcher(
+            synthesizer=mock_synth,
+            settings=mock_settings,
+            sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
+        )
+
+        await dispatcher.handle_update(
+            text="/tts -- Hello world",
+            user_id=67890,
+            chat_id=12345,
+            message_id=1,
+            chat_type="private",
+        )
+
+        mock_delivery_store.create.assert_awaited_once_with(
+            chat_id=12345,
+            message_id=1,
+            job_id="job-tts-dup-123",
+            submit_request_id="submit-tts-dup-123",
+        )
+
+    @pytest.mark.anyio
+    async def test_tts_duplicate_preserves_existing_delivered_metadata(self):
+        mock_synth = MagicMock()
+        mock_settings = MagicMock()
+        mock_settings.is_user_allowed.return_value = True
+        mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
+        mock_sender = MagicMock()
+        mock_sender.send_text = AsyncMock()
+        mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_orchestrator.submit_tts_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=True,
+                job_id="job-tts-dup-123",
+                submit_request_id="submit-tts-dup-123",
+            )
+        )
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.get = AsyncMock(
+            return_value={
+                "chat_id": 12345,
+                "message_id": 1,
+                "job_id": "job-tts-dup-123",
+                "status": "delivered",
+                "delivered_at": "2026-04-23T10:00:00+00:00",
+            }
+        )
+        mock_delivery_store.create = AsyncMock()
+
+        dispatcher = CommandDispatcher(
+            synthesizer=mock_synth,
+            settings=mock_settings,
+            sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
+        )
+
+        await dispatcher.handle_update(
+            text="/tts -- Hello world",
+            user_id=67890,
+            chat_id=12345,
+            message_id=1,
+            chat_type="private",
+        )
+
+        mock_delivery_store.create.assert_not_awaited()
+
 
 
 class TestDispatcherErrorHandling:
@@ -626,14 +759,22 @@ class TestDispatcherDesignHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.create = AsyncMock()
 
         dispatcher = CommandDispatcher(
             synthesizer=mock_synth,
             settings=mock_settings,
             sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
         )
 
         await dispatcher.handle_update(
@@ -646,8 +787,108 @@ class TestDispatcherDesignHandling:
 
         # Should send accepted message first
         assert mock_sender.send_text.called
-        # Should call synthesize_design
-        assert mock_synth.synthesize_design.called
+        # Should enqueue remote design job instead of local synthesis fallback
+        mock_orchestrator.submit_design_job.assert_awaited_once()
+        mock_synth.synthesize_design.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_design_duplicate_requeues_delivery_metadata(self):
+        mock_synth = MagicMock()
+        mock_settings = MagicMock()
+        mock_settings.is_user_allowed.return_value = True
+        mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
+        mock_sender = MagicMock()
+        mock_sender.send_text = AsyncMock()
+        mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_orchestrator.submit_design_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=True,
+                job_id="job-design-dup-123",
+                submit_request_id="submit-design-dup-123",
+            )
+        )
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.get = AsyncMock(return_value=None)
+        mock_delivery_store.create = AsyncMock()
+
+        dispatcher = CommandDispatcher(
+            synthesizer=mock_synth,
+            settings=mock_settings,
+            sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
+        )
+
+        await dispatcher.handle_update(
+            text="/design calm narrator -- Hello world",
+            user_id=67890,
+            chat_id=12345,
+            message_id=1,
+            chat_type="private",
+        )
+
+        mock_delivery_store.create.assert_awaited_once_with(
+            chat_id=12345,
+            message_id=1,
+            job_id="job-design-dup-123",
+            submit_request_id="submit-design-dup-123",
+        )
+
+    @pytest.mark.anyio
+    async def test_design_duplicate_preserves_existing_delivered_metadata(self):
+        mock_synth = MagicMock()
+        mock_settings = MagicMock()
+        mock_settings.is_user_allowed.return_value = True
+        mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
+        mock_sender = MagicMock()
+        mock_sender.send_text = AsyncMock()
+        mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_orchestrator.submit_design_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=True,
+                job_id="job-design-dup-123",
+                submit_request_id="submit-design-dup-123",
+            )
+        )
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.get = AsyncMock(
+            return_value={
+                "chat_id": 12345,
+                "message_id": 1,
+                "job_id": "job-design-dup-123",
+                "status": "delivered",
+                "delivered_at": "2026-04-23T10:00:00+00:00",
+            }
+        )
+        mock_delivery_store.create = AsyncMock()
+
+        dispatcher = CommandDispatcher(
+            synthesizer=mock_synth,
+            settings=mock_settings,
+            sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
+        )
+
+        await dispatcher.handle_update(
+            text="/design calm narrator -- Hello world",
+            user_id=67890,
+            chat_id=12345,
+            message_id=1,
+            chat_type="private",
+        )
+
+        mock_delivery_store.create.assert_not_awaited()
 
 
 class TestCloneJobDelivery:
@@ -659,12 +900,14 @@ class TestCloneJobDelivery:
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_orchestrator = MagicMock()
-        mock_orchestrator.submit_clone_job.return_value = MagicMock(
+        mock_orchestrator.submit_clone_job = AsyncMock(return_value=MagicMock(
             success=True,
             is_duplicate=True,
             job_id="job-existing-123",
-        )
+            submit_request_id="submit-existing-123",
+        ))
         mock_delivery_store = MagicMock()
+        mock_delivery_store.get = AsyncMock(return_value=None)
         mock_delivery_store.create = AsyncMock()
 
         dispatcher = CommandDispatcher(
@@ -682,13 +925,61 @@ class TestCloneJobDelivery:
             ref_text="пример референса",
             language="ru",
             ref_audio_path="/tmp/ref.wav",
+            ref_audio_content_type="audio/wav",
         )
 
         mock_delivery_store.create.assert_awaited_once_with(
             chat_id=12345,
             message_id=67890,
             job_id="job-existing-123",
+            submit_request_id="submit-existing-123",
         )
+
+    @pytest.mark.anyio
+    async def test_clone_duplicate_preserves_existing_delivered_metadata(self):
+        mock_synth = MagicMock()
+        mock_settings = MagicMock()
+        mock_settings.is_user_allowed.return_value = True
+        mock_sender = MagicMock()
+        mock_sender.send_text = AsyncMock()
+        mock_orchestrator = MagicMock()
+        mock_orchestrator.submit_clone_job = AsyncMock(return_value=MagicMock(
+            success=True,
+            is_duplicate=True,
+            job_id="job-existing-123",
+            submit_request_id="submit-existing-123",
+        ))
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.get = AsyncMock(
+            return_value={
+                "chat_id": 12345,
+                "message_id": 67890,
+                "job_id": "job-existing-123",
+                "status": "delivered",
+                "delivered_at": "2026-04-23T10:00:00+00:00",
+            }
+        )
+        mock_delivery_store.create = AsyncMock()
+
+        dispatcher = CommandDispatcher(
+            synthesizer=mock_synth,
+            settings=mock_settings,
+            sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
+        )
+
+        await dispatcher._handle_clone_via_job(
+            chat_id=12345,
+            message_id=67890,
+            text="Скажи это моим голосом",
+            ref_text="пример референса",
+            language="ru",
+            ref_audio_path="/tmp/ref.wav",
+            ref_audio_content_type="audio/wav",
+        )
+
+        mock_delivery_store.create.assert_not_awaited()
 
 
 class TestCloneMediaPreparation:
@@ -749,11 +1040,12 @@ class TestCloneMediaPreparation:
         mock_sender.send_text = AsyncMock()
         mock_sender._client = MagicMock()
         mock_orchestrator = MagicMock()
-        mock_orchestrator.submit_clone_job.return_value = MagicMock(
+        mock_orchestrator.submit_clone_job = AsyncMock(return_value=MagicMock(
             success=True,
             is_duplicate=False,
             job_id="job-new-123",
-        )
+            submit_request_id="submit-new-123",
+        ))
         mock_delivery_store = MagicMock()
         mock_delivery_store.create = AsyncMock()
 
@@ -924,14 +1216,22 @@ class TestCloneMediaPreparation:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
+        mock_settings.resolve_runtime_model_binding.side_effect = (
+            lambda mode: f"model-{mode}"
+        )
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
+        mock_orchestrator = _AsyncJobOrchestratorDouble()
+        mock_delivery_store = MagicMock()
+        mock_delivery_store.create = AsyncMock()
 
         dispatcher = CommandDispatcher(
             synthesizer=mock_synth,
             settings=mock_settings,
             sender=mock_sender,
+            job_orchestrator=mock_orchestrator,
+            delivery_store=mock_delivery_store,
         )
 
         await dispatcher.handle_update(
@@ -942,5 +1242,31 @@ class TestCloneMediaPreparation:
             chat_type="private",
         )
 
-        # Should call synthesize_design
-        assert mock_synth.synthesize_design.called
+        mock_orchestrator.submit_design_job.assert_awaited_once()
+        mock_synth.synthesize_design.assert_not_called()
+class _AsyncJobOrchestratorDouble:
+    def __init__(self):
+        self.submit_tts_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=False,
+                job_id="job-tts-123",
+                submit_request_id="submit-tts-123",
+            )
+        )
+        self.submit_design_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=False,
+                job_id="job-design-123",
+                submit_request_id="submit-design-123",
+            )
+        )
+        self.submit_clone_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=False,
+                job_id="job-clone-123",
+                submit_request_id="submit-clone-123",
+            )
+        )

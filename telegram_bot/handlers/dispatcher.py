@@ -1,5 +1,5 @@
 # FILE: telegram_bot/handlers/dispatcher.py
-# VERSION: 1.0.0
+# VERSION: 1.1.2
 # START_MODULE_CONTRACT
 #   PURPOSE: Route incoming Telegram updates to appropriate command handlers.
 #   SCOPE: Update dispatcher with command routing and user allowlist
@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+#   LAST_CHANGE: [v1.1.2 - Prevented duplicate Telegram submits from resetting already persisted delivery state]
 # END_CHANGE_SUMMARY
 
 """
@@ -27,7 +27,7 @@ the async UX with acknowledgment and result delivery, featuring:
 - Command metrics (received, accepted, rejected)
 - Correlation context propagation
 - Structured logging with operation tracking
-- Job integration with core job model (Stage 2)
+- Job integration with canonical remote async HTTP jobs
 """
 
 from __future__ import annotations
@@ -207,7 +207,7 @@ class CommandDispatcher:
 
     def __init__(
         self,
-        synthesizer: TTSSynthesizer,
+        synthesizer: Any | None,
         settings: TelegramSettings,
         sender: MessageSender,
         logger: logging.Logger | None = None,
@@ -220,7 +220,7 @@ class CommandDispatcher:
         Initialize command dispatcher.
 
         Args:
-            synthesizer: TTS synthesizer instance (used for direct synthesis fallback)
+            synthesizer: TTS synthesizer instance or None in remote-only command flow
             settings: Telegram settings
             sender: Message sender for Telegram API
             logger: Optional logger instance
@@ -532,26 +532,33 @@ class CommandDispatcher:
         # END_BLOCK_ACKNOWLEDGE_TTS_COMMAND
 
         # START_BLOCK_ROUTE_TTS_EXECUTION
-        # Stage 2: Use job model if available
-        if self._use_job_model:
-            await self._handle_tts_via_job(
-                parsed.chat_id,
-                parsed.message_id,
-                tts_args.text,
-                effective_speaker,
-                effective_speed,
-                tts_args.language,
+        if not self._use_job_model:
+            log_telegram_event(
+                self._logger,
+                level=logging.ERROR,
+                event="[Dispatcher][_handle_tts][BLOCK_ROUTE_TTS_EXECUTION]",
+                message="TTS command requires remote async job orchestration but none is configured",
+                user_id=parsed.user_id,
+                chat_id=parsed.chat_id,
+                message_id=parsed.message_id,
             )
+            await self._sender.send_text(
+                parsed.chat_id,
+                self.ERROR_TEMPLATE.format(
+                    error="Обычный синтез временно недоступен: не настроен удалённый async server."
+                ),
+            )
+            return
+
+        await self._handle_tts_via_job(
+            parsed.chat_id,
+            parsed.message_id,
+            tts_args.text,
+            effective_speaker,
+            effective_speed,
+            tts_args.language,
+        )
         # END_BLOCK_ROUTE_TTS_EXECUTION
-        else:
-            # Fallback to direct synthesis
-            await self._process_tts_async(
-                parsed.chat_id,
-                tts_args.text,
-                effective_speaker,
-                effective_speed,
-                tts_args.language,
-            )
 
     async def _handle_tts_via_job(
         self,
@@ -589,7 +596,7 @@ class CommandDispatcher:
         )
 
         # Submit job through orchestrator
-        result = job_orchestrator.submit_tts_job(
+        result = await job_orchestrator.submit_tts_job(
             text=text,
             speaker=speaker,
             speed=speed,
@@ -600,16 +607,22 @@ class CommandDispatcher:
 
         if result.success:
             if result.is_duplicate:
-                # Job already exists, just acknowledge
+                await self._ensure_duplicate_delivery_metadata(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    job_id=result.job_id,
+                    submit_request_id=result.submit_request_id,
+                )
                 METRICS.jobs_duplicate()
                 log_telegram_event(
                     self._logger,
                     level=logging.INFO,
                     event="[Dispatcher][_handle_tts_via_job][_handle_tts_via_job]",
-                    message="Duplicate job submission detected, reusing existing job",
+                    message="Duplicate job submission detected, re-queuing delivery for existing job",
                     chat_id=chat_id,
                     message_id=message_id,
                     job_id=result.job_id,
+                    delivery_requeued=True,
                 )
             else:
                 # Create delivery metadata
@@ -617,6 +630,7 @@ class CommandDispatcher:
                     chat_id=chat_id,
                     message_id=message_id,
                     job_id=result.job_id,
+                    submit_request_id=result.submit_request_id,
                 )
                 METRICS.jobs_submitted()
         else:
@@ -636,118 +650,6 @@ class CommandDispatcher:
                 chat_id,
                 self.ERROR_TEMPLATE.format(
                     error=f"Failed to submit job: {result.error_message}"
-                ),
-            )
-
-    async def _process_tts_async(
-        self,
-        chat_id: int,
-        text: str,
-        speaker: str,
-        speed: float,
-        language: str,
-    ) -> None:
-        """Process TTS synthesis and send result."""
-        log_telegram_event(
-            self._logger,
-            level=logging.INFO,
-            event="[Dispatcher][_process_tts_async][_process_tts_async]",
-            message="Starting TTS synthesis",
-            chat_id=chat_id,
-            text_length=len(text),
-            speaker=speaker,
-            speed=speed,
-            language=language,
-        )
-
-        result = await self._synthesizer.synthesize(
-            text,
-            speaker=speaker,
-            speed=speed,
-            language=language,
-        )
-
-        if result.success:
-            log_telegram_event(
-                self._logger,
-                level=logging.INFO,
-                event="[Dispatcher][_process_tts_async][_process_tts_async]",
-                message="TTS synthesis completed",
-                chat_id=chat_id,
-                duration_ms=result.duration_ms,
-                audio_size_bytes=len(result.audio_bytes) if result.audio_bytes else 0,
-                speaker=speaker,
-                language=language,
-            )
-
-            # Estimate duration from audio size (rough approximation)
-            # Assuming ~12KB per second for OGG at typical settings
-            est_duration = len(result.audio_bytes) / 12000 if result.audio_bytes else 0
-
-            caption = self.SUCCESS_TEMPLATE.format(
-                duration=est_duration,
-                speaker=speaker,
-                text=text[:100] + "..." if len(text) > 100 else text,
-            )
-
-            if result.audio_bytes is None:
-                await self._sender.send_text(
-                    chat_id,
-                    self.ERROR_TEMPLATE.format(
-                        error="Synthesis completed without audio data"
-                    ),
-                )
-                return
-
-            audio_bytes = result.audio_bytes
-
-            # Send voice with retry
-            delivery_result = await self._sender.send_voice(
-                chat_id,
-                audio_bytes,
-                caption=caption,
-            )
-
-            if delivery_result is None:
-                return
-
-            if delivery_result.success:
-                log_telegram_event(
-                    self._logger,
-                    level=logging.INFO,
-                    event="[Dispatcher][_process_tts_async][_process_tts_async]",
-                    message="Voice message sent successfully",
-                    chat_id=chat_id,
-                    attempts=delivery_result.attempts,
-                    duration_ms=delivery_result.duration_ms,
-                )
-            else:
-                log_telegram_event(
-                    self._logger,
-                    level=logging.ERROR,
-                    event="[Dispatcher][_process_tts_async][_process_tts_async]",
-                    message="Voice message delivery failed",
-                    chat_id=chat_id,
-                    error=delivery_result.error_message,
-                    error_class=delivery_result.error_class,
-                    attempts=delivery_result.attempts,
-                )
-        else:
-            log_telegram_event(
-                self._logger,
-                level=logging.ERROR,
-                event="[Dispatcher][_process_tts_async][_process_tts_async]",
-                message="TTS synthesis failed",
-                chat_id=chat_id,
-                error=result.error_message,
-                duration_ms=result.duration_ms,
-                speaker=speaker,
-            )
-
-            await self._sender.send_text(
-                chat_id,
-                self.ERROR_TEMPLATE.format(
-                    error=result.error_message or "Unknown error during synthesis"
                 ),
             )
 
@@ -858,24 +760,32 @@ class CommandDispatcher:
         # END_BLOCK_ACKNOWLEDGE_DESIGN_COMMAND
 
         # START_BLOCK_ROUTE_DESIGN_EXECUTION
-        # Stage 3: Use job model for design
-        if self._use_job_model:
-            await self._handle_design_via_job(
-                parsed.chat_id,
-                parsed.message_id,
-                design_args.voice_description,
-                design_args.text,
-                design_args.language,
+        if not self._use_job_model:
+            log_telegram_event(
+                self._logger,
+                level=logging.ERROR,
+                event="[Dispatcher][_handle_design][BLOCK_ROUTE_DESIGN_EXECUTION]",
+                message="Design command requires remote async job orchestration but none is configured",
+                user_id=parsed.user_id,
+                chat_id=parsed.chat_id,
+                message_id=parsed.message_id,
             )
+            await self._sender.send_text(
+                parsed.chat_id,
+                self.ERROR_TEMPLATE.format(
+                    error="Voice Design временно недоступен: не настроен удалённый async server."
+                ),
+            )
+            return
+
+        await self._handle_design_via_job(
+            parsed.chat_id,
+            parsed.message_id,
+            design_args.voice_description,
+            design_args.text,
+            design_args.language,
+        )
         # END_BLOCK_ROUTE_DESIGN_EXECUTION
-        else:
-            # Fallback to direct synthesis
-            await self._process_design_async(
-                parsed.chat_id,
-                design_args.voice_description,
-                design_args.text,
-                design_args.language,
-            )
 
     async def _handle_design_via_job(
         self,
@@ -911,7 +821,7 @@ class CommandDispatcher:
         )
 
         # Submit job through orchestrator
-        result = job_orchestrator.submit_design_job(
+        result = await job_orchestrator.submit_design_job(
             voice_description=voice_description,
             text=text,
             language=language,
@@ -921,21 +831,29 @@ class CommandDispatcher:
 
         if result.success:
             if result.is_duplicate:
+                await self._ensure_duplicate_delivery_metadata(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    job_id=result.job_id,
+                    submit_request_id=result.submit_request_id,
+                )
                 METRICS.jobs_duplicate()
                 log_telegram_event(
                     self._logger,
                     level=logging.INFO,
                     event="[Dispatcher][_handle_design_via_job][_handle_design_via_job]",
-                    message="Duplicate design job submission detected, reusing existing job",
+                    message="Duplicate design job submission detected, re-queuing delivery for existing job",
                     chat_id=chat_id,
                     message_id=message_id,
                     job_id=result.job_id,
+                    delivery_requeued=True,
                 )
             else:
                 await delivery_store.create(
                     chat_id=chat_id,
                     message_id=message_id,
                     job_id=result.job_id,
+                    submit_request_id=result.submit_request_id,
                 )
                 METRICS.jobs_submitted()
         else:
@@ -953,108 +871,6 @@ class CommandDispatcher:
                 chat_id,
                 self.ERROR_TEMPLATE.format(
                     error=f"Failed to submit design job: {result.error_message}"
-                ),
-            )
-
-    async def _process_design_async(
-        self,
-        chat_id: int,
-        voice_description: str,
-        text: str,
-        language: str,
-    ) -> None:
-        """Process Voice Design synthesis and send result."""
-        log_telegram_event(
-            self._logger,
-            level=logging.INFO,
-            event="[Dispatcher][_process_design_async][_process_design_async]",
-            message="Starting Voice Design synthesis",
-            chat_id=chat_id,
-            voice_description_length=len(voice_description),
-            text_length=len(text),
-            language=language,
-        )
-
-        result = await self._synthesizer.synthesize_design(
-            voice_description=voice_description,
-            text=text,
-            language=language,
-        )
-
-        if result.success:
-            log_telegram_event(
-                self._logger,
-                level=logging.INFO,
-                event="[Dispatcher][_process_design_async][_process_design_async]",
-                message="Voice Design synthesis completed",
-                chat_id=chat_id,
-                duration_ms=result.duration_ms,
-                audio_size_bytes=len(result.audio_bytes) if result.audio_bytes else 0,
-            )
-
-            est_duration = len(result.audio_bytes) / 12000 if result.audio_bytes else 0
-
-            if len(text) > 100:
-                caption = f'✅ *Done!*\n\nGenerated voice design ({est_duration:.1f}s)\n\n"{text[:100]}..."'
-            else:
-                caption = f'✅ *Done!*\n\nGenerated voice design ({est_duration:.1f}s)\n\n"{text}"'
-
-            if result.audio_bytes is None:
-                await self._sender.send_text(
-                    chat_id,
-                    self.ERROR_TEMPLATE.format(
-                        error="Synthesis completed without audio data"
-                    ),
-                )
-                return
-
-            audio_bytes = result.audio_bytes
-
-            delivery_result = await self._sender.send_voice(
-                chat_id,
-                audio_bytes,
-                caption=caption,
-            )
-
-            if delivery_result is None:
-                return
-
-            if delivery_result.success:
-                log_telegram_event(
-                    self._logger,
-                    level=logging.INFO,
-                    event="[Dispatcher][_process_design_async][_process_design_async]",
-                    message="Voice message sent successfully",
-                    chat_id=chat_id,
-                    attempts=delivery_result.attempts,
-                    duration_ms=delivery_result.duration_ms,
-                )
-            else:
-                log_telegram_event(
-                    self._logger,
-                    level=logging.ERROR,
-                    event="[Dispatcher][_process_design_async][_process_design_async]",
-                    message="Voice message delivery failed",
-                    chat_id=chat_id,
-                    error=delivery_result.error_message,
-                    error_class=delivery_result.error_class,
-                    attempts=delivery_result.attempts,
-                )
-        else:
-            log_telegram_event(
-                self._logger,
-                level=logging.ERROR,
-                event="[Dispatcher][_process_design_async][_process_design_async]",
-                message="Voice Design synthesis failed",
-                chat_id=chat_id,
-                error=result.error_message,
-                duration_ms=result.duration_ms,
-            )
-
-            await self._sender.send_text(
-                chat_id,
-                self.ERROR_TEMPLATE.format(
-                    error=result.error_message or "Unknown error during synthesis"
                 ),
             )
 
@@ -1315,6 +1131,7 @@ class CommandDispatcher:
             clone_args.ref_text,
             clone_args.language,
             ref_audio_path,
+            validation.content_type or "application/octet-stream",
         )
         # END_BLOCK_DELIVER_RESULT
 
@@ -1326,6 +1143,7 @@ class CommandDispatcher:
         ref_text: str | None,
         language: str,
         ref_audio_path: str,
+        ref_audio_content_type: str,
     ) -> None:
         """
         Handle Voice Clone via job model (Stage 4).
@@ -1354,22 +1172,24 @@ class CommandDispatcher:
         )
 
         # Submit job through orchestrator
-        result = job_orchestrator.submit_clone_job(
+        result = await job_orchestrator.submit_clone_job(
             text=text,
             ref_text=ref_text,
             language=language,
             chat_id=chat_id,
             message_id=message_id,
             ref_audio_path=ref_audio_path,
+            ref_audio_content_type=ref_audio_content_type,
         )
 
         if result.success:
             if result.is_duplicate:
                 METRICS.jobs_duplicate()
-                await delivery_store.create(
+                await self._ensure_duplicate_delivery_metadata(
                     chat_id=chat_id,
                     message_id=message_id,
                     job_id=result.job_id,
+                    submit_request_id=result.submit_request_id,
                 )
                 log_telegram_event(
                     self._logger,
@@ -1386,6 +1206,7 @@ class CommandDispatcher:
                     chat_id=chat_id,
                     message_id=message_id,
                     job_id=result.job_id,
+                    submit_request_id=result.submit_request_id,
                 )
                 METRICS.jobs_submitted()
         else:
@@ -1405,6 +1226,36 @@ class CommandDispatcher:
                     error=f"Failed to submit clone job: {result.error_message}"
                 ),
             )
+
+    # START_CONTRACT: _ensure_duplicate_delivery_metadata
+    #   PURPOSE: Preserve existing Telegram delivery state when a duplicate remote submit is observed.
+    #   INPUTS: { chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, job_id: str | None - remote job identifier, submit_request_id: str | None - original submit correlation id }
+    #   OUTPUTS: { None - no return value }
+    #   SIDE_EFFECTS: May create pending delivery metadata when no prior record exists.
+    #   LINKS: M-TELEGRAM
+    # END_CONTRACT: _ensure_duplicate_delivery_metadata
+    async def _ensure_duplicate_delivery_metadata(
+        self,
+        *,
+        chat_id: int,
+        message_id: int,
+        job_id: str | None,
+        submit_request_id: str | None,
+    ) -> None:
+        assert self._delivery_store is not None
+        if job_id is None:
+            return
+
+        existing_metadata = await self._delivery_store.get(chat_id, message_id)
+        if existing_metadata is not None:
+            return
+
+        await self._delivery_store.create(
+            chat_id=chat_id,
+            message_id=message_id,
+            job_id=job_id,
+            submit_request_id=submit_request_id,
+        )
 
     async def _handle_unknown(self, parsed: ParsedCommand) -> None:
         """Handle unknown commands."""
