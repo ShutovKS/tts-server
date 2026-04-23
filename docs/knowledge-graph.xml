@@ -1,7 +1,7 @@
 <KnowledgeGraph>
   <Project NAME="Modular-Local-TTS-Runtime" VERSION="1.0.0">
-    <keywords>TTS, text-to-speech, Qwen3, OmniVoice, Piper, Apple Silicon, Windows, Linux, MLX, PyTorch, ONNX, FastAPI, Telegram bot, CLI, voice synthesis, voice cloning, voice design, audio generation, model inference</keywords>
-    <annotation>Local cross-platform text-to-speech runtime with shared core services, multiple model families, and transport adapters for HTTP, Telegram, and interactive CLI workflows.</annotation>
+    <keywords>TTS, text-to-speech, Qwen3, OmniVoice, Piper, Apple Silicon, Windows, Linux, MLX, PyTorch, ONNX, FastAPI, Telegram bot, CLI, remote client, voice synthesis, voice cloning, voice design, audio generation, model inference</keywords>
+    <annotation>Phase 1 central-server text-to-speech runtime with shared core services, the HTTP server as the sole runtime and model host, Telegram as a remote HTTP client, and CLI kept outside Phase 1 unless a blocker appears.</annotation>
 
     <M-CONFIG NAME="CoreSettings" TYPE="UTILITY" STATUS="implemented">
       <purpose>Parse and validate environment-based runtime configuration for all components.</purpose>
@@ -366,7 +366,7 @@
     </M-DOCKER-ASSETS>
 
     <M-SERVER NAME="HTTPServer" TYPE="ENTRY_POINT" STATUS="implemented">
-      <purpose>Expose TTS capabilities through FastAPI HTTP endpoints with auth, rate limiting, error handling, and API-only transport behavior.</purpose>
+      <purpose>Expose TTS capabilities through FastAPI HTTP endpoints with auth, rate limiting, error handling, and the canonical Phase 1 runtime and model host contract.</purpose>
       <path>server/</path>
       <depends>M-BOOTSTRAP, M-CONFIG, M-ERRORS, M-CONTRACTS, M-OBSERVABILITY</depends>
       <verification-ref>V-M-SERVER</verification-ref>
@@ -377,6 +377,7 @@
       </annotations>
       <CrossLink from="M-SERVER" to="M-BOOTSTRAP" relation="uses-runtime" />
       <CrossLink from="M-SERVER" to="M-OBSERVABILITY" relation="uses-logging" />
+      <implementation-note>Phase 1 target state makes this module the only local runtime and model host; Telegram and CLI must not be described as alternate runtime hosts in shared docs.</implementation-note>
     </M-SERVER>
 
     <M-FRONTEND-DEMO NAME="FrontendDemo" TYPE="ENTRY_POINT" STATUS="implemented">
@@ -394,20 +395,24 @@
     </M-FRONTEND-DEMO>
 
     <M-TELEGRAM NAME="TelegramBot" TYPE="ENTRY_POINT" STATUS="implemented">
-      <purpose>Expose TTS capabilities through Telegram bot commands with allowlist, rate limiting, and delivery persistence.</purpose>
+      <purpose>Expose TTS capabilities through Telegram bot commands as a remote HTTP client with allowlist, rate limiting, and delivery persistence.</purpose>
       <path>telegram_bot/</path>
       <depends>M-BOOTSTRAP, M-CONFIG, M-ERRORS, M-CONTRACTS, M-OBSERVABILITY</depends>
       <verification-ref>V-M-TELEGRAM</verification-ref>
       <annotations>
         <fn-main PURPOSE="Telegram bot entry point and polling loop" />
         <class-TelegramSettings PURPOSE="Telegram-specific configuration" />
+        <file-tests-integration-test_remote_telegram_client-py PURPOSE="Process-separated canonical remote-client proof surface for Phase 1 split topology" />
+        <file-tests-architecture-test_no_telegram_local_runtime-py PURPOSE="Architecture gate proving Telegram startup and command routing have no normal-path local runtime fallback" />
       </annotations>
       <CrossLink from="M-TELEGRAM" to="M-BOOTSTRAP" relation="uses-runtime" />
+      <CrossLink from="M-TELEGRAM" to="M-SERVER" relation="remote-http-client" />
       <CrossLink from="M-TELEGRAM" to="M-OBSERVABILITY" relation="uses-logging" />
+      <implementation-note>In Phase 1, Telegram is a remote client of the canonical HTTP contract, so no local model-hosting implication should be inferred from this module; the dedicated remote-client and no-local-fallback verification surfaces enforce that boundary.</implementation-note>
     </M-TELEGRAM>
 
     <M-CLI NAME="InteractiveCLI" TYPE="ENTRY_POINT" STATUS="implemented">
-      <purpose>Provide interactive local CLI for synthesis workflows with optional audio playback.</purpose>
+      <purpose>Provide interactive local CLI for synthesis workflows with optional audio playback, outside the Phase 1 central-server target unless a blocker appears.</purpose>
       <path>cli/</path>
       <depends>M-BOOTSTRAP, M-CONFIG, M-CONTRACTS, M-INFRASTRUCTURE, M-MODELS</depends>
       <verification-ref>V-M-CLI</verification-ref>
@@ -415,6 +420,7 @@
         <fn-main PURPOSE="CLI entry point with interactive loop" />
       </annotations>
       <CrossLink from="M-CLI" to="M-BOOTSTRAP" relation="uses-runtime" />
+      <implementation-note>CLI remains out of the Phase 1 target state and must not be used as evidence of local runtime hosting in the central-server split.</implementation-note>
     </M-CLI>
 
     <M-PROFILE-SCHEMA NAME="RuntimeProfileSchema" TYPE="TYPES" STATUS="implemented">

@@ -2,6 +2,8 @@
   <GlobalPolicy>
     <log-format>[ModuleName][functionName][BLOCK_NAME] message</log-format>
     <deterministic-first>true</deterministic-first>
+    <split-topology-policy>Phase 1 verification must prove that the HTTP server is the sole runtime/model host while Telegram acts only as a remote HTTP client and CLI stays out of Phase 1 unless a blocker forces inclusion.</split-topology-policy>
+    <anti-local-fallback-policy>Phase 1 evidence must reject any Telegram or CLI path that implies local model hosting, local inference fallback, or alternate runtime ownership outside the HTTP server.</anti-local-fallback-policy>
     <module-level-focus>Fast deterministic checks close to the module using pytest -m unit.</module-level-focus>
     <wave-level-focus>Integration checks for adapter wiring and endpoint behavior using pytest -m integration.</wave-level-focus>
     <phase-level-focus>Full regression suite including architecture boundary checks using pytest.</phase-level-focus>
@@ -72,6 +74,38 @@
         <trace-sequence>New family adapter registered -> planner resolves family through existing capability contracts -> integration tests pass without adapter boundary regressions</trace-sequence>
       </required-signals>
     </VF-007>
+#AC|    <VF-008 NAME="SplitTopologyPhase1" USE_CASES="UC-001,UC-004,UC-008" DATA_FLOW="DF-SYNC-TTS,DF-ASYNC-JOB,DF-TELEGRAM-TTS" PRIORITY="high">
+#UV|      <scenario>Phase 1 architecture evidence proves the HTTP server owns runtime and model hosting while Telegram only forwards work to the server over HTTP and CLI remains out of the Phase 1 host path.</scenario>
+#MH|      <expected-outcome>Server startup, health, and readiness evidence prove local runtime ownership on the HTTP server only, and Telegram evidence shows remote submission or delivery behavior without any Telegram-side local inference host implication.</expected-outcome>
+#VP|      <required-signals>
+#RS|        <trace-sequence>HTTP server health and readiness probes show local host ownership -> Telegram update handling emits remote HTTP client behavior -> no Telegram-side model host or inference fallback evidence appears</trace-sequence>
+#NP|        <log-marker>[RoutesTTS][openai_speech][BLOCK_LOG_OPENAI_REQUEST]</log-marker>
+#TG|        <evidence-note>Server startup and readiness evidence are taken from the existing server health/readiness flows rather than a fabricated build marker.</evidence-note>
+#MK|        <evidence-note>Telegram evidence must remain limited to remote HTTP client behavior and delivery pathways.</evidence-note>
+#TF|      </required-signals>
+#ZT|    </VF-008>
+
+#UP|    <VF-009 NAME="AntiLocalFallbackPhase1" USE_CASES="UC-001,UC-002,UC-003" DATA_FLOW="DF-TELEGRAM-TTS,DF-CLI-TTS" PRIORITY="high">
+#RA|      <scenario>Telegram and CLI paths must not silently host local inference or fall back to a local model when the HTTP server is the only Phase 1 runtime host.</scenario>
+#MQ|      <expected-outcome>Any evidence of Telegram-side or CLI-side local runtime ownership, direct backend execution, or fallback-to-local-model behavior fails the gate, while remote HTTP submission and server-side execution pass.</expected-outcome>
+#VP|      <required-signals>
+#RS|        <trace-sequence>Telegram or CLI request -> remote HTTP contract only -> server executes inference -> no local fallback branch on Telegram or CLI</trace-sequence>
+#LM|        <evidence-note>Telegram evidence must stay within remote client behavior and must not imply local inference, local model registry ownership, or alternate runtime fallback.</evidence-note>
+#FC|        <evidence-note>CLI evidence must remain out of Phase 1 unless explicitly blocked in the plan, and must not be used as local runtime evidence for the central-server target state.</evidence-note>
+#TN|        <forbidden-signal>Any log or test evidence that constructs or selects a local inference backend, local job executor, or model registry as host-owned runtime outside the HTTP server</forbidden-signal>
+#TF|      </required-signals>
+#ZX|    </VF-009>
+#NN|    <VF-010 NAME="Phase1CutoverGuardrails" USE_CASES="UC-001,UC-004,UC-008" DATA_FLOW="DF-REQUEST-TO-PLAN,DF-SYNC-TTS,DF-TELEGRAM-TTS" PRIORITY="high">
+#RV|      <scenario>Operators roll out Phase 1 by bringing the server up first, then Telegram, then any other remote clients, and they can prove the migration with paired server and client evidence.</scenario>
+#YY|      <expected-outcome>Documentation and validation evidence show the canonical HTTP server contract as the source of truth, client cutover happens only after server readiness is verified, rollback happens by stopping or repointing clients before server recovery, and `telegram-live` is treated as boundary proof rather than server-execution proof by itself.</expected-outcome>
+#QT|      <required-signals>
+#BP|        <trace-sequence>Server readiness evidence -> Telegram boundary evidence -> paired server and client artifacts -> migration declared good only after both sides are present</trace-sequence>
+#XR|        <evidence-note>Server evidence must include readiness and model discovery proof from the same deployment window or an equivalent validated command output.</evidence-note>
+#NW|        <evidence-note>Telegram evidence must include `telegram-live` output and retained client-side logs or compose/service logs from the same cutover window.</evidence-note>
+#RT|        <evidence-note>Rollback evidence must show clients being stopped or repointed before server recovery and client restart only after readiness returns.</evidence-note>
+#QH|        <forbidden-signal>Any wording or evidence that presents Phase 1 as public-internet ready, implies the CLI is migrated in Phase 1, or allows Telegram to silently infer local runtime ownership.</forbidden-signal>
+#QH|      </required-signals>
+#BZ|    </VF-010>
   </CriticalFlows>
 
   <ModuleVerification>
@@ -486,11 +520,13 @@
     <V-M-SERVER MODULE="M-SERVER" PRIORITY="high">
       <test-files>
         <file>tests/integration/test_api.py</file>
+        <file>tests/integration/test_backend_api_metadata.py</file>
         <file>tests/unit/server/test_health_routes.py</file>
         <file>tests/smoke/test_local_runtime.py</file>
       </test-files>
       <module-checks>
         <check-1>python -m pytest tests/integration/test_api.py tests/unit/server/test_health_routes.py tests/unit/server/test_tts_routes.py -m "integration or unit"</check-1>
+        <check-1a>python -m pytest tests/integration/test_api.py tests/integration/test_backend_api_metadata.py -m "integration"</check-1a>
         <check-2>TTS_RUN_SMOKE=1 python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-2>
         <check-3>TTS_RUN_SMOKE=1 TTS_SMOKE_MODEL_ID=Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-3>
         <check-4>TTS_RUN_SMOKE=1 TTS_SMOKE_MODEL_ID=Piper-en_US-lessac-medium TTS_SMOKE_EXPECTED_BACKEND=onnx python -m pytest tests/smoke/test_local_runtime.py -m smoke</check-4>
@@ -503,8 +539,12 @@
       <scenarios>
         <scenario-1 kind="success">Health live and readiness endpoints expose expected status plus deep readiness diagnostics.</scenario-1>
         <scenario-2 kind="success">OpenAI-compatible, custom, design, and clone HTTP endpoints return audio and propagate request metadata.</scenario-2>
-        <scenario-3 kind="success">Async submit, status, result, cancel, and idempotency flows remain deterministic through the HTTP adapter.</scenario-3>
+        <scenario-3 kind="success">Async submit, status, result, cancel, and idempotency flows remain deterministic through the HTTP adapter, with stable `x-job-id` and `x-submit-request-id` headers across submission and later lifecycle reads.</scenario-3>
         <scenario-4 kind="failure">Unified HTTP error responses cover validation failures, rate limits, timeouts, worker failures, and ownership checks.</scenario-4>
+        <scenario-4a kind="success">The Phase 1 canonical remote contract is explicit: `/v1/audio/speech` is the canonical sync speech contract, `/v1/audio/speech/jobs` is the canonical async submit contract for that payload, and `/api/v1/tts/jobs/{job_id}` resources remain the canonical async job resource URLs.</scenario-4a>
+        <scenario-4b kind="success">Async job snapshots expose only the official public lifecycle states `queued`, `running`, `succeeded`, `failed`, and `cancelled`.</scenario-4b>
+        <scenario-4d kind="failure">Bounded sync execution is explicit and non-fallback: timed-out sync requests return `504 request_timeout`, while async execution remains reachable only through the existing job-submit routes.</scenario-4d>
+        <scenario-4c kind="failure">Controlled HTTP failures always use the shared machine-readable envelope with `code`, `message`, `details`, and `request_id`.</scenario-4c>
         <scenario-5 kind="success">Request, inference, and response logs include request_id and GRACE block markers for observability assertions.</scenario-5>
         <scenario-6 kind="failure">Unsupported family and operation combinations return controlled model_capability_not_supported errors instead of ambiguous runtime failures.</scenario-6>
         <scenario-7 kind="success">Readiness and model discovery payloads expose selected backend, per-model execution backend, routing reasons, and family capability metadata for mixed-family deployments.</scenario-7>
@@ -513,6 +553,7 @@
         <scenario-10 kind="success">Smoke validation remains Qwen custom sync/async capable by default while supporting an explicit Piper smoke model path through the same public HTTP API with ONNX backend assertions.</scenario-10>
         <scenario-11 kind="success">On the current Windows host, server Docker deployment starts successfully and returns `status=ok` from `/health/live`, `/health/ready`, and `/api/v1/models`.</scenario-11>
         <scenario-12 kind="success">Server Docker readiness on the current Windows host confirms mounted `.models`, `.outputs`, `.uploads`, `.voices`, and in-container ffmpeg availability.</scenario-12>
+#SR|        <scenario-13 kind="success">Phase 1 server evidence shows the HTTP server as the only local runtime/model host and keeps the canonical contract rooted at `/v1/audio/speech`, `/v1/audio/speech/jobs`, and `/api/v1/tts/jobs/{job_id}`.</scenario-13>
       </scenarios>
       <required-log-markers>
         <marker-1>[ServerApp][request_context_middleware][BLOCK_LOG_REQUEST_START]</marker-1>
@@ -554,17 +595,21 @@
         <file>tests/unit/test_telegram_bot/test_job_orchestrator.py</file>
         <file>tests/unit/test_telegram_bot/test_observability.py</file>
         <file>tests/unit/test_telegram_bot/test_operational.py</file>
+        <file>tests/integration/test_remote_telegram_client.py</file>
         <file>tests/integration/test_telegram_adapter/test_wiring.py</file>
         <file>tests/integration/test_telegram_adapter/test_job_integration.py</file>
         <file>tests/integration/test_telegram_adapter/test_delivery_recovery.py</file>
+        <file>tests/architecture/test_no_telegram_local_runtime.py</file>
       </test-files>
       <module-checks>
         <check-1>python -m pytest tests/unit/test_telegram_bot -m unit</check-1>
         <check-2>python -m pytest tests/integration/test_telegram_adapter -m integration</check-2>
-        <check-3>python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"</check-3>
-        <check-4>python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN" --chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."</check-4>
-        <check-5>docker compose -f docker-compose.telegram-bot.yaml up -d telegram-bot</check-5>
-        <check-6>docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot</check-6>
+        <check-3>python -m pytest tests/integration/test_remote_telegram_client.py tests/architecture/test_no_telegram_local_runtime.py -m "unit or integration"</check-3>
+        <check-4>TTS_TELEGRAM_SERVER_BASE_URL="$TTS_TELEGRAM_SERVER_BASE_URL" python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"</check-4>
+        <check-5>TTS_TELEGRAM_SERVER_BASE_URL="$TTS_TELEGRAM_SERVER_BASE_URL" python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN" --chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-chat-id "$TTS_TELEGRAM_VALIDATION_CHAT_ID" --expect-update-text "Qwen3-TTS validation ping."</check-5>
+        <check-6>TTS_TELEGRAM_SERVER_BASE_URL="$TTS_TELEGRAM_SERVER_BASE_URL" docker compose -f docker-compose.telegram-bot.yaml up -d telegram-bot</check-6>
+        <check-7>docker compose -f docker-compose.telegram-bot.yaml logs --no-color telegram-bot</check-7>
+        <check-8>python scripts/validate_runtime.py docker-server</check-8>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">TelegramSettings.from_env and build_telegram_runtime validate configuration and assemble TelegramRuntime correctly.</scenario-1>
@@ -572,10 +617,14 @@
         <scenario-3 kind="success">DeliveryMetadataStore and TelegramJobOrchestrator preserve idempotency, completion polling, and restart recovery semantics.</scenario-3>
         <scenario-4 kind="success">Telegram audio conversion, voice upload formatting, and sender delegation remain contract-compatible.</scenario-4>
         <scenario-5 kind="success">Telegram observability helpers emit structured GRACE event markers and polling metrics remain visible to tests.</scenario-5>
-        <scenario-6 kind="success">Telegram live validation can verify Bot API reachability automatically when a real bot token is provided, while remaining opt-in for secretless environments.</scenario-6>
-        <scenario-7 kind="success">Telegram live validation can optionally send a validation ping and confirm that a newer matching inbound message update becomes visible through getUpdates for a dedicated test chat.</scenario-7>
-        <scenario-8 kind="success">The Telegram Docker compose lane remains documented and runnable, and its checks cover startup self-checks, Bot API reachability, and polling behavior when the required bot token and validation context are available.</scenario-8>
-        <scenario-9 kind="success">Telegram Docker runtime documentation preserves the shared model/output/upload/voice mounts and the named `/app/.state` volume contract, while the retained evidence set in this session does not claim host-specific Telegram startup/API/polling proof.</scenario-9>
+        <scenario-6 kind="success">Telegram live validation can verify Bot API reachability automatically when a real bot token is provided and can report the configured `TTS_TELEGRAM_SERVER_BASE_URL`, while remaining opt-in for secretless environments.</scenario-6>
+        <scenario-7 kind="success">Telegram live validation can optionally send a validation ping and confirm that a newer matching inbound message update becomes visible through getUpdates for a dedicated test chat, while still reporting that server-side execution must be proven by companion server evidence.</scenario-7>
+        <scenario-8 kind="success">The Telegram Docker compose lane remains documented and runnable, and its checks cover remote-server readiness wiring, startup self-checks, Bot API reachability, and polling behavior when the required bot token, remote server base URL, and validation context are available.</scenario-8>
+        <scenario-9 kind="success">Telegram Docker runtime documentation preserves the adapter-local `.outputs` mount and the named `/app/.state` volume contract, does not imply local inference ownership inside the bot container, and keeps companion server evidence requirements explicit.</scenario-9>
+#CJ|        <scenario-10 kind="success">Phase 1 Telegram evidence only demonstrates remote HTTP client behavior against the canonical server contract and never implies a local runtime or model host.</scenario-10>
+#BZ|        <scenario-11 kind="failure">If Telegram logs, fixtures, or wiring evidence show local inference, local model registry ownership, or alternate runtime fallback, the split-topology gate fails.</scenario-11>
+#QF|        <scenario-12 kind="success">A process-launched canonical HTTP stub can satisfy readiness, model discovery, sync speech, and async submit/status/result checks through the real Telegram remote client over loopback without in-process transports.</scenario-12>
+#LX|        <scenario-13 kind="success">Architecture tests prove the migrated Telegram normal path requires a remote client, wires `synthesizer=None`, and routes `/tts`, `/design`, and `/clone` only through remote job orchestration.</scenario-13>
       </scenarios>
       <required-log-markers>
         <marker-1>[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]</marker-1>
@@ -601,6 +650,8 @@
         <scenario-3 kind="success">CLI launchability exposes the multi-family selection menu and bounded exit path through `python -m cli` without surfacing startup failures.</scenario-3>
         <scenario-4 kind="success">OmniVoice design flows route through model metadata identifiers so capability-specific design synthesis stays family-aware.</scenario-4>
         <scenario-5 kind="success">Automated CLI launchability evidence is retained as a transcript in `.sisyphus/evidence/cli-launchability-transcript.txt` after `python -m cli` receives scripted exit input.</scenario-5>
+#QP|        <scenario-6 kind="success">CLI evidence stays out of the Phase 1 host split unless an explicit blocker reintroduces it, and the plan does not treat the CLI as a runtime/model host in the central-server target state.</scenario-6>
+#PK|        <scenario-7 kind="failure">Any CLI evidence that constructs or implies a local runtime/model host for Phase 1 fails the anti-local-fallback gate.</scenario-7>
       </scenarios>
     </V-M-CLI>
 
@@ -893,6 +944,8 @@
       </commands>
       <required-evidence>
         <evidence-1>All foundation modules (M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS, M-CONTRACTS) have passing unit tests.</evidence-1>
+#PH|        <evidence-2>Phase 1 target-state docs explicitly name the HTTP server as the sole runtime/model host, Telegram as a remote HTTP client, HTTP as the canonical contract, and CLI as out of scope unless blocked.</evidence-2>
+#DJ|        <evidence-3>Split-topology and anti-local-fallback checks are present in the verification plan and exercised by the server and Telegram gates.</evidence-3>
       </required-evidence>
     </Gate-Phase-1>
 
@@ -919,7 +972,7 @@
 
   <AutomationNotes>
     <note>Telegram Docker remains a documented compose lane, but the retained evidence set in this session only proves the server Docker path. Keep Telegram Docker wording as runnable and documented unless a specific run also retains its own logs and external validation artifacts.</note>
-    <note>`telegram-live` is a real Telegram Bot API reachability check, not Docker parity proof by itself.</note>
+    <note>`telegram-live` is a real Telegram Bot API reachability check plus remote-boundary summary, not server-execution proof or Docker parity proof by itself.</note>
     <note>Launcher/profile verification wording is synchronized to the landed unit-test wave: V-M-PROFILE-*, V-M-LAUNCHER, V-M-WINDOWS-LAUNCHER, V-M-MACOS-LAUNCHER, and V-M-LINUX-LAUNCHER describe only behaviors evidenced by the listed launcher/profile unit suites.</note>
   </AutomationNotes>
 
