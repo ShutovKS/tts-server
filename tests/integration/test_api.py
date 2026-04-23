@@ -673,6 +673,7 @@ def test_model_not_available_error_uses_centralized_mapping_for_unknown_identifi
     )
     assert payload["details"]["model"] == "unknown-model"
     assert payload["details"]["backend"] == "mlx"
+    assert sorted(payload.keys()) == ["code", "details", "message", "request_id"]
 
 
 def test_model_not_available_error_uses_centralized_mapping_for_missing_mode_artifacts(
@@ -817,6 +818,8 @@ def test_async_custom_job_submit_status_result_flow(client: TestClient):
     assert submit_payload["response_format"] == "wav"
     assert submit_payload["save_output"] is True
     assert submit_payload["backend"] in {None, "mlx"}
+    assert submit.headers["x-job-id"] == submit_payload["job_id"]
+    assert submit.headers["x-submit-request-id"] == submit_payload["submit_request_id"]
     assert submit_payload["created_at"]
     assert submit_payload["status_url"].endswith(
         f"/api/v1/tts/jobs/{submit_payload['job_id']}"
@@ -827,16 +830,22 @@ def test_async_custom_job_submit_status_result_flow(client: TestClient):
     assert submit_payload["cancel_url"].endswith(
         f"/api/v1/tts/jobs/{submit_payload['job_id']}/cancel"
     )
+    assert submit_payload["status"] in {"queued", "running", "succeeded", "failed", "cancelled"}
 
     job_id = submit_payload["job_id"]
     status_payload = None
+    status_headers: dict[str, str] | None = None
     for _ in range(50):
         status = client.get(f"/api/v1/tts/jobs/{job_id}")
         assert status.status_code == 200
         status_payload = status.json()
+        status_headers = status.headers
         if status_payload["status"] == "succeeded":
             break
     assert status_payload is not None
+    assert status_headers is not None
+    assert status_headers["x-job-id"] == job_id
+    assert status_headers["x-submit-request-id"] == submit_payload["submit_request_id"]
     assert status_payload["status"] == "succeeded"
     assert status_payload["request_id"]
     assert status_payload["submit_request_id"] == submit_payload["submit_request_id"]
@@ -853,6 +862,7 @@ def test_async_custom_job_submit_status_result_flow(client: TestClient):
     assert result.status_code == 200
     assert result.headers["x-request-id"]
     assert result.headers["x-job-id"] == job_id
+    assert result.headers["x-submit-request-id"] == submit_payload["submit_request_id"]
     assert result.headers["x-model-id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     assert result.headers["x-tts-mode"] == "custom"
     assert result.headers["x-backend-id"] == "mlx"
@@ -876,7 +886,10 @@ def test_async_openai_job_submit_supports_pcm_result(client: TestClient):
     assert submit_payload["mode"] == "custom"
     assert submit_payload["operation"] == "synthesize_custom"
     assert submit_payload["response_format"] == "pcm"
+    assert submit.headers["x-job-id"] == submit_payload["job_id"]
+    assert submit.headers["x-submit-request-id"] == submit_payload["submit_request_id"]
     assert submit_payload["save_output"] is False
+    assert submit_payload["status"] in {"queued", "running", "succeeded", "failed", "cancelled"}
     job_id = submit_payload["job_id"]
 
     for _ in range(50):
@@ -888,6 +901,7 @@ def test_async_openai_job_submit_supports_pcm_result(client: TestClient):
     assert result.status_code == 200
     assert result.headers["content-type"].startswith("audio/pcm")
     assert result.headers["x-request-id"]
+    assert result.headers["x-submit-request-id"] == submit_payload["submit_request_id"]
     assert result.headers["x-model-id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     assert result.headers["x-tts-mode"] == "custom"
     assert result.headers["x-backend-id"] == "mlx"
@@ -1418,9 +1432,12 @@ def test_async_job_cancel_queued_job_returns_cancelled_snapshot(
     assert second.status_code == 202
     assert cancelled.status_code == 202
     payload = cancelled.json()
+    assert cancelled.headers["x-job-id"] == second.json()["job_id"]
+    assert cancelled.headers["x-submit-request-id"] == second.json()["submit_request_id"]
     assert payload["request_id"]
     assert payload["job_id"] == second.json()["job_id"]
     assert payload["status"] == "cancelled"
+    assert payload["status"] in {"queued", "running", "succeeded", "failed", "cancelled"}
     assert payload["completed_at"] is not None
     assert payload["terminal_error"]["code"] == "job_cancelled"
     assert (
@@ -1507,6 +1524,58 @@ def test_async_job_queue_full_returns_controlled_error(
     assert payload["code"] == "job_queue_full"
     assert payload["request_id"]
     assert payload["details"]["reason"] == "Local job queue is full"
+
+
+def test_async_timeout_is_reported_as_failed_public_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    settings = ServerSettings(
+        models_dir=tmp_path / ".models",
+        outputs_dir=tmp_path / ".outputs",
+        voices_dir=tmp_path / ".voices",
+        request_timeout_seconds=0,
+    )
+    settings.ensure_directories()
+    monkeypatch.setattr("server.api.routes_health.check_ffmpeg_available", lambda: True)
+
+    app = create_app(settings)
+    slow = SlowTTSService(settings, sleep_seconds=0.05)
+    app.state.registry = DummyRegistry(settings)
+    app.state.tts_service = slow
+    app.state.application = slow
+    object.__setattr__(
+        app.state.job_execution.manager.executor,
+        "application_service",
+        app.state.application,
+    )
+
+    with TestClient(app) as test_client:
+        submit = test_client.post(
+            "/api/v1/tts/custom/jobs", json={"text": "timeout job", "speaker": "Vivian"}
+        )
+        assert submit.status_code == 202
+        job_id = submit.json()["job_id"]
+
+        final_snapshot = None
+        for _ in range(50):
+            status = test_client.get(f"/api/v1/tts/jobs/{job_id}")
+            assert status.status_code == 200
+            final_snapshot = status.json()
+            if final_snapshot["status"] == "failed":
+                break
+            sleep(0.01)
+
+        assert final_snapshot is not None
+        assert final_snapshot["status"] == "failed"
+        assert final_snapshot["terminal_error"]["code"] == "job_execution_timeout"
+        assert final_snapshot["terminal_error"]["details"]["timeout_seconds"] == 0
+
+        result = test_client.get(f"/api/v1/tts/jobs/{job_id}/result")
+        assert result.status_code == 409
+        result_payload = result.json()
+        assert result_payload["code"] == "job_not_succeeded"
+        assert result_payload["details"]["status"] == "failed"
+        assert result_payload["details"]["terminal_error"]["code"] == "job_execution_timeout"
 
 
 def test_async_job_endpoints_handle_concurrent_reads_and_cancel_deterministically(
@@ -1817,6 +1886,7 @@ def test_inference_execution_logging_includes_offload_and_timeout_context(
         and item["execution_mode"] == "thread_offload"
         and item["offloaded_from_event_loop"] is True
         and item["timeout_seconds"] == _state(client).settings.request_timeout_seconds
+        and item["sync_semantics"] == "bounded_sync_no_server_fallback"
         for item in started_logs
     )
     assert any(
@@ -1825,6 +1895,7 @@ def test_inference_execution_logging_includes_offload_and_timeout_context(
         and item["execution_mode"] == "thread_offload"
         and item["offloaded_from_event_loop"] is True
         and item["timeout_seconds"] == _state(client).settings.request_timeout_seconds
+        and item["sync_semantics"] == "bounded_sync_no_server_fallback"
         for item in worker_logs
     )
     assert any(
@@ -1833,6 +1904,7 @@ def test_inference_execution_logging_includes_offload_and_timeout_context(
         and item["execution_mode"] == "thread_offload"
         and item["offloaded_from_event_loop"] is True
         and item["timeout_seconds"] == _state(client).settings.request_timeout_seconds
+        and item["sync_semantics"] == "bounded_sync_no_server_fallback"
         and item["duration_ms"] >= 0
         for item in completed_logs
     )
@@ -1885,6 +1957,7 @@ def test_request_timeout_logs_observable_timeout_event(
         and item["execution_mode"] == "thread_offload"
         and item["offloaded_from_event_loop"] is True
         and item["timeout_seconds"] == 0
+        and item["sync_semantics"] == "bounded_sync_no_server_fallback"
         and item["duration_ms"] >= 0
         for item in timeout_logs
     )
@@ -1938,6 +2011,7 @@ def test_inference_worker_failure_logs_controlled_failure_event(
         and item["execution_mode"] == "thread_offload"
         and item["offloaded_from_event_loop"] is True
         and item["timeout_seconds"] == settings.request_timeout_seconds
+        and item["sync_semantics"] == "bounded_sync_no_server_fallback"
         and item["error_type"] == "TTSGenerationError"
         and item["error"] == "worker execution failed"
         and item["duration_ms"] >= 0

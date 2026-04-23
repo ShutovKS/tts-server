@@ -1,8 +1,8 @@
 # FILE: tests/unit/server/test_tts_routes.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for HTTP TTS route business-rule helpers.
-#   SCOPE: Model capability gating, async idempotency fingerprints, and async submission shaping helpers
+#   SCOPE: Model capability gating, public async status mapping, async idempotency fingerprints, and async submission shaping helpers
 #   DEPENDS: M-SERVER
 #   LINKS: V-M-SERVER
 #   ROLE: TEST
@@ -13,6 +13,7 @@
 #   _make_request - Build a minimal request stub with registry, settings, request id, and principal state
 #   test_ensure_requested_model_capability_allows_supported_model - Verifies capability validation is a no-op for supported model/mode combinations
 #   test_ensure_requested_model_capability_rejects_unsupported_model - Verifies explicit model capability mismatches raise typed model capability errors
+#   test_public_job_status_maps_internal_timeout_to_failed - Verifies internal timeout states stay hidden behind the public async lifecycle
 #   test_build_idempotency_fingerprint_is_stable_for_equivalent_payloads - Verifies payload ordering does not affect idempotency fingerprints
 #   test_build_idempotency_fingerprint_changes_when_language_changes - Verifies language participates in async idempotency fingerprints
 #   test_create_custom_job_submission_from_openai_builds_idempotent_submission - Verifies OpenAI payload shaping preserves defaults and idempotency metadata
@@ -21,7 +22,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added focused unit coverage for routes_tts capability checks and async submission shaping helpers]
+#   LAST_CHANGE: [v1.1.0 - Added focused coverage for public async status mapping alongside existing submission helper tests]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.contracts.jobs import JobStatus
 from core.contracts.jobs import JobOperation
 from core.errors import ModelCapabilityError
 from server.api.routes_tts import (
@@ -39,6 +41,7 @@ from server.api.routes_tts import (
     create_custom_job_submission_from_openai,
     create_design_job_submission,
     ensure_requested_model_capability,
+    public_job_status,
 )
 from server.bootstrap import ServerSettings
 from server.schemas.audio import CustomTTSRequest, DesignTTSRequest, OpenAISpeechRequest
@@ -56,7 +59,7 @@ def _make_request(tmp_path: Path) -> SimpleNamespace:
         upload_staging_dir=tmp_path / ".uploads",
         default_save_output=False,
         max_input_text_chars=64,
-        request_timeout_seconds=123.0,
+        request_timeout_seconds=123,
     )
     settings.ensure_directories()
     return SimpleNamespace(
@@ -98,6 +101,15 @@ def test_ensure_requested_model_capability_rejects_unsupported_model(tmp_path: P
     assert details["capability"] == "voice_description_tts"
     assert details["family"] == "Piper"
     assert details["supported_capabilities"] == ["preset_speaker_tts"]
+
+
+def test_public_job_status_maps_internal_timeout_to_failed():
+    assert public_job_status(JobStatus.TIMEOUT) == "failed"
+    assert public_job_status(JobStatus.QUEUED) == "queued"
+    assert public_job_status(JobStatus.RUNNING) == "running"
+    assert public_job_status(JobStatus.SUCCEEDED) == "succeeded"
+    assert public_job_status(JobStatus.FAILED) == "failed"
+    assert public_job_status(JobStatus.CANCELLED) == "cancelled"
 
 
 def test_build_idempotency_fingerprint_is_stable_for_equivalent_payloads():

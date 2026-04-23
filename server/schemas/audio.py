@@ -223,7 +223,7 @@ class JobFailurePayload(BaseModel):
 
 # START_CONTRACT: JobSnapshotPayload
 #   PURPOSE: Define the schema returned for async job snapshots and state transitions.
-#   INPUTS: { request_id: str - submit or query correlation id, job_id: str - async job identifier, submit_request_id: str - original submit request id, status: str - job lifecycle state, operation: str - queued operation type, mode: str - TTS mode, model: Optional[str] - requested model id, backend: Optional[str] - execution backend id, response_format: Optional[str] - stored response format, save_output: bool - persistence flag, created_at: datetime - creation time, started_at: Optional[datetime] - execution start time, completed_at: Optional[datetime] - completion time, saved_path: Optional[str] - public artifact name, terminal_error: Optional[JobFailurePayload] - terminal failure payload, status_url: str - status endpoint URL, result_url: str - result endpoint URL, cancel_url: str - cancel endpoint URL, idempotency_key: Optional[str] - client idempotency key }
+#   INPUTS: { request_id: str - submit or query correlation id, job_id: str - async job identifier, submit_request_id: str - original submit request id, status: Literal['queued', 'running', 'succeeded', 'failed', 'cancelled'] - official async job lifecycle state, operation: str - queued operation type, mode: str - TTS mode, model: Optional[str] - requested model id, backend: Optional[str] - execution backend id, response_format: Optional[str] - stored response format, save_output: bool - persistence flag, created_at: datetime - creation time, started_at: Optional[datetime] - execution start time, completed_at: Optional[datetime] - completion time, saved_path: Optional[str] - public artifact name, terminal_error: Optional[JobFailurePayload] - terminal failure payload, status_url: str - status endpoint URL, result_url: str - result endpoint URL, cancel_url: str - cancel endpoint URL, idempotency_key: Optional[str] - client idempotency key }
 #   OUTPUTS: { JobSnapshotPayload - validated async job snapshot model }
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER
@@ -232,7 +232,7 @@ class JobSnapshotPayload(BaseModel):
     request_id: str
     job_id: str
     submit_request_id: str
-    status: str
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     operation: str
     mode: str
     model: Optional[str] = None

@@ -1,5 +1,5 @@
 # FILE: server/api/routes_tts.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Define synchronous and async TTS HTTP endpoints.
 #   SCOPE: POST /v1/audio/speech, POST /api/v1/tts/custom|design|clone, async job endpoints
@@ -18,6 +18,7 @@
 #   resolve_idempotency_scope - Resolve idempotency scope for async submissions
 #   ensure_requested_model_capability - Validate an explicitly requested model against the requested normalized synthesis capability
 #   build_job_urls - Build status, result, and cancel URLs for async jobs
+#   public_job_status - Convert internal job statuses into the frozen public async lifecycle
 #   build_job_snapshot_payload - Convert internal job snapshots to public payloads
 #   get_job_snapshot_or_raise - Load a job snapshot and enforce owner access
 #   build_idempotency_fingerprint - Build deterministic async job idempotency fingerprints
@@ -32,7 +33,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Added controlled model-capability validation before sync and async family-specific execution paths]
+#   LAST_CHANGE: [v1.1.0 - Hardened central-host async semantics by freezing public job states, adding async correlation headers, and logging submit/read/cancel lifecycle phases explicitly]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -80,6 +81,7 @@ from server.api.policies import (
     enforce_sync_tts_admission,
 )
 from server.api.responses import (
+    apply_async_job_headers,
     build_audio_response,
     build_error_response,
     public_artifact_name,
@@ -252,6 +254,19 @@ def build_job_urls(request: Request, job_id: str) -> tuple[str, str, str]:
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER, M-CONTRACTS
 # END_CONTRACT: build_job_snapshot_payload
+# START_CONTRACT: public_job_status
+#   PURPOSE: Convert an internal async job status into the frozen public Phase 1 lifecycle state set.
+#   INPUTS: { status: JobStatus - internal async job status }
+#   OUTPUTS: { str - public job state limited to queued, running, succeeded, failed, or cancelled }
+#   SIDE_EFFECTS: none
+#   LINKS: M-SERVER
+# END_CONTRACT: public_job_status
+def public_job_status(status: JobStatus) -> str:
+    if status is JobStatus.TIMEOUT:
+        return JobStatus.FAILED.value
+    return status.value
+
+
 def build_job_snapshot_payload(
     request: Request, snapshot: JobSnapshot
 ) -> JobSnapshotPayload:
@@ -261,7 +276,7 @@ def build_job_snapshot_payload(
         request_id=getattr(request.state, "request_id", "unknown"),
         job_id=snapshot.job_id,
         submit_request_id=snapshot.submit_request_id,
-        status=snapshot.status.value,
+        status=public_job_status(snapshot.status),
         operation=snapshot.operation.value,
         mode=snapshot.mode,
         model=snapshot.requested_model,
@@ -701,11 +716,12 @@ async def run_inference_with_timeout(
             logger,
             level=logging.INFO,
             event="[RoutesTTS][run_inference_with_timeout][BLOCK_EXECUTE_SYNTHESIS]",
-            message="Inference execution wrapper started",
+            message="Inference execution wrapper started with bounded synchronous semantics",
             inference_operation=operation_name,
             execution_mode="thread_offload",
             offloaded_from_event_loop=True,
             timeout_seconds=timeout_seconds,
+            sync_semantics="bounded_sync_no_server_fallback",
         )
 
         def worker_call() -> T:
@@ -718,6 +734,7 @@ async def run_inference_with_timeout(
                 execution_mode="thread_offload",
                 offloaded_from_event_loop=True,
                 timeout_seconds=timeout_seconds,
+                sync_semantics="bounded_sync_no_server_fallback",
             )
             return call()
 
@@ -741,11 +758,13 @@ async def run_inference_with_timeout(
                 offloaded_from_event_loop=True,
                 timeout_seconds=timeout_seconds,
                 duration_ms=wrapper_timer.elapsed_ms,
+                sync_semantics="bounded_sync_no_server_fallback",
             )
             raise RequestTimeoutError(
                 details={
                     "operation": operation_name,
                     "timeout_seconds": timeout_seconds,
+                    "sync_semantics": "bounded_sync_no_server_fallback",
                 }
             ) from exc
             # END_BLOCK_HANDLE_INFERENCE_TIMEOUT
@@ -763,6 +782,7 @@ async def run_inference_with_timeout(
                 duration_ms=wrapper_timer.elapsed_ms,
                 error_type=type(exc).__name__,
                 error=str(exc),
+                sync_semantics="bounded_sync_no_server_fallback",
             )
             raise
             # END_BLOCK_HANDLE_INFERENCE_FAILURE
@@ -777,6 +797,7 @@ async def run_inference_with_timeout(
             offloaded_from_event_loop=True,
             timeout_seconds=timeout_seconds,
             duration_ms=wrapper_timer.elapsed_ms,
+            sync_semantics="bounded_sync_no_server_fallback",
         )
         return result
         # END_BLOCK_LOG_INFERENCE_COMPLETION
@@ -1142,8 +1163,26 @@ def register_tts_routes(app: FastAPI, logger) -> None:
             )
         )
         # END_BLOCK_SUBMIT_OPENAI_JOB
+        log_event(
+            logger,
+            level=logging.INFO,
+            event="[RoutesTTS][openai_speech_job_submit][BLOCK_SUBMIT_ASYNC_JOB]",
+            message="Async speech job submission resolved",
+            endpoint="/v1/audio/speech/jobs",
+            job_id=resolution.snapshot.job_id,
+            submit_request_id=resolution.snapshot.submit_request_id,
+            current_request_id=request.state.request_id,
+            reused_existing_job=not resolution.created,
+            public_status=public_job_status(resolution.snapshot.status),
+        )
         # START_BLOCK_BUILD_JOB_RESPONSE
-        return build_job_snapshot_payload(request, resolution.snapshot)
+        response = JSONResponse(
+            status_code=202,
+            content=build_job_snapshot_payload(request, resolution.snapshot).model_dump(
+                mode="json"
+            ),
+        )
+        return apply_async_job_headers(response, resolution.snapshot)
         # END_BLOCK_BUILD_JOB_RESPONSE
 
     @app.post(
@@ -1181,8 +1220,26 @@ def register_tts_routes(app: FastAPI, logger) -> None:
             )
         )
         # END_BLOCK_SUBMIT_CUSTOM_JOB
+        log_event(
+            logger,
+            level=logging.INFO,
+            event="[RoutesTTS][tts_custom_job_submit][BLOCK_SUBMIT_ASYNC_JOB]",
+            message="Async custom job submission resolved",
+            endpoint="/api/v1/tts/custom/jobs",
+            job_id=resolution.snapshot.job_id,
+            submit_request_id=resolution.snapshot.submit_request_id,
+            current_request_id=request.state.request_id,
+            reused_existing_job=not resolution.created,
+            public_status=public_job_status(resolution.snapshot.status),
+        )
         # START_BLOCK_BUILD_CUSTOM_JOB_RESPONSE
-        return build_job_snapshot_payload(request, resolution.snapshot)
+        response = JSONResponse(
+            status_code=202,
+            content=build_job_snapshot_payload(request, resolution.snapshot).model_dump(
+                mode="json"
+            ),
+        )
+        return apply_async_job_headers(response, resolution.snapshot)
         # END_BLOCK_BUILD_CUSTOM_JOB_RESPONSE
 
     @app.post(
@@ -1220,8 +1277,26 @@ def register_tts_routes(app: FastAPI, logger) -> None:
             )
         )
         # END_BLOCK_SUBMIT_DESIGN_JOB
+        log_event(
+            logger,
+            level=logging.INFO,
+            event="[RoutesTTS][tts_design_job_submit][BLOCK_SUBMIT_ASYNC_JOB]",
+            message="Async design job submission resolved",
+            endpoint="/api/v1/tts/design/jobs",
+            job_id=resolution.snapshot.job_id,
+            submit_request_id=resolution.snapshot.submit_request_id,
+            current_request_id=request.state.request_id,
+            reused_existing_job=not resolution.created,
+            public_status=public_job_status(resolution.snapshot.status),
+        )
         # START_BLOCK_BUILD_DESIGN_JOB_RESPONSE
-        return build_job_snapshot_payload(request, resolution.snapshot)
+        response = JSONResponse(
+            status_code=202,
+            content=build_job_snapshot_payload(request, resolution.snapshot).model_dump(
+                mode="json"
+            ),
+        )
+        return apply_async_job_headers(response, resolution.snapshot)
         # END_BLOCK_BUILD_DESIGN_JOB_RESPONSE
 
     @app.post(
@@ -1285,13 +1360,26 @@ def register_tts_routes(app: FastAPI, logger) -> None:
             for staged_path in staged_paths:
                 staged_path.unlink(missing_ok=True)
         # END_BLOCK_PERSIST_CLONE_JOB_INPUTS
+        log_event(
+            logger,
+            level=logging.INFO,
+            event="[RoutesTTS][tts_clone_job_submit][BLOCK_SUBMIT_ASYNC_JOB]",
+            message="Async clone job submission resolved",
+            endpoint="/api/v1/tts/clone/jobs",
+            job_id=resolution.snapshot.job_id,
+            submit_request_id=resolution.snapshot.submit_request_id,
+            current_request_id=request.state.request_id,
+            reused_existing_job=not resolution.created,
+            public_status=public_job_status(resolution.snapshot.status),
+        )
         # START_BLOCK_BUILD_CLONE_JOB_RESPONSE
-        return JSONResponse(
+        response = JSONResponse(
             status_code=202,
             content=build_job_snapshot_payload(request, resolution.snapshot).model_dump(
                 mode="json"
             ),
         )
+        return apply_async_job_headers(response, resolution.snapshot)
         # END_BLOCK_BUILD_CLONE_JOB_RESPONSE
 
     @app.get(
@@ -1314,9 +1402,23 @@ def register_tts_routes(app: FastAPI, logger) -> None:
     # END_CONTRACT: tts_job_status
     async def tts_job_status(request: Request, job_id: str) -> JobSnapshotPayload:
         await enforce_job_read_admission(request)
-        return build_job_snapshot_payload(
-            request, get_job_snapshot_or_raise(request, job_id)
+        snapshot = get_job_snapshot_or_raise(request, job_id)
+        log_event(
+            logger,
+            level=logging.INFO,
+            event="[RoutesTTS][tts_job_status][BLOCK_READ_ASYNC_JOB_STATUS]",
+            message="Async job status retrieved",
+            endpoint="/api/v1/tts/jobs/{job_id}",
+            job_id=snapshot.job_id,
+            submit_request_id=snapshot.submit_request_id,
+            current_request_id=request.state.request_id,
+            public_status=public_job_status(snapshot.status),
         )
+        response = JSONResponse(
+            status_code=200,
+            content=build_job_snapshot_payload(request, snapshot).model_dump(mode="json"),
+        )
+        return apply_async_job_headers(response, snapshot)
 
     @app.get(
         "/api/v1/tts/jobs/{job_id}/result",
@@ -1352,7 +1454,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
         if snapshot.status is not JobStatus.SUCCEEDED or resolution.success is None:
             raise JobNotSucceededError(
                 job_id,
-                snapshot.status.value,
+                public_job_status(snapshot.status),
                 details={
                     "terminal_error": (
                         {
@@ -1366,6 +1468,17 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                 },
             )
         # END_BLOCK_VALIDATE_JOB_RESULT
+        log_event(
+            logger,
+            level=logging.INFO,
+            event="[RoutesTTS][tts_job_result][BLOCK_DELIVER_ASYNC_JOB_RESULT]",
+            message="Async job result delivered",
+            endpoint="/api/v1/tts/jobs/{job_id}/result",
+            job_id=snapshot.job_id,
+            submit_request_id=snapshot.submit_request_id,
+            current_request_id=request.state.request_id,
+            public_status=public_job_status(snapshot.status),
+        )
 
         # START_BLOCK_BUILD_JOB_RESULT_RESPONSE
         response = build_audio_response(
@@ -1374,7 +1487,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
             snapshot.response_format or "wav",
             logger,
         )
-        response.headers["x-job-id"] = snapshot.job_id
+        response = apply_async_job_headers(response, snapshot)
         return response
         # END_BLOCK_BUILD_JOB_RESULT_RESPONSE
 
@@ -1410,15 +1523,27 @@ def register_tts_routes(app: FastAPI, logger) -> None:
         if cancelled is None:
             raise JobNotFoundError(job_id)
         # END_BLOCK_SUBMIT_CANCELLATION
+        log_event(
+            logger,
+            level=logging.INFO,
+            event="[RoutesTTS][tts_job_cancel][BLOCK_CANCEL_ASYNC_JOB]",
+            message="Async job cancellation resolved",
+            endpoint="/api/v1/tts/jobs/{job_id}/cancel",
+            job_id=cancelled.job_id,
+            submit_request_id=cancelled.submit_request_id,
+            current_request_id=request.state.request_id,
+            public_status=public_job_status(cancelled.status),
+        )
 
         # START_BLOCK_BUILD_CANCEL_RESPONSE
         status_code = 200 if snapshot.status is JobStatus.CANCELLED else 202
-        return JSONResponse(
+        response = JSONResponse(
             status_code=status_code,
             content=build_job_snapshot_payload(request, cancelled).model_dump(
                 mode="json"
             ),
         )
+        return apply_async_job_headers(response, cancelled)
         # END_BLOCK_BUILD_CANCEL_RESPONSE
 
 
@@ -1431,6 +1556,7 @@ __all__ = [
     "resolve_idempotency_scope",
     "ensure_requested_model_capability",
     "build_job_urls",
+    "public_job_status",
     "build_job_snapshot_payload",
     "get_job_snapshot_or_raise",
     "build_idempotency_fingerprint",
