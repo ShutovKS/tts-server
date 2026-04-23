@@ -1,5 +1,5 @@
 # FILE: telegram_bot/bootstrap.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Build Telegram bot runtime by wiring core runtime with Telegram-specific components.
 #   SCOPE: Bot runtime assembly, self-checks, startup validation
@@ -11,13 +11,13 @@
 #
 # START_MODULE_MAP
 #   LOGGER - Module logger for Telegram bootstrap events
-#   TelegramRuntime - Runtime container for Telegram settings and core services
+#   TelegramRuntime - Runtime container for Telegram settings, core services, and optional remote HTTP client
 #   get_telegram_settings - Load and cache Telegram settings from environment
 #   build_telegram_runtime - Factory for Telegram bot runtime assembly
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+#   LAST_CHANGE: [v1.1.0 - Added optional canonical remote server client wiring to the Telegram runtime container]
 # END_CHANGE_SUMMARY
 
 """
@@ -34,9 +34,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Optional
 
-from core.bootstrap import CoreRuntime, build_runtime
 from core.observability import get_logger, log_event
 from telegram_bot.config import TelegramSettings
+from telegram_bot.remote_client import RemoteServerClient
 from telegram_bot.rate_limiter import TelegramRateLimiter, create_telegram_rate_limiter
 
 if TYPE_CHECKING:
@@ -47,8 +47,8 @@ LOGGER = get_logger(__name__)
 
 
 # START_CONTRACT: TelegramRuntime
-#   PURPOSE: Hold Telegram adapter settings, core runtime, and rate limiter dependencies.
-#   INPUTS: { settings: TelegramSettings - resolved Telegram configuration, core: CoreRuntime - shared application runtime, rate_limiter: TelegramRateLimiter | None - optional throttling component }
+#   PURPOSE: Hold Telegram adapter settings, optional remote HTTP client, and rate limiter dependencies.
+#   INPUTS: { settings: TelegramSettings - resolved Telegram configuration, remote_server_client: RemoteServerClient | None - optional canonical remote server client, rate_limiter: TelegramRateLimiter | None - optional throttling component }
 #   OUTPUTS: { TelegramRuntime - immutable Telegram runtime container }
 #   SIDE_EFFECTS: none
 #   LINKS: M-TELEGRAM
@@ -58,8 +58,8 @@ class TelegramRuntime:
     """Runtime container for Telegram bot transport layer."""
 
     settings: TelegramSettings
-    core: CoreRuntime
-    rate_limiter: TelegramRateLimiter = field(default=None)
+    remote_server_client: RemoteServerClient | None = None
+    rate_limiter: TelegramRateLimiter | None = field(default=None)
 
     # START_CONTRACT: check_rate_limit
     #   PURPOSE: Evaluate whether a Telegram user can issue another command right now.
@@ -134,7 +134,7 @@ def _validate_telegram_settings(settings: TelegramSettings) -> list[str]:
 
 
 # START_CONTRACT: build_telegram_runtime
-#   PURPOSE: Assemble the Telegram adapter runtime from settings and shared core services.
+#   PURPOSE: Assemble the Telegram adapter runtime from settings and remote server access.
 #   INPUTS: { settings: Optional[TelegramSettings] - optional prebuilt Telegram settings }
 #   OUTPUTS: { TelegramRuntime - runtime container for Telegram execution }
 #   SIDE_EFFECTS: Emits startup logs and initializes the Telegram rate limiter.
@@ -144,13 +144,13 @@ def build_telegram_runtime(
     settings: Optional[TelegramSettings] = None,
 ) -> TelegramRuntime:
     """
-    Build Telegram runtime by composing core runtime with Telegram settings.
+    Build Telegram runtime by composing remote server access with Telegram settings.
 
     Args:
         settings: Optional Telegram settings. If None, loads from environment.
 
     Returns:
-        TelegramRuntime containing core runtime and Telegram-specific settings.
+        TelegramRuntime containing Telegram settings and remote server access.
 
     Raises:
         ValueError: If required settings are missing or invalid
@@ -200,33 +200,19 @@ def build_telegram_runtime(
         )
     # END_BLOCK_RUN_SELF_CHECKS
 
-    # START_BLOCK_BUILD_RUNTIME
-    # Build core runtime using inherited settings
-    log_event(
-        LOGGER,
-        level=logging.INFO,
-        event="[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]",
-        message="Building core runtime",
-        backend=resolved_settings.backend,
-    )
-
-    core_runtime = build_runtime(resolved_settings)
-
-    log_event(
-        LOGGER,
-        level=logging.INFO,
-        event="[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]",
-        message="Telegram runtime bindings resolved",
-        active_family=resolved_settings.active_family,
-        runtime_capability_map=resolved_settings.runtime_capability_map(),
-    )
-
-    log_event(
-        LOGGER,
-        level=logging.INFO,
-        event="[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]",
-        message="Telegram runtime built successfully",
-    )
+    remote_server_client = None
+    if resolved_settings.telegram_server_base_url:
+        remote_server_client = RemoteServerClient(
+            base_url=resolved_settings.telegram_server_base_url,
+            logger=LOGGER,
+        )
+        log_event(
+            LOGGER,
+            level=logging.INFO,
+            event="[TelegramBootstrap][build_telegram_runtime][BLOCK_BUILD_RUNTIME]",
+            message="Telegram remote server client configured",
+            server_base_url=resolved_settings.telegram_server_base_url,
+        )
 
     # Create rate limiter
     rate_limiter = create_telegram_rate_limiter(resolved_settings)
@@ -242,10 +228,9 @@ def build_telegram_runtime(
 
     return TelegramRuntime(
         settings=resolved_settings,
-        core=core_runtime,
+        remote_server_client=remote_server_client,
         rate_limiter=rate_limiter,
     )
-    # END_BLOCK_BUILD_RUNTIME
 
 __all__ = [
     "LOGGER",

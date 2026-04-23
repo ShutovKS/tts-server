@@ -31,17 +31,20 @@ and bootstrap/runtime assembly.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from telegram_bot.bootstrap import build_telegram_runtime, TelegramRuntime
 from telegram_bot.config import TelegramSettings
+from telegram_bot.remote_client import RemoteServerClient
 
 
 def _make_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
     """Create test environment with required variables."""
     env = {
         "TTS_TELEGRAM_BOT_TOKEN": "test_token_123:ABCabc123",
+        "TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000",
         "TTS_MODELS_DIR": ".models",
         "TTS_OUTPUTS_DIR": ".outputs",
         "TTS_VOICES_DIR": ".voices",
@@ -139,7 +142,6 @@ class TestTelegramSettingsFromEnv:
         assert hasattr(settings, "quota_compute_window_seconds")
         assert hasattr(settings, "quota_max_active_jobs_per_principal")
         assert hasattr(settings, "default_save_output")
-        assert hasattr(settings, "enable_streaming")
         assert hasattr(settings, "max_upload_size_bytes")
         assert hasattr(settings, "max_input_text_chars")
         assert hasattr(settings, "request_timeout_seconds")
@@ -228,20 +230,14 @@ class TestTelegramRuntimeBootstrap:
 
     def test_build_telegram_runtime_returns_telegram_runtime(self):
         """Test that build_telegram_runtime returns TelegramRuntime."""
-        from unittest.mock import patch, MagicMock
-
-        env = _make_env()
+        env = _make_env({"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"})
         settings = TelegramSettings.from_env(env)
 
-        with patch("telegram_bot.bootstrap.build_runtime") as mock_build:
-            mock_core = MagicMock()
-            mock_build.return_value = mock_core
+        runtime = build_telegram_runtime(settings)
 
-            runtime = build_telegram_runtime(settings)
-
-            assert isinstance(runtime, TelegramRuntime)
-            assert runtime.settings is settings
-            assert runtime.core is mock_core
+        assert isinstance(runtime, TelegramRuntime)
+        assert runtime.settings is settings
+        assert runtime.remote_server_client is not None
 
     def test_build_telegram_runtime_validates_settings(self):
         """Test that build_telegram_runtime validates settings before building."""
@@ -255,21 +251,15 @@ class TestTelegramRuntimeBootstrap:
 
     def test_telegram_runtime_has_required_attributes(self):
         """Test that TelegramRuntime has required attributes."""
-        from unittest.mock import patch, MagicMock
-
-        env = _make_env()
+        env = _make_env({"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"})
         settings = TelegramSettings.from_env(env)
 
-        with patch("telegram_bot.bootstrap.build_runtime") as mock_build:
-            mock_core = MagicMock()
-            mock_build.return_value = mock_core
+        runtime = build_telegram_runtime(settings)
 
-            runtime = build_telegram_runtime(settings)
-
-            assert hasattr(runtime, "settings")
-            assert hasattr(runtime, "core")
-            assert runtime.settings is settings
-            assert runtime.core is mock_core
+        assert hasattr(runtime, "settings")
+        assert hasattr(runtime, "remote_server_client")
+        assert runtime.settings is settings
+        assert runtime.remote_server_client is not None
 
     def test_from_env_parses_delivery_store_and_poll_interval(self):
         """Telegram operational settings should be parsed from env."""
@@ -278,6 +268,7 @@ class TestTelegramRuntimeBootstrap:
                 "TTS_TELEGRAM_DELIVERY_STORE_PATH": "/tmp/telegram-delivery.json",
                 "TTS_TELEGRAM_POLL_INTERVAL_SECONDS": "2.5",
                 "TTS_TELEGRAM_MAX_RETRIES": "7",
+                "TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000/",
             }
         )
         settings = TelegramSettings.from_env(env)
@@ -285,6 +276,39 @@ class TestTelegramRuntimeBootstrap:
         assert settings.telegram_delivery_store_path == "/tmp/telegram-delivery.json"
         assert settings.telegram_poll_interval_seconds == 2.5
         assert settings.telegram_max_retries == 7
+        assert settings.telegram_server_base_url == "http://server.internal:8000"
+
+    def test_from_env_requires_remote_server_base_url(self):
+        """Telegram remote server base URL should be required."""
+        env = _make_env({"TTS_TELEGRAM_SERVER_BASE_URL": ""})
+
+        settings = TelegramSettings.from_env(env)
+
+        assert settings.telegram_server_base_url == ""
+        assert "TTS_TELEGRAM_SERVER_BASE_URL is required" in settings.validate()
+
+    def test_build_telegram_runtime_wires_remote_server_client_when_configured(self):
+        """Configured remote server URL should build a reusable runtime client."""
+        env = _make_env(
+            {"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"}
+        )
+        settings = TelegramSettings.from_env(env)
+
+        runtime = build_telegram_runtime(settings)
+
+        assert isinstance(runtime.remote_server_client, RemoteServerClient)
+        assert runtime.remote_server_client is not None
+        assert runtime.remote_server_client.base_url == "http://server.internal:8000"
+
+    def test_build_telegram_runtime_rejects_missing_remote_server_base_url(self):
+        """Without a configured server URL, runtime bootstrap fails clearly."""
+        env = _make_env({"TTS_TELEGRAM_SERVER_BASE_URL": ""})
+        settings = TelegramSettings.from_env(env)
+
+        with pytest.raises(ValueError) as exc_info:
+            build_telegram_runtime(settings)
+
+        assert "TTS_TELEGRAM_SERVER_BASE_URL is required" in str(exc_info.value)
 
 
 class TestConfigPathResolution:

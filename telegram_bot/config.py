@@ -1,5 +1,5 @@
 # FILE: telegram_bot/config.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Define Telegram-specific configuration parsed from environment variables.
 #   SCOPE: TelegramSettings dataclass, environment parsing
@@ -18,12 +18,13 @@
 #   DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE - Default Telegram per-user rate limit
 #   DEFAULT_TELEGRAM_POLL_INTERVAL_SECONDS - Default Telegram job polling interval
 #   DEFAULT_TELEGRAM_MAX_RETRIES - Default Telegram API retry count
+#   DEFAULT_TELEGRAM_SERVER_BASE_URL - Default remote server base URL for canonical HTTP client wiring
 #   TelegramSecurityPolicy - Telegram-specific security and admission policy
 #   TelegramSettings - Telegram-specific configuration
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+#   LAST_CHANGE: [v1.1.0 - Added injectable remote server base URL configuration for the Telegram-side canonical HTTP client layer]
 # END_CHANGE_SUMMARY
 
 """
@@ -42,6 +43,7 @@ Environment variables:
 - TTS_TELEGRAM_DELIVERY_STORE_PATH: Path for delivery metadata store (optional)
 - TTS_TELEGRAM_POLL_INTERVAL_SECONDS: Job poller interval (default: 1.0)
 - TTS_TELEGRAM_MAX_RETRIES: Max retry attempts for API calls (default: 3)
+- TTS_TELEGRAM_SERVER_BASE_URL: Optional canonical remote server base URL for Telegram HTTP client flows
 - TTS_TELEGRAM_ADMIN_USER_IDS: Comma-separated admin user IDs with elevated access (optional)
 """
 
@@ -69,6 +71,7 @@ DEFAULT_TELEGRAM_RATE_LIMIT_ENABLED = True
 DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE = 20
 DEFAULT_TELEGRAM_POLL_INTERVAL_SECONDS = 1.0
 DEFAULT_TELEGRAM_MAX_RETRIES = 3
+DEFAULT_TELEGRAM_SERVER_BASE_URL = ""
 
 
 # START_CONTRACT: TelegramSecurityPolicy
@@ -145,8 +148,8 @@ class TelegramSecurityPolicy:
 
 
 # START_CONTRACT: TelegramSettings
-#   PURPOSE: Extend shared core settings with Telegram transport configuration values.
-#   INPUTS: { telegram_bot_token: str - bot API token, telegram_allowed_user_ids: tuple[str, ...] - user allowlist, telegram_log_level: str - logging level, telegram_default_speaker: str - fallback voice, telegram_max_text_length: int - message length limit, telegram_dev_mode: bool - development mode flag, telegram_rate_limit_enabled: bool - throttling toggle, telegram_rate_limit_per_user_per_minute: int - user quota, telegram_admin_user_ids: tuple[str, ...] - admin allowlist, telegram_delivery_store_path: str - delivery metadata path, telegram_poll_interval_seconds: float - job polling cadence, telegram_max_retries: int - retry cap }
+#   PURPOSE: Extend shared runtime settings with Telegram adapter-local and remote client configuration values.
+#   INPUTS: { telegram_bot_token: str - bot API token, telegram_allowed_user_ids: tuple[str, ...] - user allowlist, telegram_log_level: str - logging level, telegram_default_speaker: str - fallback voice, telegram_max_text_length: int - message length limit, telegram_dev_mode: bool - development mode flag, telegram_rate_limit_enabled: bool - throttling toggle, telegram_rate_limit_per_user_per_minute: int - user quota, telegram_admin_user_ids: tuple[str, ...] - admin allowlist, telegram_delivery_store_path: str - delivery metadata path, telegram_poll_interval_seconds: float - job polling cadence, telegram_max_retries: int - retry cap, telegram_server_base_url: str - canonical remote server base URL }
 #   OUTPUTS: { TelegramSettings - immutable Telegram runtime settings }
 #   SIDE_EFFECTS: none
 #   LINKS: M-TELEGRAM
@@ -174,6 +177,7 @@ class TelegramSettings(CoreSettings):
     telegram_delivery_store_path: str = ""
     telegram_poll_interval_seconds: float = DEFAULT_TELEGRAM_POLL_INTERVAL_SECONDS
     telegram_max_retries: int = DEFAULT_TELEGRAM_MAX_RETRIES
+    telegram_server_base_url: str = DEFAULT_TELEGRAM_SERVER_BASE_URL
 
     # START_CONTRACT: security_policy
     #   PURPOSE: Build a Telegram security policy view from the current settings.
@@ -263,6 +267,11 @@ class TelegramSettings(CoreSettings):
             telegram_max_retries=env_int(
                 "TTS_TELEGRAM_MAX_RETRIES", DEFAULT_TELEGRAM_MAX_RETRIES, environ
             ),
+            telegram_server_base_url=env_text(
+                "TTS_TELEGRAM_SERVER_BASE_URL",
+                DEFAULT_TELEGRAM_SERVER_BASE_URL,
+                environ,
+            ).rstrip("/"),
         )
 
     # START_CONTRACT: is_user_allowed
@@ -343,6 +352,10 @@ class TelegramSettings(CoreSettings):
         if self.telegram_max_retries < 0:
             errors.append("TTS_TELEGRAM_MAX_RETRIES must be non-negative")
 
+        # Remote server validation
+        if not self.telegram_server_base_url or not self.telegram_server_base_url.strip():
+            errors.append("TTS_TELEGRAM_SERVER_BASE_URL is required")
+
         # Dev mode with empty allowlist is acceptable for testing/development
         # In production, users should set proper allowlist or admin users
 
@@ -357,6 +370,7 @@ __all__ = [
     "DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE",
     "DEFAULT_TELEGRAM_POLL_INTERVAL_SECONDS",
     "DEFAULT_TELEGRAM_MAX_RETRIES",
+    "DEFAULT_TELEGRAM_SERVER_BASE_URL",
     "TelegramSecurityPolicy",
     "TelegramSettings",
 ]
