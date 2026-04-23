@@ -1,3 +1,23 @@
+# FILE: telegram_bot/Dockerfile
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Define the container image for the Telegram bot deployment lane.
+#   SCOPE: Base image selection, runtime environment defaults, trust-store wiring, dependency installation, source copy, adapter state directory creation, and default bot command.
+#   DEPENDS: M-TELEGRAM, M-CONFIG
+#   LINKS: M-DOCKER-ASSETS
+#   ROLE: CONFIG
+#   MAP_MODE: SUMMARY
+# END_MODULE_CONTRACT
+#
+# START_MODULE_MAP
+#   base image and ENV - Establish container runtime defaults and adapter-local state paths.
+#   certificate install - Inject the corporate proxy root certificate into the container trust store.
+#   apt dependencies - Install ffmpeg and required system packages.
+#   Python requirements prep/install - Filter incompatible packages and install runtime dependencies.
+#   source copy - Copy the shared runtime and Telegram adapter sources into the image.
+#   runtime directories - Create writable state, model, output, upload, and voice directories.
+#   default command - Start the Telegram bot package entrypoint.
+# END_MODULE_MAP
 FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

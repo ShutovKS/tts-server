@@ -32,7 +32,7 @@ These tests verify:
 # END_CHANGE_SUMMARY
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram_bot.__main__ import (
     StartupCheckResult,
@@ -47,19 +47,17 @@ class TestStartupCheckPhase:
     def test_phase_order(self):
         """Phases are properly ordered by their int values."""
         assert StartupCheckPhase.CONFIG.value < StartupCheckPhase.TELEGRAM_API.value
-        assert StartupCheckPhase.TELEGRAM_API.value < StartupCheckPhase.BACKEND.value
-        assert StartupCheckPhase.BACKEND.value < StartupCheckPhase.FFMPEG.value
-        assert StartupCheckPhase.FFMPEG.value < StartupCheckPhase.ALLOWLIST.value
+        assert StartupCheckPhase.TELEGRAM_API.value < StartupCheckPhase.REMOTE_SERVER.value
+        assert StartupCheckPhase.REMOTE_SERVER.value < StartupCheckPhase.ALLOWLIST.value
         assert StartupCheckPhase.ALLOWLIST.value < StartupCheckPhase.COMPLETE.value
 
     def test_phase_values(self):
         """Phase values are correct."""
         assert StartupCheckPhase.CONFIG.value == 1
         assert StartupCheckPhase.TELEGRAM_API.value == 2
-        assert StartupCheckPhase.BACKEND.value == 3
-        assert StartupCheckPhase.FFMPEG.value == 4
-        assert StartupCheckPhase.ALLOWLIST.value == 5
-        assert StartupCheckPhase.COMPLETE.value == 6
+        assert StartupCheckPhase.REMOTE_SERVER.value == 3
+        assert StartupCheckPhase.ALLOWLIST.value == 4
+        assert StartupCheckPhase.COMPLETE.value == 5
 
 
 class TestStartupCheckResult:
@@ -106,7 +104,7 @@ class TestStartupCheckResult:
         """Mixed result with warnings and errors."""
         result = StartupCheckResult(
             success=False,
-            phase=StartupCheckPhase.FFMPEG,
+            phase=StartupCheckPhase.REMOTE_SERVER,
         )
         result.checks_passed = ["bot_token_configured"]
         result.warnings.append("WARNING: ALLOWLIST_EMPTY")
@@ -116,6 +114,21 @@ class TestStartupCheckResult:
         assert len(result.checks_passed) == 1
         assert len(result.warnings) == 1
         assert len(result.errors) == 1
+
+    def test_summary_handles_string_checks(self):
+        """Summary maps stored string check names to passed entries."""
+        result = StartupCheckResult(
+            success=True,
+            phase=StartupCheckPhase.COMPLETE,
+        )
+        result.checks_passed = ["bot_token_configured", "remote_server_ready"]
+
+        summary = result.summary()
+
+        assert summary["success"] is True
+        assert summary["phase"] == StartupCheckPhase.COMPLETE.value
+        assert summary["bot_token_configured"] == {"passed": True, "message": None}
+        assert summary["remote_server_ready"] == {"passed": True, "message": None}
 
     def test_is_success_property(self):
         """is_success is an alias for success."""
@@ -135,7 +148,7 @@ class TestRunStartupSelfChecks:
                 "telegram_allowed_user_ids",
                 "telegram_default_speaker",
                 "telegram_max_text_length",
-                "backend",
+                "telegram_server_base_url",
                 "validate",
             ]
         )
@@ -143,7 +156,7 @@ class TestRunStartupSelfChecks:
         settings.telegram_allowed_user_ids = [12345, 67890]
         settings.telegram_default_speaker = "af_bella"
         settings.telegram_max_text_length = 1000
-        settings.backend = "mlx"
+        settings.telegram_server_base_url = "http://server.internal:8000"
         settings.validate.return_value = []
         return settings
 
@@ -156,7 +169,7 @@ class TestRunStartupSelfChecks:
                 "telegram_allowed_user_ids",
                 "telegram_default_speaker",
                 "telegram_max_text_length",
-                "backend",
+                "telegram_server_base_url",
                 "validate",
             ]
         )
@@ -164,7 +177,7 @@ class TestRunStartupSelfChecks:
         settings.telegram_allowed_user_ids = []
         settings.telegram_default_speaker = "af_bella"
         settings.telegram_max_text_length = 1000
-        settings.backend = "mlx"
+        settings.telegram_server_base_url = "http://server.internal:8000"
         settings.validate.return_value = []
         return settings
 
@@ -177,7 +190,7 @@ class TestRunStartupSelfChecks:
                 "telegram_allowed_user_ids",
                 "telegram_default_speaker",
                 "telegram_max_text_length",
-                "backend",
+                "telegram_server_base_url",
                 "validate",
             ]
         )
@@ -185,186 +198,222 @@ class TestRunStartupSelfChecks:
         settings.telegram_allowed_user_ids = [12345]
         settings.telegram_default_speaker = "af_bella"
         settings.telegram_max_text_length = 1000
-        settings.backend = "mlx"
+        settings.telegram_server_base_url = "http://server.internal:8000"
         settings.validate.return_value = ["TTS_TELEGRAM_BOT_TOKEN is required"]
         return settings
 
-    def test_all_checks_pass(self, mock_settings):
+    @pytest.mark.anyio
+    async def test_all_checks_pass(self, mock_settings):
         """All startup checks pass."""
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
 
-            result = run_startup_self_checks(mock_settings)
+        with patch("telegram_bot.__main__.verify_telegram_connectivity", AsyncMock(return_value=True)):
+            result = await run_startup_self_checks(mock_runtime, client=MagicMock())
 
         assert result.success
         assert result.is_success
+        assert result.phase == StartupCheckPhase.COMPLETE
         assert "bot_token_configured" in result.checks_passed
-        assert "ffmpeg_available" in result.checks_passed
+        assert "remote_server_ready" in result.checks_passed
+        assert "telegram_api_reachable" in result.checks_passed
         assert len(result.errors) == 0
 
-    def test_missing_bot_token(self, mock_settings_no_token):
+    @pytest.mark.anyio
+    async def test_missing_bot_token(self, mock_settings_no_token):
         """Missing bot token is fatal."""
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings_no_token
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        client = MagicMock()
+        client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
-            result = run_startup_self_checks(mock_settings_no_token)
+        result = await run_startup_self_checks(mock_runtime, client=client)
 
         assert not result.success
         assert not result.is_success
         assert len(result.errors) > 0
         assert any("TOKEN" in e.upper() for e in result.errors)
 
-    def test_short_bot_token_validation_is_fatal(self, mock_settings):
+    @pytest.mark.anyio
+    async def test_short_bot_token_validation_is_fatal(self, mock_settings):
         """Invalid short Telegram token from settings validation is fatal."""
         mock_settings.validate.return_value = [
             "TTS_TELEGRAM_BOT_TOKEN appears to be invalid (too short)"
         ]
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        client = MagicMock()
+        client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
-
-            result = run_startup_self_checks(mock_settings)
+        result = await run_startup_self_checks(mock_runtime, client=client)
 
         assert not result.success
         assert any("too short" in error.lower() for error in result.errors)
 
-    def test_invalid_text_length_validation_is_fatal(self, mock_settings):
+    @pytest.mark.anyio
+    async def test_invalid_text_length_validation_is_fatal(self, mock_settings):
         """Settings validation errors for impossible text length abort startup."""
         mock_settings.validate.return_value = [
             "TTS_TELEGRAM_MAX_TEXT_LENGTH must be positive"
         ]
         mock_settings.telegram_max_text_length = -1
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        client = MagicMock()
+        client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
-
-            result = run_startup_self_checks(mock_settings)
+        result = await run_startup_self_checks(mock_runtime, client=client)
 
         assert not result.success
         assert any("MAX_TEXT_LENGTH" in error for error in result.errors)
 
-    def test_settings_validation_exception_is_fatal(self, mock_settings):
+    @pytest.mark.anyio
+    async def test_settings_validation_exception_is_fatal(self, mock_settings):
         """Unexpected settings validation failure aborts startup."""
         mock_settings.validate.side_effect = RuntimeError("validation exploded")
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
 
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
+        client = MagicMock()
+        client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
-            result = run_startup_self_checks(mock_settings)
+        result = await run_startup_self_checks(mock_runtime, client=client)
 
         assert not result.success
         assert any("validation failed" in error.lower() for error in result.errors)
 
-    def test_backend_unavailable_is_fatal_when_runtime_core_present(self, mock_settings):
-        """A connected runtime core can make backend unavailability fatal."""
+    @pytest.mark.anyio
+    async def test_remote_server_readiness_failure_is_fatal(self, mock_settings):
+        """Remote readiness failures abort startup."""
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
-        mock_runtime.core = MagicMock()
-        mock_tts_service = MagicMock()
-        mock_tts_service.is_backend_available.return_value = False
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(side_effect=RuntimeError("readiness probe failed"))
 
-        with patch("telegram_bot.__main__.get_tts_service", return_value=mock_tts_service):
-            with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-                mock_ffmpeg.return_value = True
+        client = MagicMock()
+        client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
-                result = run_startup_self_checks(mock_runtime)
+        result = await run_startup_self_checks(mock_runtime, client=client)
 
         assert not result.success
-        assert any("backend" in error.lower() for error in result.errors)
+        assert any("readiness" in error.lower() for error in result.errors)
 
-    def test_backend_check_exception_is_fatal_when_runtime_core_present(self, mock_settings):
-        """Backend probe exceptions are surfaced as fatal startup errors."""
+    @pytest.mark.anyio
+    async def test_missing_remote_server_base_url_is_fatal(self, mock_settings):
+        """Missing remote server configuration aborts startup."""
+        mock_settings.telegram_server_base_url = ""
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
-        mock_runtime.core = MagicMock()
+        mock_runtime.remote_server_client = None
 
-        with patch(
-            "telegram_bot.__main__.get_tts_service",
-            side_effect=RuntimeError("backend probe failed"),
-        ):
-            with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-                mock_ffmpeg.return_value = True
+        client = MagicMock()
+        client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
-                result = run_startup_self_checks(mock_runtime)
+        result = await run_startup_self_checks(mock_runtime, client=client)
 
         assert not result.success
-        assert any("backend check failed" in error.lower() for error in result.errors)
+        assert any("server_base_url" in error.lower() for error in result.errors)
 
-    def test_ffmpeg_missing(self, mock_settings):
-        """Missing FFmpeg is fatal."""
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = False
+    @pytest.mark.anyio
+    async def test_remote_server_readiness_success(self, mock_settings):
+        """Remote readiness success is recorded."""
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        client = MagicMock()
+        client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
-            result = run_startup_self_checks(mock_settings)
+        result = await run_startup_self_checks(mock_runtime, client=client)
 
-        assert not result.success
-        assert not result.is_success
-        assert len(result.errors) > 0
-        assert any("ffmpeg" in e.lower() for e in result.errors)
+        assert result.success
+        assert "remote_server_ready" in result.checks_passed
 
-    def test_empty_allowlist_warning(self, mock_settings_no_allowlist):
+    @pytest.mark.anyio
+    async def test_empty_allowlist_warning(self, mock_settings_no_allowlist):
         """Empty allowlist generates warning but continues."""
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings_no_allowlist
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        client = MagicMock()
+        client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
-            result = run_startup_self_checks(mock_settings_no_allowlist)
+        result = await run_startup_self_checks(mock_runtime, client=client)
 
         # Empty allowlist is a warning, not fatal
         assert result.success
         assert len(result.warnings) > 0
         assert any("allowlist" in w.lower() for w in result.warnings)
 
-    def test_telegram_runtime_object(self, mock_settings):
+    @pytest.mark.anyio
+    async def test_telegram_runtime_object(self, mock_settings):
         """Handles TelegramRuntime object correctly."""
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
-        mock_runtime.core = None  # No core, skip backend check
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        client = MagicMock()
+        client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
-
-            result = run_startup_self_checks(mock_runtime)
+        result = await run_startup_self_checks(mock_runtime, client=client)
 
         # Result should be successful (empty allowlist is just a warning)
         assert result.success
         assert result.is_success
-        # Backend check skipped when core is None
-        assert "backend_available:mlx" in result.checks_passed
+        assert result.phase == StartupCheckPhase.COMPLETE
+        assert "remote_server_ready" in result.checks_passed
 
-    def test_default_speaker_warning(self, mock_settings):
+    @pytest.mark.anyio
+    async def test_default_speaker_warning(self, mock_settings):
         """Empty default speaker generates warning."""
         mock_settings.telegram_default_speaker = ""
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
 
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
-
-            result = run_startup_self_checks(mock_settings)
+        result = await run_startup_self_checks(mock_runtime, client=MagicMock())
 
         # Empty default speaker should add warning
         assert any("speaker" in w.lower() for w in result.warnings)
 
-    def test_text_length_warning_small(self, mock_settings):
+    @pytest.mark.anyio
+    async def test_text_length_warning_small(self, mock_settings):
         """Very small text length generates warning."""
         mock_settings.telegram_max_text_length = 5
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
 
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
-
-            result = run_startup_self_checks(mock_settings)
+        result = await run_startup_self_checks(mock_runtime, client=MagicMock())
 
         # Very small text length should add warning
         assert any(
             "text" in w.lower() and "small" in w.lower() for w in result.warnings
         )
 
-    def test_text_length_warning_large(self, mock_settings):
+    @pytest.mark.anyio
+    async def test_text_length_warning_large(self, mock_settings):
         """Very large text length generates warning."""
         mock_settings.telegram_max_text_length = 10000
+        mock_runtime = MagicMock()
+        mock_runtime.settings = mock_settings
+        mock_runtime.remote_server_client = MagicMock()
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
 
-        with patch("telegram_bot.__main__.is_ffmpeg_available") as mock_ffmpeg:
-            mock_ffmpeg.return_value = True
-
-            result = run_startup_self_checks(mock_settings)
+        result = await run_startup_self_checks(mock_runtime, client=MagicMock())
 
         # Very large text length should add warning
         assert any(

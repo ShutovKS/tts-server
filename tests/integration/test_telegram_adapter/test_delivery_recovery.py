@@ -172,7 +172,27 @@ class TestDeliveryMetadataStoreRecovery:
         store2 = DeliveryMetadataStore(temp_store_path)
         metadata = await store2.get_delivery_metadata(chat_id=999, message_id=888)
 
+        assert metadata is not None
         assert metadata["job_id"] == "unique_job_id"
+
+    @pytest.mark.anyio
+    async def test_recovery_preserves_delivered_state_across_restart(self, temp_store_path):
+        store1 = DeliveryMetadataStore(temp_store_path)
+        await store1.create(chat_id=999, message_id=888, job_id="unique_job_id")
+        await store1.mark_delivered(
+            chat_id=999,
+            message_id=888,
+            success=True,
+            job_id="unique_job_id",
+        )
+
+        store2 = DeliveryMetadataStore(temp_store_path)
+        recovered = await store2.get_delivery_metadata(chat_id=999, message_id=888)
+
+        assert recovered is not None
+        assert recovered["status"] == "delivered"
+        assert recovered["success"] is True
+        assert "delivered_at" in recovered
 
     @pytest.mark.anyio
     async def test_get_delivery_metadata(self, store):
@@ -215,7 +235,7 @@ class TestTelegramJobPollerRecovery:
     def mock_orchestrator(self):
         """Create mock orchestrator."""
         orchestrator = MagicMock()
-        orchestrator.check_job_completion = MagicMock()
+        orchestrator.check_job_completion = AsyncMock()
         return orchestrator
 
     @pytest.fixture
@@ -267,7 +287,7 @@ class TestTelegramJobPollerRecovery:
         await poller._recover_pending_jobs()
 
         # Should have checked the job
-        mock_orchestrator.check_job_completion.assert_called_once_with("pending_job")
+        mock_orchestrator.check_job_completion.assert_called_once_with("pending_job", None)
 
         # Cleanup
         path.unlink()
