@@ -1,3 +1,28 @@
+/* FILE: frontend_demo/app.js */
+/* VERSION: 1.0.0 */
+/* START_MODULE_CONTRACT
+/*   PURPOSE: Drive the standalone frontend demo by resolving API targets, loading preset data, checking runtime readiness, and submitting clone requests.
+/*   SCOPE: Frontend-only state management, preset rendering, readiness checks, clone submission, preview playback, and result download wiring.
+/*   DEPENDS: frontend_demo/index.html, frontend_demo/styles.css, frontend_demo/voice-presets.json
+/*   LINKS: M-FRONTEND-DEMO
+/*   ROLE: RUNTIME
+/*   MAP_MODE: SUMMARY
+/* END_MODULE_CONTRACT */
+/*
+/* START_MODULE_MAP
+/*   resolveDefaultApiBaseUrl - Derive the default server base URL from the current browser origin.
+/*   setStatus / setBusy - Reflect runtime state in the demo UI.
+/*   selectPreset / renderPresets / loadVoicePresets - Manage frontend-owned preset inventory and selection.
+/*   loadRuntimeStatus - Read server readiness and determine whether clone mode is available.
+/*   submitClone - Submit clone inputs to the canonical HTTP API and reveal playback/download results.
+/*   previewButton handler - Play or stop preset reference audio locally.
+/*   textInput handlers - Support enter-to-submit and live character counting.
+/* END_MODULE_MAP */
+/*
+/* START_CHANGE_SUMMARY
+/*   LAST_CHANGE: [v1.0.0 - Added file-level GRACE governance so the documented frontend demo module has local contract anchors without changing runtime behavior]
+/* END_CHANGE_SUMMARY */
+
 const presetList = document.getElementById("preset-list");
 const textInput = document.getElementById("tts-text");
 const charCounter = document.getElementById("char-counter");

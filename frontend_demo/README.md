@@ -18,7 +18,9 @@ The demo provides a minimal operator/demo UI for:
 
 This module is a static frontend only. It does not own backend logic, static server logic, or API routes.
 
-It talks to the existing TTS API by configured base URL.
+It talks to the existing TTS API by configured base URL. The demo must be pointed at the central HTTP server and must not infer capability from local `.models/` folders on the client host.
+
+In Phase 1, the server is the sole runtime and model host. The demo only consumes the server's public HTTP contract.
 
 ## Files
 
@@ -51,6 +53,8 @@ By default the demo resolves the API base by deployment mode:
 - non-local HTTP host -> same host on port `8000`
 - non-local HTTPS host -> same origin with no explicit port so reverse proxies can terminate TLS and route `/health`, `/api`, and `/v1` server-side
 
+Those defaults only choose the server base URL. They do not inspect local model folders, and they do not replace the server-side capability bindings advertised by `/health/ready`.
+
 Examples:
 
 ```text
@@ -66,6 +70,8 @@ http://127.0.0.1:8030/frontend_demo/?apiBaseUrl=http://127.0.0.1:8020
 ```
 
 This is the recommended escape hatch when your frontend and backend are forwarded through different ports or hosts.
+
+If you are deploying Phase 1 behind an internal perimeter, keep the browser origin, the API base URL, and the server bind address separate in your operator notes so you do not confuse CORS with listener configuration.
 
 ## Browser access through SSH forwarding or a public host
 
@@ -94,5 +100,7 @@ Important: when the page itself is served over HTTPS, the browser will block dir
 The demo checks `/health/ready` on startup and blocks clone submission when the active server runtime does not expose clone capability as both bound and runtime-ready.
 
 The browser client no longer needs to send a model id for clone requests. It relies on the runtime capability bindings advertised by the server and submits only the clone inputs required by the endpoint.
+
+If the server is moved, update the demo's `apiBaseUrl` instead of changing anything in the client to guess where the model lives.
 
 For clone-capable live validation on this host, use the qwen runtime contour described in `server/README.md`.

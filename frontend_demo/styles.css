@@ -1,3 +1,23 @@
+/* FILE: frontend_demo/styles.css */
+/* VERSION: 1.0.0 */
+/* START_MODULE_CONTRACT
+/*   PURPOSE: Define the visual presentation for the standalone frontend demo UI.
+/*   SCOPE: Theme variables, layout shell, preset carousel styling, input-screen styling, action controls, and result-panel presentation.
+/*   DEPENDS: frontend_demo/index.html
+/*   LINKS: M-FRONTEND-DEMO
+/*   ROLE: RUNTIME
+/*   MAP_MODE: SUMMARY
+/* END_MODULE_CONTRACT */
+/*
+/* START_MODULE_MAP
+/*   :root / body - Global theme tokens and full-page shell styling.
+/*   .hardware-frame / .terminal-container - Main demo layout and chrome.
+/*   .preset-carousel / .preset-card - Voice preset selection surfaces.
+/*   .screen-bezel / textarea / .status-overlay - Main text-entry and status display.
+/*   .action-row / .action-btn - Synthesis and preview controls.
+/*   .audio-panel / .download-btn - Result playback and download presentation.
+/* END_MODULE_MAP */
+
 :root {
   --bg-color: #050505;
   --frame-bg: #151516;
