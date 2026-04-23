@@ -1,3 +1,23 @@
+# FILE: server/Dockerfile
+# VERSION: 1.0.0
+# START_MODULE_CONTRACT
+#   PURPOSE: Define the container image for the HTTP server deployment lane.
+#   SCOPE: Base image selection, runtime environment defaults, trust-store wiring, dependency installation, source copy, runtime directory creation, and default server command.
+#   DEPENDS: M-SERVER, M-BOOTSTRAP, M-CONFIG
+#   LINKS: M-DOCKER-ASSETS
+#   ROLE: CONFIG
+#   MAP_MODE: SUMMARY
+# END_MODULE_CONTRACT
+#
+# START_MODULE_MAP
+#   base image and ENV - Establish container runtime defaults and mounted working directories.
+#   certificate install - Inject the corporate proxy root certificate into the container trust store.
+#   apt dependencies - Install ffmpeg and required system packages.
+#   Python requirements prep/install - Filter incompatible packages and install runtime dependencies.
+#   source copy - Copy the shared runtime and HTTP adapter sources into the image.
+#   runtime directories - Create writable model, output, upload, and voice mount points.
+#   default command - Start the FastAPI server through uvicorn.
+# END_MODULE_MAP
 FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
