@@ -35,7 +35,9 @@ import asyncio
 import io
 import wave
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -46,6 +48,7 @@ from telegram_bot.config import TelegramSettings
 from telegram_bot.handlers.dispatcher import CommandDispatcher
 from telegram_bot.handlers.tts_handler import TTSSynthesizer
 from telegram_bot.polling import PollingAdapter
+from telegram_bot.remote_client import RemoteServerClient
 from telegram_bot.sender import TelegramSender
 
 
@@ -96,7 +99,7 @@ class MockTTSApplicationService:
         from core.contracts.results import AudioResult, GenerationResult
 
         audio = AudioResult(
-            path=None,
+            path=Path("generated.wav"),
             bytes_data=_make_wav_bytes(),
         )
         return GenerationResult(
@@ -136,31 +139,42 @@ class TestTelegramSettingsWiring:
 class TestTelegramRuntimeWiring:
     """Tests for Telegram runtime wiring."""
 
-    def test_telegram_runtime_has_core_runtime(self):
-        """Test that Telegram runtime contains core runtime."""
-        settings = _make_test_settings(telegram_bot_token="test_token")
+    def test_telegram_runtime_has_remote_server_client(self):
+        """Test that Telegram runtime contains the remote server client seam."""
+        settings = _make_test_settings(
+            telegram_bot_token="test_token",
+            telegram_server_base_url="http://server.internal:8000",
+        )
 
-        with patch("telegram_bot.bootstrap.build_runtime") as mock_build:
-            mock_core = MagicMock()
-            mock_build.return_value = mock_core
+        runtime = build_telegram_runtime(settings)
 
-            runtime = build_telegram_runtime(settings)
-
-            assert hasattr(runtime, "core")
-            assert runtime.core is mock_core
+        assert hasattr(runtime, "remote_server_client")
+        assert runtime.remote_server_client is not None
 
     def test_telegram_runtime_has_settings(self):
         """Test that Telegram runtime contains settings."""
-        settings = _make_test_settings(telegram_bot_token="test_token")
+        settings = _make_test_settings(
+            telegram_bot_token="test_token",
+            telegram_server_base_url="http://server.internal:8000",
+        )
 
-        with patch("telegram_bot.bootstrap.build_runtime") as mock_build:
-            mock_core = MagicMock()
-            mock_build.return_value = mock_core
+        runtime = build_telegram_runtime(settings)
 
-            runtime = build_telegram_runtime(settings)
+        assert hasattr(runtime, "settings")
+        assert runtime.settings is settings
 
-            assert hasattr(runtime, "settings")
-            assert runtime.settings is settings
+    def test_telegram_runtime_wires_remote_client_when_server_base_url_exists(self):
+        """Test that runtime exposes the remote server client seam when configured."""
+        settings = _make_test_settings(
+            telegram_bot_token="test_token",
+            telegram_server_base_url="http://server.internal:8000",
+        )
+
+        runtime = build_telegram_runtime(settings)
+
+        assert isinstance(runtime.remote_server_client, RemoteServerClient)
+        assert runtime.remote_server_client is not None
+        assert runtime.remote_server_client.base_url == "http://server.internal:8000"
 
 
 class TestDispatcherWiring:
@@ -190,7 +204,7 @@ class TestTTSSynthesizerWiring:
             telegram_default_speaker="CustomVoice",
         )
 
-        synthesizer = TTSSynthesizer(mock_app, settings)
+        synthesizer = TTSSynthesizer(cast(Any, mock_app), settings)
 
         result = asyncio.run(synthesizer.synthesize("test"))
 
