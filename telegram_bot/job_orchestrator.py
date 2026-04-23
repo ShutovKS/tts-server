@@ -1,9 +1,9 @@
 # FILE: telegram_bot/job_orchestrator.py
-# VERSION: 1.0.0
+# VERSION: 1.1.1
 # START_MODULE_CONTRACT
-#   PURPOSE: Manage async job lifecycle for Telegram: submit, poll, deliver results.
-#   SCOPE: Job submission, polling, delivery coordination
-#   DEPENDS: M-APPLICATION, M-CONTRACTS
+#   PURPOSE: Manage async remote job lifecycle for Telegram: submit, poll, deliver results.
+#   SCOPE: Remote job submission, polling, delivery coordination
+#   DEPENDS: M-CONTRACTS, M-TELEGRAM, M-SERVER
 #   LINKS: M-TELEGRAM
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -22,11 +22,11 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, function contracts, semantic blocks, and migrated log events to block-reference format]
+#   LAST_CHANGE: [v1.1.1 - Treated missing remote jobs as terminal delivery failures so Telegram poller does not retry forever]
 # END_CHANGE_SUMMARY
 
 """
-Telegram job orchestrator for Stage 2 job integration.
+Telegram job orchestrator for remote async Telegram integration.
 
 This module provides:
 - Job submission for TTS and Voice Design commands
@@ -38,7 +38,7 @@ Features:
 - Idempotency via idempotency_key to prevent duplicate submissions
 - Async UX with acknowledgment and result delivery
 - Structured logging with operation tracking
-- Job integration with core job model
+- Job integration with canonical remote async server contract
 """
 
 from __future__ import annotations
@@ -46,23 +46,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from core.contracts.jobs import (
-    JobSnapshot,
     JobStatus,
-    JobOperation,
-    create_job_submission,
 )
-from core.contracts.jobs import JobOperation as JobOp
-from core.contracts.commands import (
-    CustomVoiceCommand,
-    VoiceDesignCommand,
-    VoiceCloneCommand,
+from telegram_bot.remote_client import (
+    RemoteAsyncJobResponse,
+    RemoteServerAPIError,
+    RemoteServerClient,
+    RemoteServerTransportError,
 )
 from core.observability import log_event
 
@@ -107,7 +103,7 @@ TELEGRAM_IDEMPOTENCY_SCOPE = "telegram"
 
 # START_CONTRACT: JobSubmissionResult
 #   PURPOSE: Describe the outcome of submitting a Telegram-backed synthesis job.
-#   INPUTS: { success: bool - submission result flag, job_id: str | None - core job identifier, is_duplicate: bool - idempotency reuse flag, error_message: str | None - failure detail }
+#   INPUTS: { success: bool - submission result flag, job_id: str | None - remote async job identifier, submit_request_id: str | None - canonical submit correlation id, is_duplicate: bool - idempotency reuse flag, error_message: str | None - failure detail }
 #   OUTPUTS: { JobSubmissionResult - immutable submission outcome }
 #   SIDE_EFFECTS: none
 #   LINKS: M-TELEGRAM
@@ -118,6 +114,7 @@ class JobSubmissionResult:
 
     success: bool
     job_id: str | None = None
+    submit_request_id: str | None = None
     is_duplicate: bool = False
     error_message: str | None = None
 
@@ -144,7 +141,7 @@ class JobCompletionResult:
 
 # START_CONTRACT: JobSuccessSnapshot
 #   PURPOSE: Capture a minimal successful job snapshot for Telegram delivery flows.
-#   INPUTS: { job_id: str - core job identifier, status: str - serialized job status }
+#   INPUTS: { job_id: str - remote async job identifier, status: str - serialized job status }
 #   OUTPUTS: { JobSuccessSnapshot - immutable successful job summary }
 #   SIDE_EFFECTS: none
 #   LINKS: M-TELEGRAM
@@ -280,6 +277,7 @@ class DeliveryMetadataStore:
         chat_id: int,
         message_id: int,
         job_id: str,
+        submit_request_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Create a new delivery metadata entry for a pending job.
@@ -301,6 +299,7 @@ class DeliveryMetadataStore:
                 "chat_id": chat_id,
                 "message_id": message_id,
                 "job_id": job_id,
+                "submit_request_id": submit_request_id,
                 "idempotency_key": f"telegram:{chat_id}:{message_id}",
                 "status": "pending",
                 "created_at": now,
@@ -377,8 +376,8 @@ class DeliveryMetadataStore:
 
 
 # START_CONTRACT: TelegramJobOrchestrator
-#   PURPOSE: Submit Telegram synthesis jobs to the core execution layer and inspect their completion state.
-#   INPUTS: { job_execution: Any - core job execution gateway, delivery_store: DeliveryMetadataStore - delivery metadata store, settings: TelegramSettings - Telegram runtime settings, logger: logging.Logger | None - optional logger }
+#   PURPOSE: Submit Telegram synthesis jobs to the canonical remote async server and inspect their completion state.
+#   INPUTS: { remote_client: RemoteServerClient - canonical remote HTTP client, delivery_store: DeliveryMetadataStore - delivery metadata store, settings: TelegramSettings - Telegram runtime settings, logger: logging.Logger | None - optional logger }
 #   OUTPUTS: { TelegramJobOrchestrator - Telegram job orchestration service }
 #   SIDE_EFFECTS: Submits core jobs and emits orchestration logs.
 #   LINKS: M-TELEGRAM
@@ -390,41 +389,70 @@ class TelegramJobOrchestrator:
     This class provides:
     - Synchronous job submission with idempotency
     - Job completion checking
-    - Integration with core job execution gateway
+    - Integration with canonical remote async HTTP client
     """
 
     def __init__(
         self,
-        job_execution: Any,
+        remote_client: RemoteServerClient,
         delivery_store: DeliveryMetadataStore,
         settings: TelegramSettings,
         logger: logging.Logger | None = None,
     ) -> None:
         """Initialize orchestrator."""
-        self._job_execution = job_execution
+        self._remote_client = remote_client
         self._delivery_store = delivery_store
         self._settings = settings
         self._logger = logger or logging.getLogger(__name__)
 
-    @contextmanager
-    def _get_store(self):
-        """Get the core job store if available."""
-        if (
-            hasattr(self._job_execution, "_store")
-            and self._job_execution._store is not None
-        ):
-            yield self._job_execution._store
-        else:
-            yield None
+    @staticmethod
+    def _job_status_from_public(status: str | None) -> JobStatus:
+        normalized = (status or "queued").strip().lower()
+        try:
+            return JobStatus(normalized)
+        except ValueError:
+            return JobStatus.FAILED if normalized == "timeout" else JobStatus.QUEUED
+
+    @staticmethod
+    def _is_duplicate_submit(snapshot: RemoteAsyncJobResponse) -> bool:
+        payload = snapshot.payload
+        if isinstance(payload.get("created"), bool):
+            return not bool(payload.get("created"))
+        return False
+
+    def _resolve_runtime_model(self, mode: str) -> str | None:
+        return self._settings.resolve_runtime_model_binding(mode)
+
+    @staticmethod
+    def _extract_submit_request_id(
+        response: RemoteAsyncJobResponse,
+    ) -> str | None:
+        payload_submit_request_id = response.payload.get("submit_request_id")
+        if isinstance(payload_submit_request_id, str) and payload_submit_request_id.strip():
+            return payload_submit_request_id
+        return response.correlation.submit_request_id
+
+    @staticmethod
+    def _extract_job_id(response: RemoteAsyncJobResponse) -> str | None:
+        payload_job_id = response.payload.get("job_id")
+        if isinstance(payload_job_id, str) and payload_job_id.strip():
+            return payload_job_id
+        return response.correlation.job_id
+
+    @staticmethod
+    def _error_message_from_remote_exception(exc: Exception) -> str:
+        if isinstance(exc, RemoteServerAPIError):
+            return exc.envelope.message
+        return str(exc)
 
     # START_CONTRACT: submit_tts_job
-    #   PURPOSE: Submit a custom-voice Telegram synthesis request as an idempotent core job.
+    #   PURPOSE: Submit a custom-voice Telegram synthesis request as an idempotent remote async job.
     #   INPUTS: { text: str - synthesis text, speaker: str - speaker name, speed: float - speed multiplier, chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, language: str - requested language code }
     #   OUTPUTS: { JobSubmissionResult - submission outcome for the TTS job }
     #   SIDE_EFFECTS: Submits a core job and emits submission logs.
     #   LINKS: M-TELEGRAM
     # END_CONTRACT: submit_tts_job
-    def submit_tts_job(
+    async def submit_tts_job(
         self,
         text: str,
         speaker: str,
@@ -449,59 +477,24 @@ class TelegramJobOrchestrator:
         Returns:
             JobSubmissionResult indicating success/duplicate/error
         """
-        # START_BLOCK_SUBMIT_JOB
         idempotency_key = f"telegram:{chat_id}:{message_id}"
 
-        # Check if job already exists via idempotency in core store
-        with self._get_store() as store:
-            if store is not None:
-                existing_by_idem = store.get_by_idempotency_key(
-                    idempotency_key,
-                    scope=TELEGRAM_IDEMPOTENCY_SCOPE,
-                )
-                if existing_by_idem is not None:
-                    log_event(
-                        self._logger,
-                        level=logging.INFO,
-                        event="[JobOrchestrator][submit_tts_job][BLOCK_SUBMIT_JOB]",
-                        message="Reusing existing job by idempotency key",
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        job_id=existing_by_idem.snapshot.job_id,
-                        job_status=existing_by_idem.snapshot.status.value,
-                    )
-
-                    return JobSubmissionResult(
-                        success=True,
-                        job_id=existing_by_idem.snapshot.job_id,
-                        is_duplicate=True,
-                    )
-        # END_BLOCK_SUBMIT_JOB
-
         # START_BLOCK_CREATE_TTS_SUBMISSION
-        # Create new job submission
         try:
-            submission = create_job_submission(
-                operation=JobOperation.SYNTHESIZE_CUSTOM,
-                command=CustomVoiceCommand(
-                    text=text,
-                    speaker=speaker,
-                    speed=speed,
-                    language=language,
-                    save_output=False,
-                ),
-                submit_request_id=idempotency_key,
-                owner_principal_id=str(chat_id),
-                response_format=None,
-                save_output=False,
-                execution_timeout_seconds=self._settings.request_timeout_seconds,
+            response = await self._remote_client.submit_speech_job(
+                {
+                    "model": self._resolve_runtime_model("custom"),
+                    "input": text,
+                    "voice": speaker,
+                    "language": language,
+                    "speed": speed,
+                },
+                request_id=idempotency_key,
                 idempotency_key=idempotency_key,
-                idempotency_scope=TELEGRAM_IDEMPOTENCY_SCOPE,
-                idempotency_fingerprint=None,
             )
-
-            # Submit job through gateway
-            resolution = self._job_execution.submit_idempotent(submission)
+            job_id = self._extract_job_id(response)
+            submit_request_id = self._extract_submit_request_id(response)
+            is_duplicate = self._is_duplicate_submit(response)
 
             log_event(
                 self._logger,
@@ -510,18 +503,20 @@ class TelegramJobOrchestrator:
                 message="TTS job submitted",
                 chat_id=chat_id,
                 message_id=message_id,
-                job_id=resolution.snapshot.job_id,
+                job_id=job_id,
+                submit_request_id=submit_request_id,
                 speaker=speaker,
                 speed=speed,
                 language=language,
                 text_length=len(text),
-                created=resolution.created,
+                created=not is_duplicate,
             )
 
             return JobSubmissionResult(
                 success=True,
-                job_id=resolution.snapshot.job_id,
-                is_duplicate=not resolution.created,
+                job_id=job_id,
+                submit_request_id=submit_request_id,
+                is_duplicate=is_duplicate,
             )
 
         except Exception as exc:
@@ -539,19 +534,20 @@ class TelegramJobOrchestrator:
             return JobSubmissionResult(
                 success=False,
                 job_id=None,
+                submit_request_id=None,
                 is_duplicate=False,
-                error_message=str(exc),
+                error_message=self._error_message_from_remote_exception(exc),
             )
         # END_BLOCK_CREATE_TTS_SUBMISSION
 
     # START_CONTRACT: submit_design_job
-    #   PURPOSE: Submit a voice-design Telegram synthesis request as an idempotent core job.
+    #   PURPOSE: Submit a voice-design Telegram synthesis request as an idempotent remote async job.
     #   INPUTS: { voice_description: str - voice description prompt, text: str - synthesis text, chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, language: str - requested language code }
     #   OUTPUTS: { JobSubmissionResult - submission outcome for the design job }
     #   SIDE_EFFECTS: Submits a core job and emits submission logs.
     #   LINKS: M-TELEGRAM
     # END_CONTRACT: submit_design_job
-    def submit_design_job(
+    async def submit_design_job(
         self,
         voice_description: str,
         text: str,
@@ -574,59 +570,23 @@ class TelegramJobOrchestrator:
         Returns:
             JobSubmissionResult indicating success/duplicate/error
         """
-        # START_BLOCK_SUBMIT_DESIGN_JOB
-        # Design jobs use "design" prefix for idempotency to separate from TTS jobs
         idempotency_key = f"telegram:design:{chat_id}:{message_id}"
 
-        # Check if job already exists via idempotency in core store
-        with self._get_store() as store:
-            if store is not None:
-                existing_by_idem = store.get_by_idempotency_key(
-                    idempotency_key,
-                    scope=TELEGRAM_IDEMPOTENCY_SCOPE,
-                )
-                if existing_by_idem is not None:
-                    log_event(
-                        self._logger,
-                        level=logging.INFO,
-                        event="[JobOrchestrator][submit_design_job][BLOCK_SUBMIT_DESIGN_JOB]",
-                        message="Reusing existing design job by idempotency key",
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        job_id=existing_by_idem.snapshot.job_id,
-                        job_status=existing_by_idem.snapshot.status.value,
-                    )
-
-                    return JobSubmissionResult(
-                        success=True,
-                        job_id=existing_by_idem.snapshot.job_id,
-                        is_duplicate=True,
-                    )
-        # END_BLOCK_SUBMIT_DESIGN_JOB
-
         # START_BLOCK_CREATE_DESIGN_SUBMISSION
-        # Create new job submission
         try:
-            submission = create_job_submission(
-                operation=JobOperation.SYNTHESIZE_DESIGN,
-                command=VoiceDesignCommand(
-                    text=text,
-                    voice_description=voice_description,
-                    language=language,
-                    save_output=False,
-                ),
-                submit_request_id=idempotency_key,
-                owner_principal_id=str(chat_id),
-                response_format=None,
-                save_output=False,
-                execution_timeout_seconds=self._settings.request_timeout_seconds,
+            response = await self._remote_client.submit_design_job(
+                {
+                    "model": self._resolve_runtime_model("design"),
+                    "text": text,
+                    "voice_description": voice_description,
+                    "language": language,
+                },
+                request_id=idempotency_key,
                 idempotency_key=idempotency_key,
-                idempotency_scope=TELEGRAM_IDEMPOTENCY_SCOPE,
-                idempotency_fingerprint=None,
             )
-
-            # Submit job through gateway
-            resolution = self._job_execution.submit_idempotent(submission)
+            job_id = self._extract_job_id(response)
+            submit_request_id = self._extract_submit_request_id(response)
+            is_duplicate = self._is_duplicate_submit(response)
 
             log_event(
                 self._logger,
@@ -635,17 +595,19 @@ class TelegramJobOrchestrator:
                 message="Voice Design job submitted",
                 chat_id=chat_id,
                 message_id=message_id,
-                job_id=resolution.snapshot.job_id,
+                job_id=job_id,
+                submit_request_id=submit_request_id,
                 voice_description_length=len(voice_description),
                 text_length=len(text),
                 language=language,
-                created=resolution.created,
+                created=not is_duplicate,
             )
 
             return JobSubmissionResult(
                 success=True,
-                job_id=resolution.snapshot.job_id,
-                is_duplicate=not resolution.created,
+                job_id=job_id,
+                submit_request_id=submit_request_id,
+                is_duplicate=is_duplicate,
             )
 
         except Exception as exc:
@@ -663,25 +625,27 @@ class TelegramJobOrchestrator:
             return JobSubmissionResult(
                 success=False,
                 job_id=None,
+                submit_request_id=None,
                 is_duplicate=False,
-                error_message=str(exc),
+                error_message=self._error_message_from_remote_exception(exc),
             )
         # END_BLOCK_CREATE_DESIGN_SUBMISSION
 
     # START_CONTRACT: submit_clone_job
-    #   PURPOSE: Submit a voice-clone Telegram synthesis request as an idempotent core job.
+    #   PURPOSE: Submit a voice-clone Telegram synthesis request as an idempotent remote async job.
     #   INPUTS: { text: str - synthesis text, ref_text: str | None - optional reference transcript, chat_id: int - Telegram chat identifier, message_id: int - Telegram message identifier, ref_audio_path: str | None - staged reference audio path, language: str - requested language code }
     #   OUTPUTS: { JobSubmissionResult - submission outcome for the clone job }
     #   SIDE_EFFECTS: Submits a core job and emits submission logs.
     #   LINKS: M-TELEGRAM
     # END_CONTRACT: submit_clone_job
-    def submit_clone_job(
+    async def submit_clone_job(
         self,
         text: str,
         ref_text: str | None,
         chat_id: int,
         message_id: int,
-        ref_audio_path: str | None = None,
+        ref_audio_path: str,
+        ref_audio_content_type: str,
         language: str = "auto",
     ) -> JobSubmissionResult:
         """
@@ -700,63 +664,25 @@ class TelegramJobOrchestrator:
         Returns:
             JobSubmissionResult indicating success/duplicate/error
         """
-        # START_BLOCK_SUBMIT_CLONE_JOB
-        # Clone jobs use "clone" prefix for idempotency to separate from TTS/design jobs
         idempotency_key = f"telegram:clone:{chat_id}:{message_id}"
 
-        # Check if job already exists via idempotency in core store
-        with self._get_store() as store:
-            if store is not None:
-                existing_by_idem = store.get_by_idempotency_key(
-                    idempotency_key,
-                    scope=TELEGRAM_IDEMPOTENCY_SCOPE,
-                )
-                if existing_by_idem is not None:
-                    log_event(
-                        self._logger,
-                        level=logging.INFO,
-                        event="[JobOrchestrator][submit_clone_job][BLOCK_SUBMIT_CLONE_JOB]",
-                        message="Reusing existing clone job by idempotency key",
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        job_id=existing_by_idem.snapshot.job_id,
-                        job_status=existing_by_idem.snapshot.status.value,
-                    )
-
-                    return JobSubmissionResult(
-                        success=True,
-                        job_id=existing_by_idem.snapshot.job_id,
-                        is_duplicate=True,
-                    )
-        # END_BLOCK_SUBMIT_CLONE_JOB
-
         # START_BLOCK_CREATE_CLONE_SUBMISSION
-        # Create new job submission
         try:
-            # Import here to avoid circular import issues
-            from pathlib import Path as PathLib
-
-            submission = create_job_submission(
-                operation=JobOperation.SYNTHESIZE_CLONE,
-                command=VoiceCloneCommand(
-                    text=text,
-                    ref_audio_path=PathLib(ref_audio_path) if ref_audio_path else None,
-                    ref_text=ref_text,
-                    language=language,
-                    save_output=False,
-                ),
-                submit_request_id=idempotency_key,
-                owner_principal_id=str(chat_id),
-                response_format=None,
-                save_output=False,
-                execution_timeout_seconds=self._settings.request_timeout_seconds,
+            reference_path = Path(ref_audio_path)
+            response = await self._remote_client.submit_clone_job(
+                text=text,
+                ref_audio_bytes=reference_path.read_bytes(),
+                ref_audio_filename=reference_path.name,
+                ref_audio_content_type=ref_audio_content_type,
+                ref_text=ref_text,
+                language=language,
+                model=self._resolve_runtime_model("clone"),
+                request_id=idempotency_key,
                 idempotency_key=idempotency_key,
-                idempotency_scope=TELEGRAM_IDEMPOTENCY_SCOPE,
-                idempotency_fingerprint=None,
             )
-
-            # Submit job through gateway
-            resolution = self._job_execution.submit_idempotent(submission)
+            job_id = self._extract_job_id(response)
+            submit_request_id = self._extract_submit_request_id(response)
+            is_duplicate = self._is_duplicate_submit(response)
 
             log_event(
                 self._logger,
@@ -765,17 +691,19 @@ class TelegramJobOrchestrator:
                 message="Voice Clone job submitted",
                 chat_id=chat_id,
                 message_id=message_id,
-                job_id=resolution.snapshot.job_id,
+                job_id=job_id,
+                submit_request_id=submit_request_id,
                 ref_text_provided=ref_text is not None,
                 language=language,
                 text_length=len(text),
-                created=resolution.created,
+                created=not is_duplicate,
             )
 
             return JobSubmissionResult(
                 success=True,
-                job_id=resolution.snapshot.job_id,
-                is_duplicate=not resolution.created,
+                job_id=job_id,
+                submit_request_id=submit_request_id,
+                is_duplicate=is_duplicate,
             )
 
         except Exception as exc:
@@ -793,19 +721,22 @@ class TelegramJobOrchestrator:
             return JobSubmissionResult(
                 success=False,
                 job_id=None,
+                submit_request_id=None,
                 is_duplicate=False,
-                error_message=str(exc),
+                error_message=self._error_message_from_remote_exception(exc),
             )
         # END_BLOCK_CREATE_CLONE_SUBMISSION
 
     # START_CONTRACT: check_job_completion
-    #   PURPOSE: Inspect the current completion state and result payload for a Telegram-linked job.
-    #   INPUTS: { job_id: str - core job identifier }
+    #   PURPOSE: Inspect the current completion state and result payload for a Telegram-linked remote job.
+    #   INPUTS: { job_id: str - remote async job identifier, submit_request_id: str | None - optional canonical submit correlation id }
     #   OUTPUTS: { JobCompletionResult - current completion snapshot for the job }
     #   SIDE_EFFECTS: Reads job state and result data from the core execution layer.
     #   LINKS: M-TELEGRAM
     # END_CONTRACT: check_job_completion
-    def check_job_completion(self, job_id: str) -> JobCompletionResult:
+    async def check_job_completion(
+        self, job_id: str, submit_request_id: str | None = None
+    ) -> JobCompletionResult:
         """
         Check if job has completed and get result.
 
@@ -816,69 +747,127 @@ class TelegramJobOrchestrator:
             JobCompletionResult with terminal state if completed
         """
         # START_BLOCK_POLL_JOB_STATUS
-        snapshot = self._job_execution.get_job(job_id)
-        if snapshot is None:
+        try:
+            snapshot_response = await self._remote_client.get_job_status(
+                job_id,
+                request_id=job_id,
+                submit_request_id=submit_request_id,
+            )
+        except RemoteServerAPIError as exc:
+            if exc.code == "job_not_found":
+                return JobCompletionResult(
+                    status=JobStatus.FAILED,
+                    is_terminal=True,
+                    success=False,
+                    error_message=exc.envelope.message,
+                    error_code=exc.code,
+                )
+            return JobCompletionResult(
+                status=JobStatus.FAILED,
+                is_terminal=True,
+                success=False,
+                error_message=exc.envelope.message,
+                error_code=exc.code,
+            )
+        except RemoteServerTransportError as exc:
             return JobCompletionResult(
                 status=JobStatus.QUEUED,
                 is_terminal=False,
                 success=None,
             )
+        except Exception as exc:
+            return JobCompletionResult(
+                status=JobStatus.FAILED,
+                is_terminal=True,
+                success=False,
+                error_message=str(exc),
+                error_code=type(exc).__name__,
+            )
         # END_BLOCK_POLL_JOB_STATUS
 
         # START_BLOCK_BUILD_COMPLETION_RESULT
-        is_terminal = snapshot.status.is_terminal
+        payload = snapshot_response.payload
+        status = self._job_status_from_public(
+            payload.get("status") if isinstance(payload.get("status"), str) else None
+        )
+        is_terminal = status.is_terminal
 
-        if snapshot.status == JobStatus.SUCCEEDED:
-            result = self._job_execution.get_result(job_id)
-            if result is not None and result.success is not None:
+        if status == JobStatus.SUCCEEDED:
+            try:
+                result = await self._remote_client.get_job_result(
+                    job_id,
+                    request_id=job_id,
+                    submit_request_id=submit_request_id,
+                )
                 return JobCompletionResult(
-                    status=snapshot.status,
+                    status=status,
                     is_terminal=is_terminal,
                     success=True,
-                    audio_bytes=result.success.generation.audio.bytes_data
-                    if result.success.generation
-                    else None,
-                    duration_ms=self._calculate_duration_ms(snapshot),
+                    audio_bytes=result.audio_bytes,
+                    duration_ms=self._calculate_duration_ms(payload),
                 )
-            return JobCompletionResult(
-                status=snapshot.status,
-                is_terminal=is_terminal,
-                success=True,
-            )
+            except RemoteServerAPIError as exc:
+                return JobCompletionResult(
+                    status=JobStatus.FAILED,
+                    is_terminal=True,
+                    success=False,
+                    error_message=exc.envelope.message,
+                    error_code=exc.code,
+                    duration_ms=self._calculate_duration_ms(payload),
+                )
+            except Exception as exc:
+                return JobCompletionResult(
+                    status=JobStatus.FAILED,
+                    is_terminal=True,
+                    success=False,
+                    error_message=str(exc),
+                    error_code=type(exc).__name__,
+                    duration_ms=self._calculate_duration_ms(payload),
+                )
 
-        if snapshot.status in {
+        if status in {
             JobStatus.FAILED,
             JobStatus.TIMEOUT,
             JobStatus.CANCELLED,
         }:
             error_message = None
             error_code = None
-            if snapshot.terminal_error:
-                error_code = snapshot.terminal_error.code
-                error_message = snapshot.terminal_error.message
+            terminal_error = payload.get("terminal_error")
+            if isinstance(terminal_error, dict):
+                if isinstance(terminal_error.get("code"), str):
+                    error_code = cast(str, terminal_error.get("code"))
+                if isinstance(terminal_error.get("message"), str):
+                    error_message = cast(str, terminal_error.get("message"))
 
             return JobCompletionResult(
-                status=snapshot.status,
+                status=status,
                 is_terminal=is_terminal,
                 success=False,
                 error_message=error_message,
                 error_code=error_code,
-                duration_ms=self._calculate_duration_ms(snapshot),
+                duration_ms=self._calculate_duration_ms(payload),
             )
 
         # QUEUED or RUNNING
         return JobCompletionResult(
-            status=snapshot.status,
+            status=status,
             is_terminal=is_terminal,
             success=None,
         )
         # END_BLOCK_BUILD_COMPLETION_RESULT
 
     @staticmethod
-    def _calculate_duration_ms(snapshot: JobSnapshot) -> float | None:
-        """Calculate job duration in milliseconds."""
-        if snapshot.started_at and snapshot.completed_at:
-            delta = snapshot.completed_at - snapshot.started_at
+    def _calculate_duration_ms(snapshot_payload: dict[str, Any]) -> float | None:
+        """Calculate job duration in milliseconds from remote payload timestamps."""
+        started_at = snapshot_payload.get("started_at")
+        completed_at = snapshot_payload.get("completed_at")
+        if isinstance(started_at, str) and isinstance(completed_at, str):
+            try:
+                started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            delta = completed - started
             return delta.total_seconds() * 1000
         return None
 
@@ -994,7 +983,10 @@ class TelegramJobPoller:
             resolved_chat_id = cast(int, chat_id)
             resolved_message_id = cast(int, message_id)
 
-            result = self.orchestrator.check_job_completion(resolved_job_id)
+            result = await self.orchestrator.check_job_completion(
+                resolved_job_id,
+                cast(str | None, metadata.get("submit_request_id")),
+            )
 
             if result.is_terminal:
                 await self._deliver_job_result(
@@ -1027,7 +1019,10 @@ class TelegramJobPoller:
             resolved_chat_id = cast(int, chat_id)
             resolved_message_id = cast(int, message_id)
 
-            result = self.orchestrator.check_job_completion(resolved_job_id)
+            result = await self.orchestrator.check_job_completion(
+                resolved_job_id,
+                cast(str | None, metadata.get("submit_request_id")),
+            )
 
             if result.is_terminal:
                 await self._deliver_job_result(
