@@ -10,7 +10,7 @@
 # END_MODULE_CONTRACT
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Expanded Telegram startup self-check gating to honor existing settings validation errors before entering the polling loop]
+#   LAST_CHANGE: [v1.2.0 - Enforced remote async server readiness for migrated Telegram command flows and rewired startup orchestration to the remote client seam]
 # END_CHANGE_SUMMARY
 
 """
@@ -38,14 +38,8 @@ from core.observability import bind_request_context, log_event, operation_scope
 from telegram_bot.bootstrap import TelegramRuntime, build_telegram_runtime
 from telegram_bot.client import RetryConfig, TelegramBotClient
 from telegram_bot.handlers.dispatcher import CommandDispatcher
-from telegram_bot.handlers.tts_handler import TTSSynthesizer
-from telegram_bot.observability import (
-    METRICS,
-    BackoffConfig,
-    TelegramMetrics,
-    log_telegram_event,
-)
-from telegram_bot.polling import PollingAdapter
+from telegram_bot.observability import METRICS, TelegramMetrics, log_telegram_event
+from telegram_bot.polling import BackoffConfig, PollingAdapter
 from telegram_bot.sender import DeliveryRetryConfig, TelegramSender
 
 
@@ -71,10 +65,9 @@ class StartupCheckPhase(Enum):
 
     CONFIG = 1
     TELEGRAM_API = 2
-    BACKEND = 3
-    FFMPEG = 4
-    ALLOWLIST = 5
-    COMPLETE = 6
+    REMOTE_SERVER = 3
+    ALLOWLIST = 4
+    COMPLETE = 5
 
 
 # START_CONTRACT: StartupCheckResult
@@ -137,12 +130,18 @@ class StartupCheckResult:
     def summary(self) -> dict[str, Any]:
         """Get summary of all checks."""
         summary = {"success": self.success, "phase": self.phase.value}
-        for check_name, passed, message in self.checks_passed:
-            if isinstance(check_name, str) and "," in check_name:
-                parts = check_name.split(",", 1)
-                summary[parts[0]] = {"passed": passed, "message": message}
-            else:
+        for check in self.checks_passed:
+            if isinstance(check, str):
+                summary[check] = {"passed": True, "message": None}
+                continue
+
+            if isinstance(check, tuple) and len(check) >= 3:
+                check_name, passed, message = check[:3]
                 summary[check_name] = {"passed": passed, "message": message}
+                continue
+
+            check_name = str(check)
+            summary[check_name] = {"passed": True, "message": None}
         return summary
 
 
@@ -183,52 +182,25 @@ def setup_logging(level: str = "INFO") -> None:
 # ============================================================================
 
 
-# START_CONTRACT: get_tts_service
-#   PURPOSE: Expose the shared TTS service from the Telegram runtime for startup checks.
-#   INPUTS: { runtime: TelegramRuntime - assembled Telegram runtime }
-#   OUTPUTS: { Any - runtime TTS service instance }
-#   SIDE_EFFECTS: none
-#   LINKS: M-TELEGRAM
-# END_CONTRACT: get_tts_service
-def get_tts_service(runtime: TelegramRuntime):
-    """Get TTS service from runtime. Can be mocked for testing."""
-    return runtime.core.tts_service
-
-
-# START_CONTRACT: is_ffmpeg_available
-#   PURPOSE: Report whether ffmpeg is available for Telegram audio conversion workflows.
-#   INPUTS: {}
-#   OUTPUTS: { bool - True when ffmpeg is available in PATH }
-#   SIDE_EFFECTS: Invokes a tool availability check.
-#   LINKS: M-TELEGRAM
-# END_CONTRACT: is_ffmpeg_available
-def is_ffmpeg_available() -> bool:
-    """Check if ffmpeg is available. Can be mocked for testing."""
-    from telegram_bot.audio import _check_ffmpeg_available
-
-    return _check_ffmpeg_available()
-
-
 # START_CONTRACT: run_startup_self_checks
-#   PURPOSE: Validate Telegram runtime prerequisites before entering the polling loop.
-#   INPUTS: { runtime_or_settings: Any - TelegramRuntime or Telegram settings object }
+#   PURPOSE: Validate Telegram remote-boundary prerequisites before entering the polling loop.
+#   INPUTS: { runtime_or_settings: Any - TelegramRuntime or Telegram settings object, client: TelegramBotClient | None - optional Telegram API client for connectivity checks }
 #   OUTPUTS: { StartupCheckResult - self-check outcome with warnings and errors }
-#   SIDE_EFFECTS: Emits startup validation logs and inspects runtime dependencies.
+#   SIDE_EFFECTS: Emits startup validation logs and inspects remote server boundary requirements plus adapter-local warnings.
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: run_startup_self_checks
-def run_startup_self_checks(runtime_or_settings) -> StartupCheckResult:
+async def run_startup_self_checks(runtime_or_settings, client: TelegramBotClient | None = None) -> StartupCheckResult:
     """
     Perform comprehensive startup self-checks.
 
-    This function validates the operational state before entering the polling loop.
+    This function validates the remote client boundary before entering the polling loop.
     It separates fatal errors (must fix) from warnings (can proceed).
 
     Checks performed:
     1. Configuration validation
-    2. Backend availability
-    3. ffmpeg availability (for audio conversion)
-    4. Telegram API connectivity
-    5. Security configuration warnings
+    2. Remote server configuration and readiness
+    3. Telegram API connectivity
+    4. Adapter-local warnings
 
     Args:
         runtime_or_settings: TelegramRuntime or settings object
@@ -239,16 +211,13 @@ def run_startup_self_checks(runtime_or_settings) -> StartupCheckResult:
     result = StartupCheckResult()
 
     # Support both TelegramRuntime and plain settings
-    if hasattr(runtime_or_settings, "settings") and hasattr(
-        runtime_or_settings, "core"
-    ):
-        # It's a TelegramRuntime
+    if hasattr(runtime_or_settings, "settings"):
         settings = runtime_or_settings.settings
-        core = runtime_or_settings.core
+        remote_server_client = getattr(runtime_or_settings, "remote_server_client", None)
     else:
         # It's a settings object
         settings = runtime_or_settings
-        core = None
+        remote_server_client = None
 
     log_telegram_event(
         LOGGER,
@@ -281,6 +250,21 @@ def run_startup_self_checks(runtime_or_settings) -> StartupCheckResult:
         result.errors.append("FATAL: TTS_TELEGRAM_BOT_TOKEN not set")
     else:
         result.checks_passed.append("bot_token_configured")
+        result.phase = StartupCheckPhase.CONFIG
+
+    # Check 1b: canonical remote async server configuration
+    if not getattr(settings, "telegram_server_base_url", ""):
+        result.errors.append(
+            "FATAL: TTS_TELEGRAM_SERVER_BASE_URL is required for remote async Telegram command execution"
+        )
+    else:
+        result.checks_passed.append("remote_server_configured")
+        result.phase = StartupCheckPhase.REMOTE_SERVER
+
+    if remote_server_client is None:
+        result.errors.append(
+            "FATAL: Telegram runtime did not build a remote server client for async command execution"
+        )
 
     # Check 2: Allowlist configuration (warning only)
     if not settings.telegram_allowed_user_ids:
@@ -290,6 +274,7 @@ def run_startup_self_checks(runtime_or_settings) -> StartupCheckResult:
         )
     else:
         result.checks_passed.append("allowlist_configured")
+        result.phase = StartupCheckPhase.ALLOWLIST
         log_telegram_event(
             LOGGER,
             level=logging.INFO,
@@ -306,46 +291,35 @@ def run_startup_self_checks(runtime_or_settings) -> StartupCheckResult:
     else:
         result.checks_passed.append("default_speaker_configured")
 
-    # Check 4: Backend availability (only if core is available)
-    if core is not None:
+    # Check 4: Remote server readiness
+    if remote_server_client is not None:
         try:
-            tts_service = get_tts_service(runtime_or_settings)
-            if tts_service and hasattr(tts_service, "is_backend_available"):
-                is_available = tts_service.is_backend_available()
-                if not is_available:
-                    result.errors.append(
-                        f"FATAL: Backend '{settings.backend}' is not available"
-                    )
-                else:
-                    result.checks_passed.append(f"backend_available:{settings.backend}")
-                    log_telegram_event(
-                        LOGGER,
-                        level=logging.INFO,
-                        event="[TelegramMain][run_startup_self_checks][run_startup_self_checks]",
-                        message=f"Backend '{settings.backend}' is available",
-                        backend=settings.backend,
-                    )
-            else:
-                result.checks_passed.append(f"backend_available:{settings.backend}")
+            readiness = await remote_server_client.get_readiness()
         except Exception as exc:
-            result.errors.append(f"FATAL: Backend check failed: {exc}")
-    else:
-        # In test mode without core, skip backend check
-        result.checks_passed.append(f"backend_available:{settings.backend}")
+            result.errors.append(f"FATAL: Remote server readiness check failed: {exc}")
+        else:
+            if readiness.status.lower() != "ok":
+                result.errors.append(
+                    f"FATAL: Remote server readiness is '{readiness.status}'"
+                )
+            else:
+                result.checks_passed.append("remote_server_ready")
+                result.phase = StartupCheckPhase.REMOTE_SERVER
+                log_telegram_event(
+                    LOGGER,
+                    level=logging.INFO,
+                    event="[TelegramMain][run_startup_self_checks][run_startup_self_checks]",
+                    message="Remote server readiness verified",
+                    server_base_url=settings.telegram_server_base_url,
+                )
 
-    # Check 5: ffmpeg availability (using mockable function)
-    if not is_ffmpeg_available():
-        result.errors.append(
-            "FATAL: ffmpeg is not available in PATH. Required for audio conversion."
-        )
-    else:
-        result.checks_passed.append("ffmpeg_available")
-        log_telegram_event(
-            LOGGER,
-            level=logging.INFO,
-            event="[TelegramMain][run_startup_self_checks][run_startup_self_checks]",
-            message="ffmpeg is available",
-        )
+    # Check 5: Telegram API connectivity
+    if client is not None:
+        if await verify_telegram_connectivity(client):
+            result.checks_passed.append("telegram_api_reachable")
+            result.phase = StartupCheckPhase.TELEGRAM_API
+        else:
+            result.errors.append("FATAL: Telegram API connection failed during startup")
 
     # Check 6: Text length limits
     if settings.telegram_max_text_length < 10:
@@ -361,6 +335,8 @@ def run_startup_self_checks(runtime_or_settings) -> StartupCheckResult:
     # Summary
     # Success = no errors (warnings are OK)
     result.success = len(result.errors) == 0
+    if result.success:
+        result.phase = StartupCheckPhase.COMPLETE
 
     log_telegram_event(
         LOGGER,
@@ -474,6 +450,13 @@ async def run_telegram_bot(
         allowed_users_count=len(settings.telegram_allowed_user_ids),
     )
 
+    # Initialize Telegram API client
+    client = TelegramBotClient(
+        bot_token=settings.telegram_bot_token,
+        logger=LOGGER,
+        retry_config=RetryConfig(max_attempts=settings.telegram_max_retries),
+    )
+
     # Phase 1: Startup Self-Checks
     log_telegram_event(
         LOGGER,
@@ -482,7 +465,7 @@ async def run_telegram_bot(
         message="Phase 1: Running startup self-checks",
     )
 
-    self_check_result = run_startup_self_checks(runtime)
+    self_check_result = await run_startup_self_checks(runtime, client)
 
     # Log warnings
     for warning in self_check_result.warnings:
@@ -516,27 +499,10 @@ async def run_telegram_bot(
         message="Phase 2: Initializing components",
     )
 
-    # Initialize Telegram API client
-    client = TelegramBotClient(
-        bot_token=settings.telegram_bot_token,
-        logger=LOGGER,
-        retry_config=RetryConfig(max_attempts=settings.telegram_max_retries),
-    )
-
     try:
         # Verify Telegram API connectivity
         if not await verify_telegram_connectivity(client):
             raise RuntimeError("Telegram API connection failed during startup")
-
-        # Start core job manager
-        log_telegram_event(
-            LOGGER,
-            level=logging.INFO,
-            event="[TelegramMain][run_telegram_bot][run_telegram_bot]",
-            message="Starting core job manager",
-        )
-        core = runtime.core
-        core.job_manager.start()
 
         # Build Telegram components
         log_telegram_event(
@@ -544,12 +510,6 @@ async def run_telegram_bot(
             level=logging.INFO,
             event="[TelegramMain][run_telegram_bot][run_telegram_bot]",
             message="Building Telegram components",
-        )
-
-        synthesizer = TTSSynthesizer(
-            application_service=core.application,
-            settings=settings,
-            logger=LOGGER,
         )
 
         sender = TelegramSender(
@@ -575,8 +535,13 @@ async def run_telegram_bot(
         )
         delivery_store = DeliveryMetadataStore(storage_path=delivery_store_path)
 
+        if runtime.remote_server_client is None:
+            raise RuntimeError(
+                "Telegram runtime remote server client is required for async command execution"
+            )
+
         job_orchestrator = TelegramJobOrchestrator(
-            job_execution=core.job_execution,
+            remote_client=runtime.remote_server_client,
             delivery_store=delivery_store,
             settings=settings,
             logger=LOGGER,
@@ -591,7 +556,7 @@ async def run_telegram_bot(
         )
 
         dispatcher = CommandDispatcher(
-            synthesizer=synthesizer,
+            synthesizer=None,
             settings=settings,
             sender=sender,
             logger=LOGGER,
@@ -721,9 +686,8 @@ async def _perform_shutdown(
 
     Shutdown order:
     1. Log shutdown start
-    2. Stop core job manager
-    3. Close Telegram client
-    4. Log shutdown complete
+    2. Close Telegram client
+    3. Log shutdown complete
     """
     log_telegram_event(
         LOGGER,
@@ -731,23 +695,6 @@ async def _perform_shutdown(
         event="[TelegramMain][_perform_shutdown][_perform_shutdown]",
         message="Starting graceful shutdown",
     )
-
-    # Stop core job manager
-    try:
-        runtime.core.job_manager.stop()
-        log_telegram_event(
-            LOGGER,
-            level=logging.INFO,
-            event="[TelegramMain][_perform_shutdown][_perform_shutdown]",
-            message="Core job manager stopped",
-        )
-    except Exception as exc:
-        log_telegram_event(
-            LOGGER,
-            level=logging.WARNING,
-            event="[TelegramMain][_perform_shutdown][_perform_shutdown]",
-            message=f"Error stopping core job manager: {exc}",
-        )
 
     # Close Telegram client
     try:
