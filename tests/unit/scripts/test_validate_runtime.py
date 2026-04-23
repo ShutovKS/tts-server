@@ -1,8 +1,8 @@
 # FILE: tests/unit/scripts/test_validate_runtime.py
-# VERSION: 1.8.1
+# VERSION: 1.9.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Verify runtime validation automation helpers for host-matrix checks, smoke-server orchestration, Docker parity validation, and Telegram live validation flows.
-#   SCOPE: Validation env defaults, qwen_fast simulation assertions, representative-model preflight semantics, smoke preflight/runtime error handling, Docker evidence/teardown semantics, smoke summary evidence payloads, and opt-in Telegram inbound update validation
+#   PURPOSE: Verify runtime validation automation helpers for host-matrix checks, smoke-server orchestration, Docker parity validation, and Telegram remote-topology validation flows.
+#   SCOPE: Validation env defaults, qwen_fast simulation assertions, representative-model preflight semantics, smoke preflight/runtime error handling, Docker evidence/teardown semantics, smoke summary evidence payloads, Telegram remote-boundary summaries, and opt-in Telegram inbound update validation
 #   DEPENDS: M-VALIDATION-AUTOMATION, M-RUNTIME-SELF-CHECK
 #   LINKS: V-M-VALIDATION-AUTOMATION
 #   ROLE: TEST
@@ -38,13 +38,14 @@
 #   test_run_server_docker_validation_reports_teardown_failure_with_retained_artifacts - Verifies server Docker validation keeps retained artifacts and surfaces teardown failures explicitly
 #   test_next_update_offset_uses_highest_update_id - Verifies Telegram validation offset derivation skips already seen updates
 #   test_find_matching_update_filters_by_chat_and_text - Verifies Telegram update matching honors chat and text filters
-#   test_run_telegram_live_validation_returns_connectivity_summary_without_update_polling - Verifies baseline Telegram live validation only calls getMe when no optional checks are requested
+#   test_run_telegram_live_validation_returns_connectivity_summary_without_update_polling - Verifies baseline Telegram live validation only calls getMe when no optional checks are requested and emits explicit remote-boundary semantics
 #   test_run_telegram_live_validation_sends_message_when_chat_id_provided - Verifies Telegram live validation sends an explicit ping when chat_id is supplied
 #   test_run_telegram_live_validation_checks_matching_inbound_update - Verifies Telegram live validation can poll for a matching inbound update using getUpdates
 #   test_run_telegram_live_validation_returns_advisory_when_update_chat_context_missing - Verifies Telegram live validation explicitly skips inbound update proof when no dedicated chat context is provided
 #   test_run_telegram_live_validation_returns_advisory_when_matching_update_text_mismatches - Verifies Telegram live validation reports advisory mismatch semantics when the expected chat updates but the text proof does not match
 #   test_run_telegram_live_validation_returns_advisory_when_matching_update_not_found - Verifies Telegram live validation reports advisory semantics when the expected inbound update never appears
-#   test_run_telegram_docker_validation_returns_startup_api_and_teardown_evidence - Verifies Telegram Docker validation returns startup-proof, API-proof, retained logs, advisories, and teardown details
+#   test_run_telegram_docker_validation_returns_startup_api_and_teardown_evidence - Verifies Telegram Docker validation returns remote-startup proof, API-proof, retained logs, advisories, and teardown details
+#   test_run_telegram_docker_validation_requires_remote_server_base_url - Verifies Telegram Docker validation fails fast when the remote server base URL is missing
 #   test_run_telegram_docker_validation_returns_skipped_summary_when_token_missing - Verifies Telegram Docker validation reports an explicit skipped outcome when bot credentials are unavailable
 #   test_run_telegram_docker_validation_propagates_advisory_api_outcomes_with_startup_proof - Verifies Telegram Docker validation preserves startup proof while surfacing advisory API outcomes explicitly
 #   test_run_artifact_review_validation_returns_advisory_summary_for_persisted_evidence - Verifies artifact review reads persisted evidence only and stays advisory
@@ -55,7 +56,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.9.0 - Locked validation command parsing to canonical TTS_* environment variables only]
+#   LAST_CHANGE: [v1.9.0 - Retargeted Telegram validation expectations to the remote-server topology and explicit client-vs-server evidence boundaries]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -65,6 +66,7 @@ import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from typing import Any, cast
 
 import pytest
 
@@ -193,7 +195,7 @@ def _patch_smoke_server_runtime(
     health: dict | None = None,
     process: ManagedProcessDouble | None = None,
     smoke_returncode: int = 0,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     process_double = process or ManagedProcessDouble()
     captured: dict[str, object] = {}
 
@@ -551,7 +553,7 @@ def test_run_smoke_server_validation_returns_summary_with_expected_evidence_payl
     assert summary["expected_backend"] == "torch"
     assert summary["health"] == health
     assert summary["server_log_path"]
-    run_env = captured["run_kwargs"]["env"]
+    run_env = cast(dict[str, str], captured["run_kwargs"]["env"])
     assert run_env["TTS_SMOKE_BASE_URL"] == "http://127.0.0.1:8124"
     assert run_env["TTS_SMOKE_MODEL_ID"] == OMNIVOICE_SMOKE_MODEL_ID
     assert run_env["TTS_SMOKE_EXPECTED_BACKEND"] == "torch"
@@ -613,7 +615,8 @@ def test_run_smoke_server_validation_uses_expected_backend_override_in_smoke_env
     summary = run_smoke_server_validation(args, env)
 
     assert summary["expected_backend"] == "torch"
-    assert captured["run_kwargs"]["env"]["TTS_SMOKE_EXPECTED_BACKEND"] == "torch"
+    run_env = cast(dict[str, str], captured["run_kwargs"]["env"])
+    assert run_env["TTS_SMOKE_EXPECTED_BACKEND"] == "torch"
 
 
 def test_run_smoke_server_validation_rejects_wrong_expected_backend_for_piper(
@@ -792,7 +795,7 @@ def test_run_smoke_server_validation_reports_startup_timeout_with_server_log_art
     with pytest.raises(RuntimeError) as exc_info:
         run_smoke_server_validation(args, env)
 
-    error = exc_info.value
+    error = cast(ValidationCommandError, exc_info.value)
     assert error.reason == "server_startup_timeout"
     assert error.stage == "server_startup"
     assert error.artifacts["server_log_path"]
@@ -1033,7 +1036,7 @@ def test_run_server_docker_validation_returns_skipped_summary_when_compose_is_un
     with pytest.raises(RuntimeError) as exc_info:
         run_server_docker_validation(args, env)
 
-    error = exc_info.value
+    error = cast(ValidationCommandError, exc_info.value)
     assert error.reason == "docker_compose_unavailable"
     assert error.outcome == "skipped"
     assert error.stage == "preflight"
@@ -1081,7 +1084,7 @@ def test_run_server_docker_validation_reports_teardown_failure_with_retained_art
     with pytest.raises(RuntimeError) as exc_info:
         run_server_docker_validation(args, env)
 
-    error = exc_info.value
+    error = cast(ValidationCommandError, exc_info.value)
     assert error.reason == "docker_teardown_failed"
     assert error.stage == "teardown"
     assert error.artifacts["server_log_path"].endswith("server-docker-log.txt")
@@ -1162,15 +1165,29 @@ def test_run_telegram_live_validation_returns_connectivity_summary_without_updat
         update_timeout_seconds=30,
     )
 
-    summary = asyncio.run(run_telegram_live_validation(args, {}))
+    summary = asyncio.run(
+        run_telegram_live_validation(
+            args,
+            {"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"},
+        )
+    )
 
     assert summary["status"] == "ok"
     assert summary["command"] == "telegram-live"
     assert summary["outcome"] == "passed"
     assert summary["reason"] == "telegram_api_reachable"
+    assert summary["validation_scope"] == "telegram_bot_api_and_remote_boundary_summary"
     assert summary["message_sent"] is False
     assert summary["update_checked"] is False
     assert summary["dedicated_chat_check_requested"] is False
+    assert summary["remote_server_boundary"]["topology"] == "telegram_remote_client"
+    assert (
+        summary["remote_server_boundary"]["server_base_url"]
+        == "http://server.internal:8000"
+    )
+    assert summary["remote_server_boundary"]["telegram_bot_api_checked"] is True
+    assert summary["remote_server_boundary"]["server_side_execution_checked"] is False
+    assert summary["remote_server_boundary"]["boundary_status"] == "configured_remote_server_declared"
     client.get_me.assert_awaited_once()
     client.send_message.assert_not_called()
     client.get_updates.assert_not_called()
@@ -1207,7 +1224,12 @@ def test_run_telegram_live_validation_sends_message_when_chat_id_provided(
         update_timeout_seconds=30,
     )
 
-    summary = asyncio.run(run_telegram_live_validation(args, {}))
+    summary = asyncio.run(
+        run_telegram_live_validation(
+            args,
+            {"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"},
+        )
+    )
 
     assert summary["message_sent"] is True
     assert summary["message_id"] == 777
@@ -1261,7 +1283,12 @@ def test_run_telegram_live_validation_checks_matching_inbound_update(
         update_timeout_seconds=15,
     )
 
-    summary = asyncio.run(run_telegram_live_validation(args, {}))
+    summary = asyncio.run(
+        run_telegram_live_validation(
+            args,
+            {"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"},
+        )
+    )
 
     assert summary["update_checked"] is True
     assert summary["update_check_status"] == "matched"
@@ -1315,7 +1342,12 @@ def test_run_telegram_live_validation_returns_advisory_when_update_chat_context_
         update_timeout_seconds=5,
     )
 
-    summary = asyncio.run(run_telegram_live_validation(args, {}))
+    summary = asyncio.run(
+        run_telegram_live_validation(
+            args,
+            {"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"},
+        )
+    )
 
     assert summary["status"] == "ok"
     assert summary["update_checked"] is False
@@ -1364,15 +1396,22 @@ def test_run_telegram_live_validation_returns_advisory_when_matching_update_text
     )
 
     with pytest.raises(RuntimeError) as exc_info:
-        asyncio.run(run_telegram_live_validation(args, {}))
+        asyncio.run(
+            run_telegram_live_validation(
+                args,
+                {"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"},
+            )
+        )
 
-    error = exc_info.value
+    error = cast(ValidationCommandError, exc_info.value)
     assert error.reason == "telegram_matching_update_text_mismatch"
     assert error.outcome == "advisory"
     assert error.stage == "update_poll"
     assert error.details["expected_update_chat_id"] == 321
     assert error.details["observed_update_chat_id"] == 321
     assert error.details["observed_update_text"] == "wrong ack"
+    assert error.details["failure_boundary"] == "telegram_client_validation"
+    assert error.details["remote_server_boundary"]["topology"] == "telegram_remote_client"
     client.close.assert_awaited_once()
 
 
@@ -1407,15 +1446,21 @@ def test_run_telegram_live_validation_returns_advisory_when_matching_update_not_
     )
 
     with pytest.raises(RuntimeError) as exc_info:
-        asyncio.run(run_telegram_live_validation(args, {}))
+        asyncio.run(
+            run_telegram_live_validation(
+                args,
+                {"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"},
+            )
+        )
 
-    error = exc_info.value
+    error = cast(ValidationCommandError, exc_info.value)
     assert error.reason == "telegram_matching_update_not_found"
     assert error.outcome == "advisory"
     assert error.stage == "update_poll"
     assert error.details["expected_update_chat_id"] == 321
     assert error.details["expected_update_text"] == "ack"
     assert error.details["update_poll_count"] == 0
+    assert error.details["failure_boundary"] == "telegram_client_validation"
     client.send_message.assert_awaited_once_with(321, "validation ping")
     assert client.get_updates.await_count == 2
     client.close.assert_awaited_once()
@@ -1427,6 +1472,7 @@ def test_run_telegram_docker_validation_returns_startup_api_and_teardown_evidenc
 ):
     args = _make_telegram_docker_args(bot_token="token")
     env = _make_smoke_env(tmp_path)
+    env["TTS_TELEGRAM_SERVER_BASE_URL"] = "http://server.internal:8000"
 
     monkeypatch.setattr("scripts.validate_runtime.PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(
@@ -1445,8 +1491,14 @@ def test_run_telegram_docker_validation_returns_startup_api_and_teardown_evidenc
     monkeypatch.setattr(
         "scripts.validate_runtime._wait_for_telegram_docker_startup",
         lambda *args, **kwargs: {
-            "required_markers": ["Telegram API connectivity verified"],
-            "observed_markers": ["Telegram API connectivity verified"],
+            "required_markers": [
+                "Remote server readiness verified",
+                "Telegram API connectivity verified",
+            ],
+            "observed_markers": [
+                "Remote server readiness verified",
+                "Telegram API connectivity verified",
+            ],
             "log_excerpt": "Polling loop is now active",
         },
     )
@@ -1468,6 +1520,13 @@ def test_run_telegram_docker_validation_returns_startup_api_and_teardown_evidenc
             "advisories": [],
             "message_sent": False,
             "update_checked": False,
+            "remote_server_boundary": {
+                "topology": "telegram_remote_client",
+                "server_base_url": "http://server.internal:8000",
+                "server_base_url_configured": True,
+                "telegram_bot_api_checked": True,
+                "server_side_execution_checked": False,
+            },
         }
 
     monkeypatch.setattr(
@@ -1482,10 +1541,38 @@ def test_run_telegram_docker_validation_returns_startup_api_and_teardown_evidenc
     assert summary["reason"] == "telegram_docker_validated"
     assert summary["startup_proof"]["log_excerpt"] == "Polling loop is now active"
     assert summary["telegram_live"]["reason"] == "telegram_api_reachable"
+    assert summary["compose"]["remote_server_base_url"] == "http://server.internal:8000"
+    assert summary["remote_server_boundary"]["topology"] == "telegram_remote_client"
+    assert summary["remote_server_boundary"]["telegram_client_runtime_checked"] is True
+    assert summary["remote_server_boundary"]["server_side_execution_checked"] is False
     assert summary["teardown"]["attempted"] is True
     assert summary["teardown"]["succeeded"] is True
     assert summary["artifacts"]["telegram_log_path"].endswith("telegram-docker-log.txt")
     assert summary["advisories"][0]["reason"] == "telegram_validation_chat_id_missing"
+
+
+def test_run_telegram_docker_validation_requires_remote_server_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    args = _make_telegram_docker_args(bot_token="token")
+    env = _make_smoke_env(tmp_path)
+
+    monkeypatch.setattr("scripts.validate_runtime.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "scripts.validate_runtime.TELEGRAM_DOCKER_COMPOSE_FILE",
+        tmp_path / "docker-compose.telegram-bot.yaml",
+    )
+    (tmp_path / "docker-compose.telegram-bot.yaml").write_text("services: {}", encoding="utf-8")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(run_telegram_docker_validation(args, env))
+
+    error = cast(ValidationCommandError, exc_info.value)
+    assert error.reason == "telegram_server_base_url_missing"
+    assert error.stage == "preflight"
+    assert error.details["failure_boundary"] == "telegram_configuration"
+    assert error.details["requires"] == ["TTS_TELEGRAM_SERVER_BASE_URL"]
 
 
 def test_run_telegram_docker_validation_returns_skipped_summary_when_token_missing(
@@ -1505,7 +1592,7 @@ def test_run_telegram_docker_validation_returns_skipped_summary_when_token_missi
     with pytest.raises(RuntimeError) as exc_info:
         asyncio.run(run_telegram_docker_validation(args, env))
 
-    error = exc_info.value
+    error = cast(ValidationCommandError, exc_info.value)
     assert error.reason == "telegram_bot_token_missing"
     assert error.outcome == "skipped"
     assert error.stage == "preflight"
@@ -1517,6 +1604,7 @@ def test_run_telegram_docker_validation_propagates_advisory_api_outcomes_with_st
 ):
     args = _make_telegram_docker_args(bot_token="token", chat_id=321, expect_update_text="ack")
     env = _make_smoke_env(tmp_path)
+    env["TTS_TELEGRAM_SERVER_BASE_URL"] = "http://server.internal:8000"
 
     monkeypatch.setattr("scripts.validate_runtime.PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(
@@ -1535,8 +1623,14 @@ def test_run_telegram_docker_validation_propagates_advisory_api_outcomes_with_st
     monkeypatch.setattr(
         "scripts.validate_runtime._wait_for_telegram_docker_startup",
         lambda *args, **kwargs: {
-            "required_markers": ["Telegram API connectivity verified"],
-            "observed_markers": ["Telegram API connectivity verified"],
+            "required_markers": [
+                "Remote server readiness verified",
+                "Telegram API connectivity verified",
+            ],
+            "observed_markers": [
+                "Remote server readiness verified",
+                "Telegram API connectivity verified",
+            ],
             "log_excerpt": "Polling loop is now active",
         },
     )
@@ -1566,10 +1660,11 @@ def test_run_telegram_docker_validation_propagates_advisory_api_outcomes_with_st
     with pytest.raises(RuntimeError) as exc_info:
         asyncio.run(run_telegram_docker_validation(args, env))
 
-    error = exc_info.value
+    error = cast(ValidationCommandError, exc_info.value)
     assert error.reason == "telegram_matching_update_not_found"
     assert error.outcome == "advisory"
     assert error.stage == "api_proof"
+    assert error.details["failure_boundary"] == "telegram_client_validation"
     assert error.details["startup_proof"]["log_excerpt"] == "Polling loop is now active"
     assert error.artifacts["telegram_log_path"].endswith("telegram-docker-log.txt")
 

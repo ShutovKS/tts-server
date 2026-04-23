@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # FILE: scripts/validate_runtime.py
-# VERSION: 1.9.1
+#JH|# VERSION: 1.10.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide operator- and CI-facing validation commands for host-specific backend checks, automated local smoke orchestration, Docker parity probes, optional Telegram live connectivity, and explicit advisory artifact review.
-#   SCOPE: CLI subcommands, runtime validation environment helpers, HTTP smoke start/stop orchestration, qwen_fast host-matrix assertions, optional representative real-model validation, server and Telegram Docker parity validation, Telegram Bot API reachability checks, opt-in inbound Telegram update validation, and optional artifact-review of persisted validation evidence
+#   SCOPE: CLI subcommands, runtime validation environment helpers, HTTP smoke start/stop orchestration, qwen_fast host-matrix assertions, optional representative real-model validation, server and Telegram Docker parity validation, Telegram Bot API reachability checks, explicit Telegram remote-server boundary summaries, opt-in inbound Telegram update validation, and optional artifact-review of persisted validation evidence
 #   DEPENDS: M-CONFIG, M-BOOTSTRAP, M-SERVER, M-TELEGRAM, M-HOST-PROBE, M-RUNTIME-SELF-CHECK
 #   LINKS: M-VALIDATION-AUTOMATION
 #   ROLE: SCRIPT
@@ -26,7 +26,7 @@
 #   _run_compose_command - Execute a Docker Compose command with captured output and structured environment handling
 #   _capture_compose_logs - Retain compose logs for a specific service under the evidence directory
 #   _wait_for_server_docker_probes - Wait for Dockerized server health/model probes to succeed and parse JSON payloads
-#   _wait_for_telegram_docker_startup - Wait for Telegram compose logs to prove startup, API connectivity, and polling activation
+#   _wait_for_telegram_docker_startup - Wait for Telegram compose logs to prove remote-server readiness, API connectivity, and polling activation
 #   parse_args - Parse CLI arguments for validation subcommands
 #   build_validation_env - Build a normalized environment mapping for validation runs
 #   _next_update_offset - Compute the follow-up update offset after a baseline Telegram poll
@@ -37,8 +37,8 @@
 #   _build_representative_preflight_summary - Build machine-readable representative target preflight evidence
 #   run_representative_model_validation - Validate one or all optional representative real-model targets through the existing smoke harness
 #   run_server_docker_validation - Validate server Docker parity through compose startup, probes, logs, and teardown
-#   run_telegram_live_validation - Validate Telegram Bot API reachability plus optional inbound update visibility with a real token
-#   run_telegram_docker_validation - Validate Telegram Docker parity through compose startup, polling-log proof, host-side API proof, and teardown
+#   run_telegram_live_validation - Validate Telegram Bot API reachability while making the remote-server boundary explicit
+#   run_telegram_docker_validation - Validate Telegram Docker parity through remote-client startup proof, polling-log proof, host-side API proof, and teardown
 #   _collect_reviewable_artifacts - Collect persisted runtime-validation artifacts from the evidence directory and explicit paths
 #   _review_runtime_artifact - Build an advisory summary for one persisted artifact
 #   run_artifact_review_validation - Review persisted runtime-validation evidence and emit advisory summaries only
@@ -46,7 +46,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.9.1 - Made CLI exit codes follow the structured validation envelope so advisory or skipped ValidationCommandError outcomes stay non-blocking while hard failures remain non-zero]
+#   LAST_CHANGE: [v1.10.0 - Retargeted Telegram live and Docker validation lanes to the remote-client topology by requiring Docker-side remote server configuration, adding explicit boundary evidence fields, and promoting remote-server readiness log proof]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Mapping
+from typing import Any, Mapping, NoReturn
 
 
 # START_BLOCK_BOOTSTRAP_IMPORT_PATH
@@ -94,9 +94,14 @@ SERVER_DOCKER_MODELS_ARTIFACT = "server-docker-models.json"
 SERVER_DOCKER_LOG_ARTIFACT = "server-docker-log.txt"
 TELEGRAM_DOCKER_LOG_ARTIFACT = "telegram-docker-log.txt"
 TELEGRAM_DOCKER_REQUIRED_LOG_MARKERS = (
+    "Remote server readiness verified",
     "Telegram API connectivity verified",
     "Telegram bot startup complete, entering polling loop",
     "Polling loop is now active",
+)
+TELEGRAM_REMOTE_SERVER_COMPANION_EVIDENCE = (
+    "python scripts/validate_runtime.py docker-server",
+    "server /health/ready evidence for the configured TTS_TELEGRAM_SERVER_BASE_URL",
 )
 SUPPORTED_SMOKE_MODEL_IDS = (
     CUSTOM_SMOKE_MODEL_ID,
@@ -662,7 +667,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     telegram_parser = subparsers.add_parser(
         "telegram-live",
-        help="Validate Telegram Bot API reachability with a real bot token.",
+        help="Validate Telegram Bot API reachability and report the configured remote-server boundary with a real bot token.",
     )
     telegram_parser.add_argument(
         "--bot-token",
@@ -717,7 +722,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     docker_telegram_parser = subparsers.add_parser(
         "docker-telegram",
-        help="Validate Telegram bot Docker parity with compose startup, polling-log proof, host-side API proof, and teardown.",
+        help="Validate Telegram bot Docker parity with remote-client startup proof, polling logs, host-side API proof, and teardown.",
     )
     docker_telegram_parser.add_argument(
         "--bot-token",
@@ -762,7 +767,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--startup-timeout-seconds",
         type=float,
         default=90.0,
-        help="Maximum time to wait for Telegram compose logs to prove startup and polling activation.",
+        help="Maximum time to wait for Telegram compose logs to prove remote-server readiness and polling activation.",
     )
 
     artifact_review_parser = subparsers.add_parser(
@@ -976,7 +981,7 @@ def _raise_validation_error(
     stage: str | None = None,
     details: Mapping[str, Any] | None = None,
     artifacts: Mapping[str, Any] | None = None,
-) -> None:
+) -> NoReturn:
     raise ValidationCommandError(
         message,
         command=command,
@@ -1764,9 +1769,9 @@ def run_server_docker_validation(
 
 
 # START_CONTRACT: run_telegram_live_validation
-#   PURPOSE: Validate Telegram Bot API reachability with a real bot token without entering the polling loop.
+#   PURPOSE: Validate Telegram Bot API reachability with a real bot token without entering the polling loop while making the remote-server boundary explicit.
 #   INPUTS: { args: argparse.Namespace - parsed telegram-live CLI arguments, environ: Mapping[str, str] - normalized validation environment }
-#   OUTPUTS: { dict[str, Any] - structured Telegram connectivity summary }
+#   OUTPUTS: { dict[str, Any] - structured Telegram connectivity summary with remote-server boundary semantics }
 #   SIDE_EFFECTS: Performs live Telegram Bot API requests and may optionally send a message to a target chat
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: run_telegram_live_validation
@@ -1794,9 +1799,35 @@ async def run_telegram_live_validation(
         bot_token=token,
         retry_config=RetryConfig(max_attempts=args.max_attempts),
     )
-    # END_BLOCK_INIT_TELEGRAM_CLIENT
+    remote_server_boundary = {
+        "topology": "telegram_remote_client",
+        "server_base_url": str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip().rstrip("/"),
+        "server_base_url_configured": bool(
+            str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip()
+        ),
+        "telegram_bot_api_checked": False,
+        "telegram_client_runtime_checked": False,
+        "server_side_execution_checked": False,
+        "boundary_status": "remote_server_configuration_not_provided",
+    }
+    server_base_url = (
+        str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip().rstrip("/")
+    )
+    if not server_base_url:
+        _raise_validation_error(
+            command,
+            "telegram_server_base_url_missing",
+            "Telegram live validation requires TTS_TELEGRAM_SERVER_BASE_URL so the bot can prove the remote-server topology.",
+            stage="preflight",
+            details={
+                "requires": ["TTS_TELEGRAM_SERVER_BASE_URL"],
+                "failure_boundary": "telegram_configuration",
+                "companion_server_evidence_required": list(
+                    TELEGRAM_REMOTE_SERVER_COMPANION_EVIDENCE
+                ),
+            },
+        )
 
-    # START_BLOCK_EXECUTE_TELEGRAM_VALIDATION
     try:
         bot_info = await client.get_me()
         summary = _build_result_summary(
@@ -1811,8 +1842,34 @@ async def run_telegram_live_validation(
             message_sent=False,
             update_checked=False,
             dedicated_chat_check_requested=False,
+            validation_scope="telegram_bot_api_and_remote_boundary_summary",
+            remote_server_boundary=remote_server_boundary,
             advisories=[],
         )
+        summary["remote_server_boundary"]["telegram_bot_api_checked"] = True
+        summary["remote_server_boundary"]["telegram_client_runtime_checked"] = True
+        if summary["remote_server_boundary"]["server_base_url_configured"]:
+            summary["remote_server_boundary"][
+                "boundary_status"
+            ] = "configured_remote_server_declared"
+        else:
+            summary["remote_server_boundary"][
+                "boundary_status"
+            ] = "remote_server_configuration_not_provided"
+            summary["advisories"].append(
+                {
+                    "kind": "telegram_remote_server_boundary",
+                    "reason": "telegram_server_base_url_missing_from_validation_env",
+                    "message": (
+                        "Telegram live validation proved host-side Bot API reachability only. "
+                        "TTS_TELEGRAM_SERVER_BASE_URL was not provided, so remote-server configuration "
+                        "and server-side execution must be proven by a companion Telegram runtime or server lane."
+                    ),
+                    "companion_server_evidence_required": list(
+                        TELEGRAM_REMOTE_SERVER_COMPANION_EVIDENCE
+                    ),
+                }
+            )
         if args.chat_id is not None:
             message = await client.send_message(args.chat_id, args.message)
             summary["message_sent"] = True
@@ -1834,7 +1891,11 @@ async def run_telegram_live_validation(
                     "telegram_update_timeout_invalid",
                     "Telegram live validation requires a non-negative --update-timeout-seconds",
                     stage="preflight",
-                    details={"update_timeout_seconds": args.update_timeout_seconds},
+                    details={
+                        "update_timeout_seconds": args.update_timeout_seconds,
+                        "failure_boundary": "telegram_client_validation",
+                        "remote_server_boundary": remote_server_boundary,
+                    },
                 )
             expected_update_chat_id = args.expect_update_chat_id
             if expected_update_chat_id is None:
@@ -1898,7 +1959,11 @@ async def run_telegram_live_validation(
                         "Telegram live validation observed a newer update for the expected chat, but its text did not match the requested proof",
                         outcome="advisory",
                         stage="update_poll",
-                        details=details,
+                        details={
+                            **details,
+                            "failure_boundary": "telegram_client_validation",
+                            "remote_server_boundary": remote_server_boundary,
+                        },
                     )
                 _raise_validation_error(
                     command,
@@ -1906,14 +1971,19 @@ async def run_telegram_live_validation(
                     "Telegram live validation did not observe a matching inbound update",
                     outcome="advisory",
                     stage="update_poll",
-                    details=details,
+                    details={
+                        **details,
+                        "failure_boundary": "telegram_client_validation",
+                        "remote_server_boundary": remote_server_boundary,
+                    },
                 )
+            matched_update_payload = matched_update
             matched_message = (
-                matched_update.get("message")
-                or matched_update.get("edited_message")
+                matched_update_payload.get("message")
+                or matched_update_payload.get("edited_message")
                 or {}
             )
-            if matched_update.get("edited_message"):
+            if matched_update_payload.get("edited_message"):
                 update_kind = "edited_message"
             matched_chat = matched_message.get("chat")
             summary["update_checked"] = True
@@ -1923,7 +1993,7 @@ async def run_telegram_live_validation(
             summary["expected_update_text"] = expected_update_text
             summary["update_poll_offset"] = next_offset
             summary["update_poll_count"] = len(polled_updates)
-            summary["matched_update_id"] = matched_update.get("update_id")
+            summary["matched_update_id"] = matched_update_payload.get("update_id")
             summary["matched_update_chat_id"] = (
                 matched_chat.get("id") if isinstance(matched_chat, dict) else None
             )
@@ -1967,6 +2037,24 @@ async def run_telegram_docker_validation(
             },
             artifacts=retained_artifacts,
         )
+    server_base_url = (
+        str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip().rstrip("/")
+    )
+    if not server_base_url:
+        _raise_validation_error(
+            command,
+            "telegram_server_base_url_missing",
+            "Telegram Docker parity requires TTS_TELEGRAM_SERVER_BASE_URL so the bot proves the remote-server topology instead of a local-runtime topology.",
+            stage="preflight",
+            details={
+                "requires": ["TTS_TELEGRAM_SERVER_BASE_URL"],
+                "failure_boundary": "telegram_configuration",
+                "companion_server_evidence_required": list(
+                    TELEGRAM_REMOTE_SERVER_COMPANION_EVIDENCE
+                ),
+            },
+            artifacts=retained_artifacts,
+        )
 
     try:
         compose_command, compose_label = _resolve_compose_invocation()
@@ -1983,6 +2071,7 @@ async def run_telegram_docker_validation(
 
     env = build_validation_env(environ)
     env["TTS_TELEGRAM_BOT_TOKEN"] = token
+    env["TTS_TELEGRAM_SERVER_BASE_URL"] = server_base_url
     main_error: ValidationCommandError | None = None
     startup_proof: dict[str, Any] | None = None
     api_summary: dict[str, Any] | None = None
@@ -2044,6 +2133,7 @@ async def run_telegram_docker_validation(
                 outcome=exc.outcome,
                 stage="api_proof",
                 details={
+                    "failure_boundary": "telegram_client_validation",
                     "startup_proof": startup_proof,
                     "telegram_live": exc.to_summary(),
                 },
@@ -2071,7 +2161,10 @@ async def run_telegram_docker_validation(
             command=command,
             reason="telegram_docker_startup_proof_failed",
             stage="startup_proof",
-            details={"error_type": type(exc).__name__},
+            details={
+                "error_type": type(exc).__name__,
+                "failure_boundary": "telegram_client_runtime",
+            },
             artifacts=retained_artifacts,
         )
     finally:
@@ -2162,6 +2255,20 @@ async def run_telegram_docker_validation(
             "project": TELEGRAM_DOCKER_COMPOSE_PROJECT,
             "service": "telegram-bot",
             "invocation": compose_label,
+            "remote_server_base_url": server_base_url,
+        },
+        remote_server_boundary={
+            "topology": "telegram_remote_client",
+            "server_base_url": server_base_url,
+            "server_base_url_configured": True,
+            "telegram_client_runtime_checked": True,
+            "telegram_bot_api_checked": api_summary is not None,
+            "server_side_execution_checked": False,
+            "server_side_execution_reason": "docker_telegram_validates_remote_client_startup_and_host_bot_api_only",
+            "boundary_status": "configured_remote_server_startup_validated",
+            "companion_server_evidence_required": list(
+                TELEGRAM_REMOTE_SERVER_COMPANION_EVIDENCE
+            ),
         },
         startup_proof=startup_proof,
         telegram_live=api_summary,
