@@ -1,8 +1,8 @@
 # FILE: server/api/responses.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Define HTTP response formatting utilities.
-#   SCOPE: Audio response builders, error response builders
+#   SCOPE: Audio response builders, error response builders, async job correlation header helpers
 #   DEPENDS: M-CONTRACTS
 #   LINKS: M-SERVER
 #   ROLE: RUNTIME
@@ -13,12 +13,13 @@
 #   resolve_save_output - Resolve request-level output persistence override against server defaults
 #   build_error_response - Serialize API error descriptors into JSON HTTP responses
 #   build_audio_response - Build HTTP audio responses and emit response-ready observability events
+#   apply_async_job_headers - Attach stable async job correlation headers to a response
 #   public_artifact_name - Reduce internal artifact paths to public-safe filenames
 #   wav_to_pcm_bytes - Extract raw PCM bytes from WAV payloads
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.1.0 - Added async job correlation header helper so submit, status, cancel, and result responses expose stable request and job identifiers]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from typing import Optional
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
+from core.contracts.jobs import JobSnapshot
 from core.contracts.results import GenerationResult
 from core.observability import log_event
 from server.api.contracts import ErrorDescriptor
@@ -115,6 +117,19 @@ def build_audio_response(
     return Response(content=audio_bytes, media_type=media_type, headers=headers)
 
 
+# START_CONTRACT: apply_async_job_headers
+#   PURPOSE: Attach stable async job correlation headers to a response.
+#   INPUTS: { response: Response - HTTP response to mutate, snapshot: JobSnapshot - internal async job snapshot carrying correlation identifiers }
+#   OUTPUTS: { Response - the same response with async correlation headers attached }
+#   SIDE_EFFECTS: Mutates response headers in place
+#   LINKS: M-SERVER
+# END_CONTRACT: apply_async_job_headers
+def apply_async_job_headers(response: Response, snapshot: JobSnapshot) -> Response:
+    response.headers["x-job-id"] = snapshot.job_id
+    response.headers["x-submit-request-id"] = snapshot.submit_request_id
+    return response
+
+
 # START_CONTRACT: public_artifact_name
 #   PURPOSE: Convert an internal artifact path into a public-safe filename.
 #   INPUTS: { path: str | Path - artifact path or filename }
@@ -141,6 +156,7 @@ __all__ = [
     "resolve_save_output",
     "build_error_response",
     "build_audio_response",
+    "apply_async_job_headers",
     "public_artifact_name",
     "wav_to_pcm_bytes",
 ]

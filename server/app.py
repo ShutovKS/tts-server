@@ -1,5 +1,5 @@
 # FILE: server/app.py
-# VERSION: 1.0.2
+# VERSION: 1.0.3
 # START_MODULE_CONTRACT
 #   PURPOSE: Compose the FastAPI application with all routes, middleware, and error handlers.
 #   SCOPE: FastAPI app factory, route registration, middleware setup, lifespan management
@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.2 - Switched server CORS to the explicit TTS_CORS_ALLOWED_ORIGINS setting with local demo defaults so forwarded public-host origins can be enabled without source edits]
+#   LAST_CHANGE: [v1.0.3 - Exposed async correlation headers through CORS so remote multi-client consumers can read stable job and submit identifiers]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -103,7 +103,15 @@ def create_app(settings: Optional[ServerSettings] = None) -> FastAPI:
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["x-request-id", "x-model-id", "x-backend-id"],
+        expose_headers=[
+            "x-request-id",
+            "x-model-id",
+            "x-backend-id",
+            "x-job-id",
+            "x-submit-request-id",
+            "x-tts-mode",
+            "x-saved-output-file",
+        ],
     )
 
     # START_BLOCK_CONFIGURE_APP_STATE
