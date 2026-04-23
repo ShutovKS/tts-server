@@ -16,12 +16,14 @@ This document describes deployment options for the Telegram bot service.
    ffmpeg -version
    ```
 
-2. **Python dependencies**: choose the runtime contour that matches the family you want the bot to serve.
+2. **Python dependencies**: install the Telegram adapter dependencies needed to run the remote client process. In Phase 1 the bot does not own model hosting or local inference; the central HTTP server does.
    ```bash
-   # Stable shared lane: Qwen + Piper
+   # Stable shared lane for the Telegram adapter process
    pip install -r requirements.txt
 
-   # Dedicated family lane when you want live OmniVoice execution
+   # Optional dedicated lane only when repository packaging requires it
+   # for the Telegram process on a specific host; this does not move
+   # runtime/model ownership into the bot process.
    pip install -r profiles/packs/family/omnivoice.txt
    ```
 
@@ -30,7 +32,7 @@ This document describes deployment options for the Telegram bot service.
    pip install -r requirements-ci.txt
    ```
 
-   If you are migrating to the profile-aware launcher flow, prefer checking or creating the resolved family environment instead of guessing the pack manually:
+   If you are using the profile-aware launcher flow, prefer checking or creating the resolved Telegram adapter environment instead of guessing the pack manually:
    ```bash
    python -m launcher doctor --family qwen --module telegram
    python -m launcher create-env --family qwen --module telegram --apply
@@ -50,6 +52,7 @@ TTS_BACKEND_AUTOSELECT=true
 
 # === Telegram Bot Settings ===
 TTS_TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
+TTS_TELEGRAM_SERVER_BASE_URL=http://server.internal:8000
 # Optional: Comma-separated user IDs for allowlist (empty = all users allowed)
 TTS_TELEGRAM_ALLOWED_USER_IDS=
 # Optional: Admin user IDs with elevated access
@@ -69,6 +72,16 @@ TTS_TELEGRAM_POLL_INTERVAL_SECONDS=1.0
 # Optional: Max retry attempts for API calls (default: 3)
 TTS_TELEGRAM_MAX_RETRIES=3
 ```
+
+## Phase 1 cutover and rollback
+
+Phase 1 rollout order is fixed, bring up the central HTTP server first, verify its readiness, then point Telegram at that server, then consider any other remote client later. The server is the runtime and model host for the phase, not the bot container.
+
+Before you call the migration good, collect both server-side and Telegram-side evidence. On the server side, keep the output from `GET /health/live`, `GET /health/ready`, and `GET /api/v1/models`, or the corresponding `python scripts/validate_runtime.py smoke-server` or `python scripts/validate_runtime.py docker-server` output for the chosen deployment. On the Telegram side, retain the `telegram-live` result plus the compose logs or service logs from the same cutover window. `telegram-live` proves Bot API reachability and client boundary behavior only, so it must be paired with the server proof.
+
+If Telegram or another remote client starts failing after cutover, roll back in the opposite order. Stop or repoint the clients first, recover the central server until readiness is healthy again, then restart or repoint the clients after the server is ready. Do not keep client traffic pointed at a broken server while you try to diagnose it from the client side.
+
+At no point should the bot silently infer local runtime ownership, local model hosting, or local inference fallback. If the remote server is unavailable or the contract is not satisfied, fail clearly and surface the remote boundary problem.
 
 ## Deployment Options
 
@@ -93,7 +106,7 @@ For Linux servers, use the provided systemd unit file:
 # Copy unit file
 sudo cp docs/telegram-bot.service /etc/systemd/system/
 
-# Edit to adjust paths and the selected family interpreter
+# Edit to adjust paths and the resolved Telegram adapter interpreter
 sudo nano /etc/systemd/system/telegram-bot.service
 
 # Reload systemd
@@ -113,17 +126,17 @@ journalctl -u telegram-bot -f
 ### Option 3: Direct Python Execution
 
 ```bash
-# Run directly from the selected family environment
+# Run the Telegram remote client process
 python -m telegram_bot
 
 # Or with custom settings
 TTS_TELEGRAM_BOT_TOKEN=your_token python -m telegram_bot
 ```
 
-Under the profile-aware environment layout, the practical operator flow is:
+Under the profile-aware environment layout, the practical operator flow is still about resolving the interpreter for the Telegram adapter process, not assigning runtime/model ownership to Telegram:
 
 ```bash
-# Inspect which interpreter the selected family should use
+# Inspect which interpreter the Telegram adapter should use on this host
 python -m launcher plan-run --family qwen --module telegram
 
 # Execute through the resolved interpreter in dry-run mode first
@@ -136,10 +149,9 @@ The Telegram bot follows this startup sequence:
 
 1. **Configuration validation** - Validate required settings
 2. **ffmpeg check** - Verify ffmpeg is available
-3. **Token validation** - Test bot token via Telegram API
-4. **Core runtime initialization** - Load the backend/runtime packages available in the selected family environment
-5. **Job execution setup** - Initialize job execution infrastructure
-6. **Polling start** - Begin receiving updates from Telegram
+3. **Remote server configuration and readiness check** - Verify `TTS_TELEGRAM_SERVER_BASE_URL` is configured and the central server reports a usable remote contract
+4. **Token validation** - Test bot token via Telegram API
+5. **Polling and delivery startup** - Begin receiving updates from Telegram and polling remote async jobs for delivery
 
 ## Health Checks
 
@@ -148,8 +160,11 @@ The Telegram bot follows this startup sequence:
 The bot performs self-checks at startup:
 - Bot token validation
 - ffmpeg availability
-- Core runtime initialization
-- Model loading (if preloaded)
+- remote server base URL configuration
+- remote server readiness and contract reachability
+- Telegram API connectivity
+
+These checks validate the Telegram client boundary only. In Phase 1 they are not evidence that the bot container owns local inference, local job execution, or local model loading.
 
 ### Runtime Health
 

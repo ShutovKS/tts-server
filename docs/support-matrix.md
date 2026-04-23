@@ -59,7 +59,12 @@ python scripts/validate_runtime.py artifact-review
 - `python scripts/validate_runtime.py docker-server` starts the server compose lane with a runtime-selected host port, waits for `/health/live`, `/health/ready`, and `/api/v1/models`, and retains the Docker JSON and log artifacts automatically.
 - `python scripts/validate_runtime.py smoke-server` starts a temporary local HTTP server, waits for `/health/live` and `/health/ready`, runs the smoke pytest module, and stops the server automatically.
 - Smoke model selection is model-aware: default behavior validates Qwen custom coverage, while `--smoke-model-id Piper-en_US-lessac-medium` (or `TTS_SMOKE_MODEL_ID=Piper-en_US-lessac-medium`) switches smoke requests to the Piper path through `POST /v1/audio/speech` and expects ONNX routing.
-- `python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"` validates real Telegram Bot API reachability without entering the long-polling loop. Add `--chat-id <id>` if you also want an automated `sendMessage` check.
+- `python scripts/validate_runtime.py telegram-live --bot-token "$TTS_TELEGRAM_BOT_TOKEN"` validates real Telegram Bot API reachability without entering the long-polling loop and records the configured remote-server boundary when `TTS_TELEGRAM_SERVER_BASE_URL` is present. It is not server-execution proof by itself. Add `--chat-id <id>` if you also want an automated `sendMessage` check.
+- For Phase 1 operators, `telegram-live` should be read as boundary proof only. Pair it with server-side readiness evidence from the same deployment, usually `GET /health/ready` and `GET /api/v1/models`, before you declare the migration complete.
 - Add `--expect-update-chat-id <id>` and optionally `--expect-update-text <substring>` for an opt-in dedicated validation chat where the script also confirms that a matching newer inbound update becomes visible through `getUpdates`.
 - `python scripts/validate_runtime.py representative-models --target piper` is the optional representative-model success path on this host, while `--target omnivoice` remains an additive host-specific validation lane that depends on a runtime-ready OmniVoice environment and retained local assets.
 - `python scripts/validate_runtime.py artifact-review` is advisory only and reads retained repository-local evidence such as the server Docker JSON and log artifacts plus the CLI launchability transcript.
+
+## Canonical contract pointer
+
+For Phase 1 remote clients and deployment notes, the canonical HTTP server contract is [docs/server-http-contract.md](server-http-contract.md). Use that document as the source of truth for server behavior, async states, readiness semantics, and remote error handling.

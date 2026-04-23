@@ -424,6 +424,34 @@ See [cli/README.md](cli/README.md) for adapter-specific details.
 
 ## Running the HTTP server
 
+### Phase 1 deployment shape
+
+Phase 1 uses one internal HTTP server as the sole runtime and model host. Treat it as a network-perimeter protected service, not a public-internet deployment.
+
+The server bind settings, browser CORS policy, and client base URL are separate concerns:
+
+- `TTS_HOST` and `TTS_PORT` control where the server listens.
+- `TTS_CORS_ALLOWED_ORIGINS` controls which browser origins may call the API.
+- remote clients, including the static demo frontend, must be configured with the server base URL and must not infer capability from local `.models/` folders.
+
+No Auth is the Phase 1 contract. Access control comes from the internal network boundary and whatever perimeter protection the operator places in front of the server.
+
+The canonical server-side capability bindings remain `TTS_ACTIVE_FAMILY`, `TTS_DEFAULT_CUSTOM_MODEL`, `TTS_DEFAULT_DESIGN_MODEL`, and `TTS_DEFAULT_CLONE_MODEL`. Those bindings define what the running server can do, and they are not replaced by whatever model directories happen to exist on a client machine.
+
+For downstream integrators, the source of truth is [docs/server-http-contract.md](docs/server-http-contract.md). That contract defines the canonical HTTP server behavior for Phase 1, and remote clients must adapt to it rather than infer local ownership from their own filesystem or launcher state.
+
+### Phase 1 cutover guardrails
+
+Phase 1 rollout is server first, then Telegram against that server, then any other remote clients later. Do not flip client traffic first and do not treat a client deployment as proof that the server is ready.
+
+Rollback follows the reverse order. If Telegram or another remote client starts failing after cutover, point or stop the clients first, recover the central server until `GET /health/ready` is healthy again, then restart or repoint the clients only after the server is ready.
+
+Clients must fail clearly when the server contract is not satisfied. They must not silently infer local model hosting, local inference ownership, or a fallback runtime from `.models/` on the client host.
+
+Operator evidence for a successful migration needs both sides of the boundary. On the server side, retain readiness and model discovery proof from `GET /health/live`, `GET /health/ready`, and `GET /api/v1/models`, plus the validation command output for the chosen scenario. On the Telegram side, `telegram-live` proves Bot API and boundary behavior only, so pair it with companion server readiness evidence from the same deployment before declaring the migration good.
+
+Do not present Phase 1 as public-internet ready, and do not present the CLI as migrated in Phase 1.
+
 ### Local environment
 
 ```bash
@@ -443,6 +471,8 @@ docker compose -f docker-compose.server.yaml up --build
 ```
 
 The compose scenario builds from [server/Dockerfile](server/Dockerfile) with repository-root build context, mounts shared working directories, and exposes port `8000` by default.
+
+For Phase 1 operators, this is the preferred central-server deployment path when you want one internal HTTP model host that remote clients can reach through a known base URL.
 
 For V1 Docker validation, use the detached compose lane rather than treating this section as launch-only documentation: `docker compose -f docker-compose.server.yaml up --build -d server`, probe `/health/live`, `/health/ready`, and `/api/v1/models` into `.sisyphus/evidence/server-docker-health-live.json`, `.sisyphus/evidence/server-docker-health-ready.json`, and `.sisyphus/evidence/server-docker-models.json`, retain `docker compose -f docker-compose.server.yaml logs --no-color server > .sisyphus/evidence/server-docker-log.txt`, then stop the lane with `docker compose -f docker-compose.server.yaml down --remove-orphans`.
 
@@ -504,6 +534,7 @@ Shared settings are parsed by [`CoreSettings.from_env()`](core/config.py:112). C
 - `TTS_DEFAULT_CUSTOM_MODEL`
 - `TTS_DEFAULT_DESIGN_MODEL`
 - `TTS_DEFAULT_CLONE_MODEL`
+- `TTS_CORS_ALLOWED_ORIGINS`
 - `TTS_BACKEND`
 - `TTS_BACKEND_AUTOSELECT`
 - `TTS_SAMPLE_RATE`
@@ -520,6 +551,8 @@ Default behavior for this contract is:
 These variables are the source-of-truth contract that launcher and runtime share. When a capability binding is absent, the corresponding mode is expected to fail with a controlled unsupported-mode response instead of silently falling back to some other local model.
 
 That same contract is now consumed consistently by the launcher, `/health/ready`, the CLI, the Telegram bot, and the static frontend demo. Transport adapters should treat runtime capability bindings as authoritative and should not infer enabled modes from the contents of `.models/`.
+
+For Phase 1, the static frontend demo and any other remote client should be given an explicit server base URL. They should talk to the HTTP server over the network, not try to discover capabilities from local model directories on the client host.
 
 Supported backend keys now include:
 
