@@ -1,5 +1,5 @@
 # FILE: tests/unit/scripts/test_windows_launcher_script.py
-# VERSION: 1.4.2
+# VERSION: 1.4.3
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the Windows PowerShell and CMD launcher entrypoints stay aligned with the documented profile-aware Windows launch flow.
 #   SCOPE: launcher-script presence, PowerShell orchestration markers, curated model menu anchors, CMD delegation shape, and bounded secret-handling command references
@@ -14,12 +14,12 @@
 #   CMD_SCRIPT_PATH - Canonical path to the Windows CMD wrapper.
 #   test_windows_launcher_script_exists_with_grace_contract - Verifies the PowerShell launcher file exists and retains top-level GRACE contract anchors.
 #   test_windows_launcher_script_reuses_profile_aware_launcher_and_family_download_paths - Verifies the PowerShell launcher delegates env setup and execution to launcher commands while keeping HF and Piper download flows explicit.
-#   test_windows_launcher_script_manages_http_server_pid_restart - Verifies the PowerShell launcher carries PID-file lifecycle helpers for restarting launcher-managed HTTP server processes and prompting on foreign listeners.
+#   test_windows_launcher_script_manages_http_server_pid_restart - Verifies the PowerShell launcher carries PID-file lifecycle helpers for restarting launcher-managed HTTP server processes, prompting on foreign listeners, and avoiding the PowerShell automatic $PID collision.
 #   test_windows_cmd_launcher_wraps_powershell_script_without_file_execution - Verifies the CMD wrapper executes the PowerShell launcher via an inline command string instead of PowerShell -File script execution.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.4.2 - Added regression coverage for launcher-managed HTTP server PID files so reruns can restart owned processes and prompt on foreign listeners]
+#   LAST_CHANGE: [v1.4.3 - Added regression coverage for the safe Stop-HttpServerProcess ProcessId parameter so managed restart and timeout cleanup paths avoid the PowerShell automatic $PID collision]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -89,6 +89,9 @@ def test_windows_launcher_script_manages_http_server_pid_restart():
     assert "Launcher-managed HTTP server is already running. [R]estart / [K]eep existing / [C]hange port" in contents
     assert "Stopping existing launcher-managed HTTP server" in contents
     assert "Port is occupied by a non-launcher process. [S]top and restart / [K]eep existing / [C]hange port" in contents
+    assert "[Parameter(Mandatory = $true)][int]$ProcessId" in contents
+    assert "Stop-HttpServerProcess -ProcessId" in contents
+    assert "Stop-HttpServerProcess -Pid" not in contents
 
 
 def test_windows_cmd_launcher_wraps_powershell_script_without_file_execution():
