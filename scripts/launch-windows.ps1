@@ -1,5 +1,5 @@
 # FILE: scripts/launch-windows.ps1
-# VERSION: 1.1.2
+# VERSION: 1.1.4
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide an interactive Windows PowerShell launcher that orchestrates profile-aware environment setup, optional model downloads, and adapter startup.
 #   SCOPE: Windows-only preflight checks, service/model prompts, launcher CLI orchestration, family-env bootstrap, model artifact validation, optional Hugging Face and Piper downloads, inline-wrapper project-root fallback, and final adapter execution.
@@ -38,7 +38,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.2 - Added launcher-managed HTTP server PID lifecycle so reruns restart owned processes and prompt when foreign listeners occupy the target port]
+#   LAST_CHANGE: [v1.1.4 - Started the resolved HTTP server entrypoint directly so launcher-managed readiness and PID cleanup track the real server process instead of an intermediate launcher wrapper]
 # END_CHANGE_SUMMARY
 
 Set-StrictMode -Version 3.0
@@ -523,27 +523,27 @@ function Get-TcpOwningProcessId {
 
 function Stop-HttpServerProcess {
     param(
-        [Parameter(Mandatory = $true)][int]$Pid,
+        [Parameter(Mandatory = $true)][int]$ProcessId,
         [Parameter(Mandatory = $true)][string]$ProjectRoot,
         [int]$WaitSeconds = 10
     )
 
-    $process = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
     if ($null -eq $process) {
         Clear-HttpServerPidFile -ProjectRoot $ProjectRoot
         return
     }
 
-    Stop-Process -Id $Pid -ErrorAction SilentlyContinue
+    Stop-Process -Id $ProcessId -ErrorAction SilentlyContinue
     $deadline = (Get-Date).AddSeconds($WaitSeconds)
     while ((Get-Date) -lt $deadline) {
-        $process = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+        $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
         if ($null -eq $process) { break }
         Start-Sleep -Seconds 1
     }
-    $process = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
     if ($null -ne $process) {
-        Stop-Process -Id $Pid -Force -ErrorAction SilentlyContinue
+        Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
     }
     Clear-HttpServerPidFile -ProjectRoot $ProjectRoot
 }
@@ -566,12 +566,12 @@ function Ensure-HttpServerLaunchTarget {
                 switch ($managedDecision.Trim().ToLower()) {
                     'r' {
                         Write-Host ("Stopping existing launcher-managed HTTP server (PID {0}) before restart." -f $pidInfo.PID) -ForegroundColor Cyan
-                        Stop-HttpServerProcess -Pid ([int]$pidInfo.PID) -ProjectRoot $ProjectRoot
+                        Stop-HttpServerProcess -ProcessId ([int]$pidInfo.PID) -ProjectRoot $ProjectRoot
                         break
                     }
                     'restart' {
                         Write-Host ("Stopping existing launcher-managed HTTP server (PID {0}) before restart." -f $pidInfo.PID) -ForegroundColor Cyan
-                        Stop-HttpServerProcess -Pid ([int]$pidInfo.PID) -ProjectRoot $ProjectRoot
+                        Stop-HttpServerProcess -ProcessId ([int]$pidInfo.PID) -ProjectRoot $ProjectRoot
                         break
                     }
                     'c' {
@@ -671,11 +671,19 @@ function Start-SelectedService {
     Write-Host ("Launching: {0}" -f ($dryRun.Payload.exec.command -join ' ')) -ForegroundColor Yellow
 
     if ($Service.Key -eq 'server') {
+        $resolvedCommand = @($dryRun.Payload.exec.command)
+        if ($resolvedCommand.Count -eq 0) {
+            throw 'Launcher dry-run did not return an executable server command.'
+        }
+        $resolvedArguments = @()
+        if ($resolvedCommand.Count -gt 1) {
+            $resolvedArguments = @($resolvedCommand[1..($resolvedCommand.Count - 1)])
+        }
         Ensure-HttpServerLaunchTarget -ProjectRoot $ProjectRoot -BindHost $env:TTS_HOST -BindPort $env:TTS_PORT -Family $Family -Module $Module
-        $process = Start-Process -FilePath 'py' -ArgumentList @('-3.11', '-m', 'launcher', '--project-root', $ProjectRoot, 'exec', '--family', $Family, '--module', $Module) -WorkingDirectory $ProjectRoot -PassThru
+        $process = Start-Process -FilePath $resolvedCommand[0] -ArgumentList $resolvedArguments -WorkingDirectory $ProjectRoot -PassThru
         Write-Host ("Server process started with PID {0}." -f $process.Id) -ForegroundColor Cyan
         if (-not (Wait-HttpHealthCheck -BindHost $env:TTS_HOST -BindPort $env:TTS_PORT)) {
-            Stop-HttpServerProcess -Pid $process.Id -ProjectRoot $ProjectRoot
+            Stop-HttpServerProcess -ProcessId $process.Id -ProjectRoot $ProjectRoot
             throw 'HTTP server failed to report live after startup.'
         }
         $pidFile = Get-HttpServerPidFilePath -ProjectRoot $ProjectRoot
