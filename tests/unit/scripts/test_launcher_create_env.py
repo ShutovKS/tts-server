@@ -1,8 +1,8 @@
 # FILE: tests/unit/scripts/test_launcher_create_env.py
-# VERSION: 1.1.3
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the launcher create-env command for isolated family environment planning and failure reporting.
-#   SCOPE: dry-run step output, platform-aware interpreter/env paths, requirements preview formatting, and deterministic apply failure payloads
+#   SCOPE: dry-run step output, platform-aware interpreter/env paths, family isolation policy, requirements preview formatting, and deterministic apply failure payloads
 #   DEPENDS: M-LAUNCHER
 #   LINKS: V-M-LAUNCHER
 #   ROLE: TEST
@@ -11,6 +11,7 @@
 #
 # START_MODULE_MAP
 #   _preview_has_suffix - Normalize requirements preview paths before suffix assertions
+#   _assert_family_environment - Verify launcher output reports the canonical per-family environment policy
 #   _run_create_env - Execute launcher create-env in-process and capture its JSON payload deterministically
 #   test_launcher_create_env_outputs_qwen_steps_without_apply - Verifies qwen dry-run output exposes the launcher's current bootstrap argv and pip install steps
 #   test_launcher_create_env_outputs_omnivoice_steps_without_apply - Verifies omnivoice dry-run output resolves the family-specific env root and dependency pack preview without claiming host-shell portability
@@ -20,7 +21,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.3 - Updated create-env assertions for host-aware venv creation commands while preserving runtime-import isolation coverage]
+#   LAST_CHANGE: [v1.2.0 - Added create-env assertions for canonical one-family-one-environment launcher policy]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -57,6 +59,36 @@ def _preview_has_suffix(payload: dict, suffix: str) -> bool:
     )
 
 
+# START_CONTRACT: _assert_family_environment
+#   PURPOSE: Verify launcher output exposes canonical per-family environment policy fields.
+#   INPUTS: { payload: dict - launcher JSON payload, family: str - expected family key, module: str - expected module key }
+#   OUTPUTS: { None - assertion helper }
+#   SIDE_EFFECTS: none
+#   LINKS: M-LAUNCHER
+# END_CONTRACT: _assert_family_environment
+def _assert_family_environment(payload: dict[str, Any], *, family: str, module: str) -> None:
+    family_environment = payload["family_environment"]
+    create_env = payload["create_env"]
+
+    assert create_env["environment_isolated"] is True
+    assert create_env["family_environment"] == family_environment
+    assert family_environment["policy"] == "one_family_one_environment"
+    assert family_environment["family"] == family
+    assert family_environment["expected_env_name"] == family
+    assert family_environment["expected_env_matches_family"] is True
+    assert family_environment["shared_env_supported_for_runtime"] is False
+    assert family_environment["expected_env_root"] == create_env["expected_env_root"]
+    assert family_environment["expected_python_path"] == create_env["expected_python_path"]
+    assert family_environment["recommended_create_env_command"][-6:] == [
+        "create-env",
+        "--family",
+        family,
+        "--module",
+        module,
+        "--apply",
+    ]
+
+
 # START_CONTRACT: _run_create_env
 #   PURPOSE: Execute launcher create-env in-process so tests can assert structured output without ambient shell state.
 #   INPUTS: { args: tuple[str, ...] - create-env CLI arguments following the subcommand }
@@ -64,7 +96,7 @@ def _preview_has_suffix(payload: dict, suffix: str) -> bool:
 #   SIDE_EFFECTS: Mutates process argv for the duration of the call and captures stdout through pytest fixtures
 #   LINKS: M-LAUNCHER
 # END_CONTRACT: _run_create_env
-def _run_create_env(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, dict]:
+def _run_create_env(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, dict[str, Any]]:
     original_argv = sys.argv[:]
     try:
         sys.argv = [
@@ -88,6 +120,7 @@ def test_launcher_create_env_outputs_qwen_steps_without_apply(capsys: pytest.Cap
     assert exit_code == 0
     assert payload["create_env"]["apply"] is False
     assert payload["create_env"]["family"] == "qwen"
+    _assert_family_environment(payload, family="qwen", module="server")
     if platform.system().lower() == "windows":
         assert steps[0] == ["py", "-3.11", "-m", "venv", payload["create_env"]["expected_env_root"]]
     else:
@@ -111,6 +144,7 @@ def test_launcher_create_env_outputs_omnivoice_steps_without_apply(
 
     assert exit_code == 0
     assert payload["create_env"]["family"] == "omnivoice"
+    _assert_family_environment(payload, family="omnivoice", module="telegram")
     assert expected_env_fragment in steps[0][-1]
     if platform.system().lower() == "windows":
         assert payload["create_env"]["expected_python_path"].endswith(
@@ -262,7 +296,7 @@ def test_launcher_create_env_apply_reports_error_json_when_install_fails(
     assert payload["create_env"]["apply"] is True
     assert payload["create_env"]["created"] is True
     assert payload["create_env"]["error"] == {
-        "step": "install_compiled_requirements",
+        "step": "runtime_bootstrap",
         "command": install_command,
         "returncode": 23,
         "stdout": "install stdout",

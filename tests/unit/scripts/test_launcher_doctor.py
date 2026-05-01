@@ -1,8 +1,8 @@
 # FILE: tests/unit/scripts/test_launcher_doctor.py
-# VERSION: 1.1.1
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the launcher doctor command for isolated family environment diagnostics.
-#   SCOPE: doctor output for runtime pack presence and expected env/python paths
+#   SCOPE: doctor output for runtime pack presence, family isolation policy, and expected env/python paths
 #   DEPENDS: M-LAUNCHER
 #   LINKS: V-M-LAUNCHER
 #   ROLE: TEST
@@ -21,7 +21,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.1 - Aligned module verification links with launcher ownership while keeping doctor path and payload assertions host-aware]
+#   LAST_CHANGE: [v1.2.0 - Added doctor assertions for canonical one-family-one-environment launcher policy]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -46,7 +47,7 @@ pytestmark = pytest.mark.unit
 #   SIDE_EFFECTS: Spawns the launcher subprocess
 #   LINKS: M-LAUNCHER
 # END_CONTRACT: _run_launcher_json
-def _run_launcher_json(args: list[str]) -> dict[str, object]:
+def _run_launcher_json(args: list[str]) -> dict[str, Any]:
     completed = subprocess.run(
         [sys.executable, "-m", "launcher", *args],
         cwd=PROJECT_ROOT,
@@ -77,7 +78,7 @@ def _expected_python_suffix(env_name: str) -> str:
     return _normalized_path(str(Path(".envs") / env_name / interpreter))
 
 
-def _assert_compiled_requirements(compiled: dict[str, object], *, family: str, module: str) -> None:
+def _assert_compiled_requirements(compiled: dict[str, Any], *, family: str, module: str) -> None:
     preview_lines = compiled["preview_lines"]
 
     assert compiled["pack_refs"]["family"] == [family]
@@ -104,12 +105,19 @@ def _assert_compiled_requirements(compiled: dict[str, object], *, family: str, m
 #   SIDE_EFFECTS: none
 #   LINKS: M-LAUNCHER
 # END_CONTRACT: _assert_doctor_payload
-def _assert_doctor_payload(payload: dict[str, object], *, family: str, module: str) -> None:
+def _assert_doctor_payload(payload: dict[str, Any], *, family: str, module: str) -> None:
     doctor = payload["doctor"]
+    family_environment = payload["family_environment"]
 
     assert payload["family"]["key"] == family
     assert payload["module"]["key"] == module
     assert payload["required_env_name"] == family
+    assert family_environment["environment_isolated"] is True
+    assert family_environment["policy"] == "one_family_one_environment"
+    assert family_environment["family"] == family
+    assert family_environment["expected_env_name"] == family
+    assert family_environment["expected_env_matches_family"] is True
+    assert family_environment["shared_env_supported_for_runtime"] is False
     assert set(doctor) == {
         "family",
         "module",
@@ -118,6 +126,7 @@ def _assert_doctor_payload(payload: dict[str, object], *, family: str, module: s
         "compiled_requirements",
         "expected_env_root",
         "expected_python_path",
+        "family_environment",
         "checks",
         "missing_steps",
     }
@@ -125,12 +134,15 @@ def _assert_doctor_payload(payload: dict[str, object], *, family: str, module: s
     assert doctor["module"] == module
     assert doctor["missing_pack_files"] == []
     assert doctor["compiled_requirements"]["pack_files"] == doctor["pack_files"]
+    assert doctor["family_environment"] == family_environment
     assert _normalized_path(doctor["expected_env_root"]).endswith(
         f"/{_expected_env_root_suffix(family)}"
     )
     assert _normalized_path(doctor["expected_python_path"]).endswith(
         f"/{_expected_python_suffix(family)}"
     )
+    assert family_environment["expected_env_root"] == doctor["expected_env_root"]
+    assert family_environment["expected_python_path"] == doctor["expected_python_path"]
 
     checks = doctor["checks"]
     assert set(checks) == {

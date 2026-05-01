@@ -1,8 +1,8 @@
 # FILE: tests/unit/scripts/test_launcher_exec.py
-# VERSION: 1.0.1
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the launcher exec command for resolved family entrypoint execution planning.
-#   SCOPE: deterministic dry-run command payloads and missing-python command wiring behavior
+#   SCOPE: deterministic dry-run command payloads, family isolation policy, and missing-python command wiring behavior
 #   DEPENDS: M-LAUNCHER
 #   LINKS: V-M-LAUNCHER
 #   ROLE: TEST
@@ -12,13 +12,14 @@
 # START_MODULE_MAP
 #   _make_deterministic_host_profile - Build a stable host profile for dry-run launcher command assertions
 #   _expected_python_path - Compute the platform-aware dedicated interpreter path for a family environment
+#   _assert_family_environment - Verify exec output carries the canonical per-family environment policy
 #   _run_exec_dry_run - Execute launcher exec --dry-run in-process with deterministic host probing and interpreter existence
 #   test_launcher_exec_dry_run_outputs_platform_aware_qwen_command - Verifies dry-run exec returns the exact qwen server command payload
 #   test_launcher_exec_reports_missing_python_when_env_absent - Verifies subprocess CLI wiring reports the exact missing-interpreter payload for telegram execution
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Shifted exec dry-run evidence to deterministic in-process command assertions while preserving subprocess coverage for missing-interpreter wiring]
+#   LAST_CHANGE: [v1.1.0 - Added exec assertions for canonical one-family-one-environment launcher policy]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -78,6 +80,35 @@ def _expected_python_path(env_name: str, project_root: Path = PROJECT_ROOT) -> s
     if platform.system().lower() == "windows":
         return str(env_root / "Scripts" / "python.exe")
     return str(env_root / "bin" / "python")
+
+
+# START_CONTRACT: _assert_family_environment
+#   PURPOSE: Verify an exec payload carries the canonical family-isolated runtime contour.
+#   INPUTS: { payload: dict - launcher JSON payload, family: str - expected family key, module: str - expected module key }
+#   OUTPUTS: { None - assertion helper }
+#   SIDE_EFFECTS: none
+#   LINKS: V-M-LAUNCHER
+# END_CONTRACT: _assert_family_environment
+def _assert_family_environment(payload: dict[str, Any], *, family: str, module: str) -> None:
+    family_environment = payload["family_environment"]
+    exec_payload = payload["exec"]
+
+    assert exec_payload["family_environment"] == family_environment
+    assert family_environment["environment_isolated"] is True
+    assert family_environment["policy"] == "one_family_one_environment"
+    assert family_environment["family"] == family
+    assert family_environment["expected_env_name"] == family
+    assert family_environment["expected_env_matches_family"] is True
+    assert family_environment["shared_env_supported_for_runtime"] is False
+    assert family_environment["expected_python_path"] == exec_payload["command"][0]
+    assert family_environment["recommended_create_env_command"][-6:] == [
+        "create-env",
+        "--family",
+        family,
+        "--module",
+        module,
+        "--apply",
+    ]
 
 
 # START_CONTRACT: _run_exec_dry_run
@@ -145,6 +176,7 @@ def test_launcher_exec_dry_run_outputs_platform_aware_qwen_command(
         module="server",
         python_exists=True,
     )
+    family_environment = payload["family_environment"]
 
     assert payload["exec"] == {
         "family": "qwen",
@@ -177,7 +209,9 @@ def test_launcher_exec_dry_run_outputs_platform_aware_qwen_command(
                 },
             },
         },
+        "family_environment": family_environment,
     }
+    _assert_family_environment(payload, family="qwen", module="server")
 
 
 def test_launcher_exec_reports_missing_python_when_env_absent():
@@ -255,4 +289,5 @@ def test_launcher_exec_reports_missing_python_when_env_absent():
                 },
             },
         }
+        _assert_family_environment(payload, family="omnivoice", module="telegram")
         assert payload["exec"]["error"] == "expected_python_missing"

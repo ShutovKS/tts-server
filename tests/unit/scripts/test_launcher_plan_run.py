@@ -1,8 +1,8 @@
 # FILE: tests/unit/scripts/test_launcher_plan_run.py
-# VERSION: 1.0.1
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the launcher plan-run command for family/module runtime planning.
-#   SCOPE: deterministic launcher plan payloads for resolved family/module contours
+#   SCOPE: deterministic launcher plan payloads and family environment policy for resolved family/module contours
 #   DEPENDS: M-LAUNCHER
 #   LINKS: V-M-LAUNCHER
 #   ROLE: TEST
@@ -15,6 +15,7 @@
 #   _expected_platform_pack_name - Resolve the platform overlay pack expected for the deterministic host profile
 #   _expected_pack_files - Build the exact dependency pack file list expected in launcher payloads
 #   _expected_preview_lines - Build the exact requirements preview lines expected in launcher payloads
+#   _assert_family_environment - Verify plan-run output carries the canonical family isolation policy
 #   _run_plan_run - Execute the launcher plan-run flow in-process with deterministic host probing
 #   test_launcher_plan_run_outputs_deterministic_qwen_server_launch_plan - Verifies qwen server planning includes the exact interpreter, backend, and dependency pack payload
 #   test_launcher_plan_run_outputs_deterministic_piper_cli_launch_plan - Verifies piper CLI planning includes the exact interpreter, backend, and dependency pack payload
@@ -22,7 +23,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Replaced launcher subprocess-only checks with deterministic in-process payload assertions and explicit unit selection]
+#   LAST_CHANGE: [v1.1.0 - Added launch-plan assertions for canonical one-family-one-environment policy]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ import json
 import platform
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -145,6 +147,35 @@ def _expected_preview_lines(family: str, module: str, host_profile: HostProfile)
     ]
 
 
+# START_CONTRACT: _assert_family_environment
+#   PURPOSE: Verify a plan-run payload carries the canonical family-isolated runtime contour.
+#   INPUTS: { payload: dict - launcher JSON payload, family: str - expected family key, module: str - expected module key }
+#   OUTPUTS: { None - assertion helper }
+#   SIDE_EFFECTS: none
+#   LINKS: V-M-LAUNCHER
+# END_CONTRACT: _assert_family_environment
+def _assert_family_environment(payload: dict[str, Any], *, family: str, module: str) -> None:
+    family_environment = payload["family_environment"]
+    launch_plan = payload["launch_plan"]
+
+    assert launch_plan["family_environment"] == family_environment
+    assert family_environment["environment_isolated"] is True
+    assert family_environment["policy"] == "one_family_one_environment"
+    assert family_environment["family"] == family
+    assert family_environment["expected_env_name"] == family
+    assert family_environment["expected_env_matches_family"] is True
+    assert family_environment["shared_env_supported_for_runtime"] is False
+    assert family_environment["expected_python_path"] == launch_plan["expected_python_path"]
+    assert family_environment["recommended_create_env_command"][-6:] == [
+        "create-env",
+        "--family",
+        family,
+        "--module",
+        module,
+        "--apply",
+    ]
+
+
 # START_CONTRACT: _run_plan_run
 #   PURPOSE: Execute launcher plan-run in-process with deterministic host and environment probing.
 #   INPUTS: { monkeypatch: pytest.MonkeyPatch - pytest monkeypatch fixture, capsys: pytest.CaptureFixture[str] - stdout capture fixture, family: str - requested runtime family, module: str - requested launcher module }
@@ -210,6 +241,7 @@ def test_launcher_plan_run_outputs_deterministic_qwen_server_launch_plan(
 ):
     host_profile = _make_deterministic_host_profile()
     payload = _run_plan_run(monkeypatch, capsys, family="qwen", module="server")
+    family_environment = payload["family_environment"]
 
     assert payload["launch_plan"] == {
         "family": "qwen",
@@ -259,7 +291,9 @@ def test_launcher_plan_run_outputs_deterministic_qwen_server_launch_plan(
                 },
             },
         },
+        "family_environment": family_environment,
     }
+    _assert_family_environment(payload, family="qwen", module="server")
 
 
 def test_launcher_plan_run_outputs_deterministic_piper_cli_launch_plan(
@@ -268,6 +302,7 @@ def test_launcher_plan_run_outputs_deterministic_piper_cli_launch_plan(
 ):
     host_profile = _make_deterministic_host_profile()
     payload = _run_plan_run(monkeypatch, capsys, family="piper", module="cli")
+    family_environment = payload["family_environment"]
 
     assert payload["launch_plan"] == {
         "family": "piper",
@@ -309,7 +344,9 @@ def test_launcher_plan_run_outputs_deterministic_piper_cli_launch_plan(
                 "clone": {"bound": False, "model": None, "env_var": "TTS_DEFAULT_CLONE_MODEL"},
             },
         },
+        "family_environment": family_environment,
     }
+    _assert_family_environment(payload, family="piper", module="cli")
 
 
 def test_launcher_plan_run_outputs_deterministic_omnivoice_cli_launch_plan(
@@ -318,6 +355,7 @@ def test_launcher_plan_run_outputs_deterministic_omnivoice_cli_launch_plan(
 ):
     host_profile = _make_deterministic_host_profile()
     payload = _run_plan_run(monkeypatch, capsys, family="omnivoice", module="cli")
+    family_environment = payload["family_environment"]
 
     assert payload["launch_plan"] == {
         "family": "omnivoice",
@@ -367,4 +405,6 @@ def test_launcher_plan_run_outputs_deterministic_omnivoice_cli_launch_plan(
                 },
             },
         },
+        "family_environment": family_environment,
     }
+    _assert_family_environment(payload, family="omnivoice", module="cli")

@@ -1,8 +1,8 @@
 # FILE: tests/unit/scripts/test_launcher_check_env.py
-# VERSION: 1.1.1
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Validate the launcher check-env command for isolated family environment verification.
-#   SCOPE: environment existence and interpreter-path verification output
+#   SCOPE: environment existence, family isolation policy, shared-env warnings, and interpreter-path verification output
 #   DEPENDS: M-LAUNCHER
 #   LINKS: V-M-LAUNCHER
 #   ROLE: TEST
@@ -21,7 +21,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.1 - Aligned module verification links with launcher ownership while preserving host-aware check-env assertions]
+#   LAST_CHANGE: [v1.2.0 - Added assertions for canonical per-family environment policy and shared-env detection payloads]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -46,7 +47,7 @@ pytestmark = pytest.mark.unit
 #   SIDE_EFFECTS: Spawns the launcher subprocess
 #   LINKS: M-LAUNCHER
 # END_CONTRACT: _run_launcher_json
-def _run_launcher_json(args: list[str]) -> dict[str, object]:
+def _run_launcher_json(args: list[str]) -> dict[str, Any]:
     completed = subprocess.run(
         [sys.executable, "-m", "launcher", *args],
         cwd=PROJECT_ROOT,
@@ -66,7 +67,7 @@ def _expected_python_suffix(env_name: str) -> str:
     return _normalized_path(str(Path(".envs") / env_name / interpreter))
 
 
-def _assert_compiled_requirements(compiled: dict[str, object], *, family: str, module: str) -> None:
+def _assert_compiled_requirements(compiled: dict[str, Any], *, family: str, module: str) -> None:
     preview_lines = compiled["preview_lines"]
 
     assert compiled["pack_refs"]["family"] == [family]
@@ -86,7 +87,7 @@ def _assert_compiled_requirements(compiled: dict[str, object], *, family: str, m
     )
 
 
-def _assert_import_check_shape(import_check: dict[str, object], *, expected_keys: set[str]) -> None:
+def _assert_import_check_shape(import_check: dict[str, Any], *, expected_keys: set[str]) -> None:
     assert set(import_check) == {"returncode", "stdout", "stderr"}
     assert isinstance(import_check["returncode"], int)
     assert isinstance(import_check["stderr"], str)
@@ -112,33 +113,70 @@ def _assert_import_check_shape(import_check: dict[str, object], *, expected_keys
 #   LINKS: M-LAUNCHER
 # END_CONTRACT: _assert_check_env_payload
 def _assert_check_env_payload(
-    payload: dict[str, object],
+    payload: dict[str, Any],
     *,
     family: str,
     module: str,
     import_keys: set[str],
 ) -> None:
     check_env = payload["check_env"]
+    family_environment = payload["family_environment"]
 
     assert payload["family"]["key"] == family
     assert payload["module"]["key"] == module
     assert payload["required_env_name"] == family
+    assert family_environment["environment_isolated"] is True
+    assert family_environment["policy"] == "one_family_one_environment"
+    assert family_environment["family"] == family
+    assert family_environment["expected_env_name"] == family
+    assert family_environment["expected_env_matches_family"] is True
+    assert family_environment["shared_env_supported_for_runtime"] is False
+    assert _normalized_path(family_environment["expected_env_root"]).endswith(
+        f"/.envs/{family}"
+    )
+    assert _normalized_path(family_environment["expected_python_path"]).endswith(
+        f"/{_expected_python_suffix(family)}"
+    )
+    assert _normalized_path(family_environment["legacy_shared_env_root"]).endswith(
+        "/.venv311"
+    )
+    assert family_environment["recommended_create_env_command"][-6:] == [
+        "create-env",
+        "--family",
+        family,
+        "--module",
+        module,
+        "--apply",
+    ]
     assert set(check_env) == {
         "family",
         "module",
+        "expected_env_root",
         "expected_python_path",
+        "environment_isolated",
+        "family_environment",
         "checks",
         "compiled_requirements",
         "import_check",
     }
     assert check_env["family"] == family
     assert check_env["module"] == module
+    assert check_env["environment_isolated"] is True
+    assert check_env["family_environment"] == family_environment
+    assert _normalized_path(check_env["expected_env_root"]).endswith(f"/.envs/{family}")
     assert _normalized_path(check_env["expected_python_path"]).endswith(
         f"/{_expected_python_suffix(family)}"
     )
 
     checks = check_env["checks"]
-    assert set(checks) == {"expected_env_root_exists", "expected_python_exists"}
+    assert set(checks) == {
+        "expected_env_root_exists",
+        "expected_python_exists",
+        "expected_env_matches_family",
+        "shared_env_detected",
+    }
+    assert checks["expected_env_matches_family"] is True
+    assert checks["shared_env_detected"] == family_environment["shared_env_detected"]
     if checks["expected_python_exists"]:
         assert checks["expected_env_root_exists"] is True
         assert check_env["import_check"] is not None
