@@ -1,9 +1,9 @@
 # FILE: core/config.py
-# VERSION: 1.3.1
+# VERSION: 1.4.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Parse and validate environment-based runtime configuration for all components.
-#   SCOPE: CoreSettings dataclass, environment parsing helpers, typed settings dict
-#   DEPENDS: none
+#   SCOPE: CoreSettings dataclass, pydantic-settings env source, typed settings dict, env helpers
+#   DEPENDS: pydantic, pydantic-settings
 #   LINKS: M-CONFIG
 #   ROLE: CONFIG
 #   MAP_MODE: EXPORTS
@@ -23,6 +23,7 @@
 #   CoreSettings - Frozen dataclass holding all shared runtime settings including active capability bindings
 #   CoreSettingsEnv - TypedDict describing parsed settings shape
 #   AuthMode - Literal type for authentication mode
+#   CoreEnvSettings - pydantic-settings model that owns the canonical TTS_* env contract
 #   env_value - Resolve an environment variable by exact canonical name only
 #   parse_core_settings_from_env - Parse environment variables into typed settings dict
 #   env_text - Read string from environment with default
@@ -32,7 +33,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.3.1 - Added canonical CSV parsing support for transport-level origin allowlists so adapters can read explicit browser-facing origin configuration from TTS_* variables]
+#   LAST_CHANGE: [v1.4.0 - Replaced hand-rolled env parsing with pydantic-settings while preserving public API surface (CoreSettings dataclass, CoreSettingsEnv TypedDict, parse_core_settings_from_env, env_text/env_int/env_bool/env_path/env_value helpers)]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -40,7 +41,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Mapping, TypedDict, cast
+from typing import Any, Literal, Mapping, TypedDict, cast
+
+from pydantic import Field, ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -48,6 +52,7 @@ DEFAULT_MODELS_DIR = PROJECT_ROOT / ".models"
 DEFAULT_OUTPUTS_DIR = PROJECT_ROOT / ".outputs"
 DEFAULT_VOICES_DIR = PROJECT_ROOT / ".voices"
 DEFAULT_UPLOAD_STAGING_DIR = PROJECT_ROOT / ".uploads"
+DEFAULT_MODEL_MANIFEST_PATH = PROJECT_ROOT / "core" / "models" / "manifest.v1.json"
 
 
 LOCAL_JOB_EXECUTION_BACKEND = "local"
@@ -55,6 +60,10 @@ LOCAL_JOB_METADATA_BACKEND = "local"
 LOCAL_JOB_ARTIFACT_BACKEND = "local"
 LOCAL_RATE_LIMIT_BACKEND = "local"
 LOCAL_QUOTA_BACKEND = "local"
+
+
+_TRUTHY_STRINGS = {"1", "true", "yes", "on"}
+_AUTH_MODE_VALUES = {"off", "static_bearer"}
 
 
 AuthMode = Literal["off", "static_bearer"]
@@ -108,7 +117,7 @@ class CoreSettingsEnv(TypedDict):
 
 # START_CONTRACT: CoreSettings
 #   PURPOSE: Hold normalized shared runtime settings resolved from environment configuration.
-#   INPUTS: { models_dir: Path - Root directory for backend model assets, outputs_dir: Path - Directory for persisted generated audio, voices_dir: Path - Directory for reusable voice assets, mlx_models_dir: Path - MLX-specific model directory override, upload_staging_dir: Path - Temporary upload staging directory, model_manifest_path: Path - Manifest file describing enabled models, backend: str | None - Requested backend key override, backend_autoselect: bool - Whether backend selection may auto-pick a ready backend from the registered set, model_preload_policy: str - Preload strategy for runtime model warming, model_preload_ids: tuple[str, ...] - Explicit model identifiers to preload, job_execution_backend: str - Selected async execution backend, job_metadata_backend: str - Selected job metadata store backend, job_artifact_backend: str - Selected job artifact store backend, auth_mode: AuthMode - Authentication policy selector, auth_static_bearer_token: str | None - Static bearer token secret, auth_static_bearer_principal_id: str | None - Principal bound to static bearer auth, auth_static_bearer_credential_id: str | None - Credential identifier for static bearer auth, rate_limit_enabled: bool - Enables request throttling policies, rate_limit_backend: str - Selected rate limiter backend, rate_limit_sync_tts_per_minute: int - Per-minute sync synthesis allowance, rate_limit_async_submit_per_minute: int - Per-minute async submission allowance, rate_limit_job_read_per_minute: int - Per-minute async job read allowance, rate_limit_job_cancel_per_minute: int - Per-minute async job cancel allowance, rate_limit_control_plane_per_minute: int - Per-minute control plane allowance, quota_enabled: bool - Enables quota enforcement, quota_backend: str - Selected quota backend, quota_compute_requests_per_window: int - Compute quota limit per window, quota_compute_window_seconds: int - Compute quota window size, quota_max_active_jobs_per_principal: int - Max active async jobs per principal, sample_rate: int - Target sample rate for normalized audio, filename_max_len: int - Max text snippet length in saved filenames, default_save_output: bool - Default persistence behavior for generated output, enable_streaming: bool - Streaming capability toggle, max_upload_size_bytes: int - Maximum accepted upload size, max_input_text_chars: int - Maximum request text length, request_timeout_seconds: int - Request timeout budget, inference_busy_status_code: int - HTTP status code for busy inference responses, auto_play_cli: bool - CLI auto playback toggle }
+#   INPUTS: { all CoreSettingsEnv fields - see TypedDict }
 #   OUTPUTS: { instance - Immutable runtime settings container }
 #   SIDE_EFFECTS: none
 #   LINKS: M-CONFIG
@@ -120,9 +129,7 @@ class CoreSettings:
     voices_dir: Path
     mlx_models_dir: Path = field(default_factory=lambda: DEFAULT_MODELS_DIR / "mlx")
     upload_staging_dir: Path = field(default_factory=lambda: DEFAULT_UPLOAD_STAGING_DIR)
-    model_manifest_path: Path = field(
-        default_factory=lambda: (PROJECT_ROOT / "core" / "models" / "manifest.v1.json")
-    )
+    model_manifest_path: Path = field(default_factory=lambda: DEFAULT_MODEL_MANIFEST_PATH)
     active_family: str | None = None
     default_custom_model: str | None = None
     default_design_model: str | None = None
@@ -185,6 +192,201 @@ class CoreSettings:
         return None
 
 
+# START_BLOCK_PYDANTIC_SETTINGS_HELPERS
+def _coerce_csv_tuple(raw: Any) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if isinstance(raw, (list, tuple)):
+        values: list[str] = []
+        for entry in raw:
+            value = str(entry).strip()
+            if value and value not in values:
+                values.append(value)
+        return tuple(values)
+    if not isinstance(raw, str):
+        return ()
+    values = []
+    for part in raw.split(","):
+        value = part.strip()
+        if value and value not in values:
+            values.append(value)
+    return tuple(values)
+# END_BLOCK_PYDANTIC_SETTINGS_HELPERS
+
+
+# START_CONTRACT: CoreEnvSettings
+#   PURPOSE: Pydantic-settings model that owns the canonical TTS_* environment contract for the runtime core.
+#   INPUTS: { **kwargs - canonical field names matching env vars after stripping the TTS_ prefix }
+#   OUTPUTS: { instance - validated and type-coerced settings model }
+#   SIDE_EFFECTS: none
+#   LINKS: M-CONFIG
+# END_CONTRACT: CoreEnvSettings
+class CoreEnvSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="TTS_",
+        case_sensitive=False,
+        extra="ignore",
+        env_file=None,
+    )
+
+    models_dir: Path = Field(default_factory=lambda: DEFAULT_MODELS_DIR.resolve())
+    mlx_models_dir: Path = Field(default_factory=lambda: (DEFAULT_MODELS_DIR / "mlx").resolve())
+    outputs_dir: Path = Field(default_factory=lambda: DEFAULT_OUTPUTS_DIR.resolve())
+    voices_dir: Path = Field(default_factory=lambda: DEFAULT_VOICES_DIR.resolve())
+    upload_staging_dir: Path = Field(default_factory=lambda: DEFAULT_UPLOAD_STAGING_DIR.resolve())
+    model_manifest_path: Path = Field(default_factory=lambda: DEFAULT_MODEL_MANIFEST_PATH.resolve())
+
+    active_family: str | None = None
+    default_custom_model: str | None = None
+    default_design_model: str | None = None
+    default_clone_model: str | None = None
+    backend: str | None = None
+    backend_autoselect: bool = True
+    qwen_fast_enabled: bool = True
+
+    model_preload_policy: str = "none"
+    model_preload_ids: tuple[str, ...] = ()
+
+    job_execution_backend: str = LOCAL_JOB_EXECUTION_BACKEND
+    job_metadata_backend: str = LOCAL_JOB_METADATA_BACKEND
+    job_artifact_backend: str = LOCAL_JOB_ARTIFACT_BACKEND
+
+    auth_mode: AuthMode = "off"
+    auth_static_bearer_token: str | None = None
+    auth_static_bearer_principal_id: str | None = None
+    auth_static_bearer_credential_id: str | None = None
+
+    cors_allowed_origins: tuple[str, ...] = ()
+
+    rate_limit_enabled: bool = False
+    rate_limit_backend: str = LOCAL_RATE_LIMIT_BACKEND
+    rate_limit_sync_tts_per_minute: int = 0
+    rate_limit_async_submit_per_minute: int = 0
+    rate_limit_job_read_per_minute: int = 0
+    rate_limit_job_cancel_per_minute: int = 0
+    rate_limit_control_plane_per_minute: int = 0
+
+    quota_enabled: bool = False
+    quota_backend: str = LOCAL_QUOTA_BACKEND
+    quota_compute_requests_per_window: int = 0
+    quota_compute_window_seconds: int = 60
+    quota_max_active_jobs_per_principal: int = 0
+
+    sample_rate: int = 24000
+    filename_max_len: int = 20
+    default_save_output: bool = False
+    max_upload_size_bytes: int = 25 * 1024 * 1024
+    max_input_text_chars: int = 5_000
+    request_timeout_seconds: int = 300
+    inference_busy_status_code: int = 503
+    auto_play_cli: bool = True
+
+    @field_validator(
+        "models_dir",
+        "mlx_models_dir",
+        "outputs_dir",
+        "voices_dir",
+        "upload_staging_dir",
+        "model_manifest_path",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_path(cls, value: Any) -> Any:
+        if value is None or value == "":
+            return value
+        if isinstance(value, Path):
+            return value.resolve()
+        return Path(str(value)).resolve()
+
+    @field_validator(
+        "active_family",
+        "default_custom_model",
+        "default_design_model",
+        "default_clone_model",
+        "backend",
+        "auth_static_bearer_token",
+        "auth_static_bearer_principal_id",
+        "auth_static_bearer_credential_id",
+        mode="before",
+    )
+    @classmethod
+    def _empty_string_to_none(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @field_validator(
+        "job_execution_backend",
+        "job_metadata_backend",
+        "job_artifact_backend",
+        "rate_limit_backend",
+        "quota_backend",
+        mode="before",
+    )
+    @classmethod
+    def _strip_required_str(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @field_validator("model_preload_policy", mode="before")
+    @classmethod
+    def _normalize_preload_policy(cls, value: Any) -> Any:
+        if value is None:
+            return "none"
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return normalized or "none"
+        return value
+
+    @field_validator("auth_mode", mode="before")
+    @classmethod
+    def _normalize_auth_mode(cls, value: Any) -> Any:
+        if value is None:
+            return "off"
+        if isinstance(value, str):
+            normalized = value.strip().lower() or "off"
+        else:
+            normalized = value
+        if normalized not in _AUTH_MODE_VALUES:
+            raise ValueError(f"Unsupported auth mode: {normalized}")
+        return normalized
+
+    @field_validator(
+        "model_preload_ids",
+        "cors_allowed_origins",
+        mode="before",
+    )
+    @classmethod
+    def _parse_csv(cls, value: Any) -> Any:
+        return _coerce_csv_tuple(value)
+
+    @field_validator(
+        "backend_autoselect",
+        "qwen_fast_enabled",
+        "rate_limit_enabled",
+        "quota_enabled",
+        "default_save_output",
+        "auto_play_cli",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_bool_field(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in _TRUTHY_STRINGS
+        return bool(value)
+
+
 # START_CONTRACT: env_value
 #   PURPOSE: Resolve an environment variable value using its exact canonical name.
 #   INPUTS: { name: str - Canonical environment variable name, environ: Mapping[str, str] | None - Optional environment mapping override }
@@ -233,7 +435,20 @@ def env_bool(
     value = env_value(name, environ)
     if value is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    return value.strip().lower() in _TRUTHY_STRINGS
+
+
+# START_CONTRACT: _parse_csv_env
+#   PURPOSE: Backward-compatible CSV env helper preserved for transport adapters that read their own canonical TTS_* lists.
+#   INPUTS: { name: str - Environment variable name to read, environ: Mapping[str, str] | None - Optional environment mapping override }
+#   OUTPUTS: { tuple[str, ...] - Deduplicated, order-preserving comma-split values }
+#   SIDE_EFFECTS: none
+#   LINKS: M-CONFIG
+# END_CONTRACT: _parse_csv_env
+def _parse_csv_env(
+    name: str, environ: Mapping[str, str] | None = None
+) -> tuple[str, ...]:
+    return _coerce_csv_tuple(env_text(name, "", environ))
 
 
 # START_CONTRACT: env_path
@@ -250,18 +465,6 @@ def env_path(
     return Path(str(default) if value is None else value).resolve()
 
 
-def _parse_csv_env(
-    name: str, environ: Mapping[str, str] | None = None
-) -> tuple[str, ...]:
-    raw = env_text(name, "", environ)
-    values: list[str] = []
-    for part in raw.split(","):
-        value = part.strip()
-        if value and value not in values:
-            values.append(value)
-    return tuple(values)
-
-
 # START_CONTRACT: parse_core_settings_from_env
 #   PURPOSE: Parse supported core environment variables into a typed settings payload.
 #   INPUTS: { environ: Mapping[str, str] | None - Optional environment mapping to parse instead of process env }
@@ -272,142 +475,40 @@ def _parse_csv_env(
 def parse_core_settings_from_env(
     environ: Mapping[str, str] | None = None,
 ) -> CoreSettingsEnv:
-    # START_BLOCK_PARSE_AUTH_SETTINGS
-    backend = env_text("TTS_BACKEND", "", environ).strip() or None
-    auth_mode = cast(
-        AuthMode,
-        env_text("TTS_AUTH_MODE", "off", environ).strip().lower() or "off",
-    )
-    if auth_mode not in {"off", "static_bearer"}:
-        raise ValueError(f"Unsupported auth mode: {auth_mode}")
-    auth_static_bearer_token = (
-        env_text("TTS_AUTH_STATIC_BEARER_TOKEN", "", environ).strip() or None
-    )
-    auth_static_bearer_principal_id = (
-        env_text("TTS_AUTH_STATIC_BEARER_PRINCIPAL_ID", "", environ).strip()
-        or None
-    )
-    auth_static_bearer_credential_id = (
-        env_text("TTS_AUTH_STATIC_BEARER_CREDENTIAL_ID", "", environ).strip()
-        or None
-    )
-    # END_BLOCK_PARSE_AUTH_SETTINGS
-    # START_BLOCK_PARSE_PATH_SETTINGS
-    return {
-        "models_dir": env_path("TTS_MODELS_DIR", DEFAULT_MODELS_DIR, environ),
-        "mlx_models_dir": env_path(
-            "TTS_MLX_MODELS_DIR", DEFAULT_MODELS_DIR / "mlx", environ
-        ),
-        "outputs_dir": env_path("TTS_OUTPUTS_DIR", DEFAULT_OUTPUTS_DIR, environ),
-        "voices_dir": env_path("TTS_VOICES_DIR", DEFAULT_VOICES_DIR, environ),
-        "upload_staging_dir": env_path(
-            "TTS_UPLOAD_STAGING_DIR", DEFAULT_UPLOAD_STAGING_DIR, environ
-        ),
-        "model_manifest_path": env_path(
-            "TTS_MODEL_MANIFEST_PATH",
-            PROJECT_ROOT / "core" / "models" / "manifest.v1.json",
-            environ,
-        ),
-        "active_family": env_text("TTS_ACTIVE_FAMILY", "", environ).strip() or None,
-        "default_custom_model": env_text(
-            "TTS_DEFAULT_CUSTOM_MODEL", "", environ
-        ).strip()
-        or None,
-        "default_design_model": env_text(
-            "TTS_DEFAULT_DESIGN_MODEL", "", environ
-        ).strip()
-        or None,
-        "default_clone_model": env_text(
-            "TTS_DEFAULT_CLONE_MODEL", "", environ
-        ).strip()
-        or None,
-        # END_BLOCK_PARSE_PATH_SETTINGS
-        # START_BLOCK_PARSE_RUNTIME_SETTINGS
-        "backend": backend,
-        "backend_autoselect": env_bool("TTS_BACKEND_AUTOSELECT", True, environ),
-        "qwen_fast_enabled": env_bool("TTS_QWEN_FAST_ENABLED", True, environ),
-        "model_preload_policy": env_text(
-            "TTS_MODEL_PRELOAD_POLICY", "none", environ
-        )
-        .strip()
-        .lower()
-        or "none",
-        "model_preload_ids": _parse_csv_env("TTS_MODEL_PRELOAD_IDS", environ),
-        "job_execution_backend": env_text(
-            "TTS_JOB_EXECUTION_BACKEND",
-            LOCAL_JOB_EXECUTION_BACKEND,
-            environ,
-        ).strip()
-        or LOCAL_JOB_EXECUTION_BACKEND,
-        "job_metadata_backend": env_text(
-            "TTS_JOB_METADATA_BACKEND",
-            LOCAL_JOB_METADATA_BACKEND,
-            environ,
-        ).strip()
-        or LOCAL_JOB_METADATA_BACKEND,
-        "job_artifact_backend": env_text(
-            "TTS_JOB_ARTIFACT_BACKEND",
-            LOCAL_JOB_ARTIFACT_BACKEND,
-            environ,
-        ).strip()
-        or LOCAL_JOB_ARTIFACT_BACKEND,
-        "auth_mode": auth_mode,
-        "auth_static_bearer_token": auth_static_bearer_token,
-        "auth_static_bearer_principal_id": auth_static_bearer_principal_id,
-        "auth_static_bearer_credential_id": auth_static_bearer_credential_id,
-        "cors_allowed_origins": _parse_csv_env("TTS_CORS_ALLOWED_ORIGINS", environ),
-        "rate_limit_enabled": env_bool("TTS_RATE_LIMIT_ENABLED", False, environ),
-        "rate_limit_backend": env_text(
-            "TTS_RATE_LIMIT_BACKEND", LOCAL_RATE_LIMIT_BACKEND, environ
-        ).strip()
-        or LOCAL_RATE_LIMIT_BACKEND,
-        "rate_limit_sync_tts_per_minute": env_int(
-            "TTS_RATE_LIMIT_SYNC_TTS_PER_MINUTE", 0, environ
-        ),
-        "rate_limit_async_submit_per_minute": env_int(
-            "TTS_RATE_LIMIT_ASYNC_SUBMIT_PER_MINUTE", 0, environ
-        ),
-        "rate_limit_job_read_per_minute": env_int(
-            "TTS_RATE_LIMIT_JOB_READ_PER_MINUTE", 0, environ
-        ),
-        "rate_limit_job_cancel_per_minute": env_int(
-            "TTS_RATE_LIMIT_JOB_CANCEL_PER_MINUTE", 0, environ
-        ),
-        "rate_limit_control_plane_per_minute": env_int(
-            "TTS_RATE_LIMIT_CONTROL_PLANE_PER_MINUTE", 0, environ
-        ),
-        "quota_enabled": env_bool("TTS_QUOTA_ENABLED", False, environ),
-        "quota_backend": env_text(
-            "TTS_QUOTA_BACKEND", LOCAL_QUOTA_BACKEND, environ
-        ).strip()
-        or LOCAL_QUOTA_BACKEND,
-        "quota_compute_requests_per_window": env_int(
-            "TTS_QUOTA_COMPUTE_REQUESTS_PER_WINDOW", 0, environ
-        ),
-        "quota_compute_window_seconds": env_int(
-            "TTS_QUOTA_COMPUTE_WINDOW_SECONDS", 60, environ
-        ),
-        "quota_max_active_jobs_per_principal": env_int(
-            "TTS_QUOTA_MAX_ACTIVE_JOBS_PER_PRINCIPAL", 0, environ
-        ),
-        "default_save_output": env_bool("TTS_DEFAULT_SAVE_OUTPUT", False, environ),
-        "max_upload_size_bytes": env_int(
-            "TTS_MAX_UPLOAD_SIZE_BYTES", 25 * 1024 * 1024, environ
-        ),
-        "max_input_text_chars": env_int(
-            "TTS_MAX_INPUT_TEXT_CHARS", 5_000, environ
-        ),
-        "request_timeout_seconds": env_int(
-            "TTS_REQUEST_TIMEOUT_SECONDS", 300, environ
-        ),
-        "inference_busy_status_code": env_int(
-            "TTS_INFERENCE_BUSY_STATUS_CODE", 503, environ
-        ),
-        "sample_rate": env_int("TTS_SAMPLE_RATE", 24000, environ),
-        "filename_max_len": env_int("TTS_FILENAME_MAX_LEN", 20, environ),
-        "auto_play_cli": env_bool("TTS_AUTO_PLAY_CLI", True, environ),
-        # END_BLOCK_PARSE_RUNTIME_SETTINGS
-    }
+    # START_BLOCK_COLLECT_TTS_VARS
+    env_map = os.environ if environ is None else environ
+    raw_kwargs: dict[str, Any] = {}
+    for raw_key, value in env_map.items():
+        if not isinstance(raw_key, str):
+            continue
+        upper = raw_key.upper()
+        if not upper.startswith("TTS_"):
+            continue
+        field_name = upper[4:].lower()
+        raw_kwargs[field_name] = value
+    # END_BLOCK_COLLECT_TTS_VARS
+
+    # START_BLOCK_BUILD_PYDANTIC_SETTINGS
+    try:
+        settings = CoreEnvSettings.model_validate(raw_kwargs)
+    except ValidationError as exc:
+        raise ValueError(_format_first_validation_error(exc)) from exc
+    # END_BLOCK_BUILD_PYDANTIC_SETTINGS
+
+    # START_BLOCK_PROJECT_TO_TYPED_DICT
+    # CoreEnvSettings field names align with CoreSettingsEnv keys, so a plain
+    # model_dump() returns the legacy-shaped TypedDict payload directly.
+    return cast(CoreSettingsEnv, settings.model_dump())
+    # END_BLOCK_PROJECT_TO_TYPED_DICT
+
+
+def _format_first_validation_error(exc: ValidationError) -> str:
+    errors = exc.errors()
+    if not errors:
+        return "Invalid core runtime configuration"
+    first = errors[0]
+    message = first.get("msg") or "Invalid value"
+    return message.replace("Value error, ", "")
 
 
 __all__ = [
@@ -416,12 +517,14 @@ __all__ = [
     "DEFAULT_OUTPUTS_DIR",
     "DEFAULT_VOICES_DIR",
     "DEFAULT_UPLOAD_STAGING_DIR",
+    "DEFAULT_MODEL_MANIFEST_PATH",
     "LOCAL_JOB_EXECUTION_BACKEND",
     "LOCAL_JOB_METADATA_BACKEND",
     "LOCAL_JOB_ARTIFACT_BACKEND",
     "LOCAL_RATE_LIMIT_BACKEND",
     "LOCAL_QUOTA_BACKEND",
     "AuthMode",
+    "CoreEnvSettings",
     "CoreSettingsEnv",
     "CoreSettings",
     "env_value",

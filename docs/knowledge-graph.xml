@@ -6,11 +6,12 @@
     <M-CONFIG NAME="CoreSettings" TYPE="UTILITY" STATUS="implemented">
       <purpose>Parse and validate environment-based runtime configuration for all components.</purpose>
       <path>core/config.py</path>
-      <depends>none</depends>
+      <depends>pydantic, pydantic-settings</depends>
       <verification-ref>V-M-CONFIG</verification-ref>
-      <implementation-note>Runtime configuration uses the project-wide `TTS_*` namespace as the only supported environment contract, and legacy alias handling has been removed.</implementation-note>
+      <implementation-note>Runtime configuration uses the project-wide `TTS_*` namespace as the only supported environment contract; env parsing is owned by the pydantic-settings model `CoreEnvSettings`, while `parse_core_settings_from_env` projects the validated model into the legacy `CoreSettingsEnv` TypedDict for downstream consumers.</implementation-note>
       <annotations>
         <class-CoreSettings PURPOSE="Frozen dataclass holding all shared runtime settings" />
+        <class-CoreEnvSettings PURPOSE="Pydantic-settings model that owns the canonical TTS_* environment contract" />
         <fn-parse_core_settings_from_env PURPOSE="Parse environment variables into typed settings dict" />
         <fn-runtime_capability_map PURPOSE="Expose the active runtime capability bindings independent of on-disk artifact presence" />
         <fn-resolve_runtime_model_binding PURPOSE="Resolve the runtime-bound model identifier for a requested execution mode" />
