@@ -350,6 +350,21 @@
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-FAMILY" relation="prepares-execution" />
     </M-TTS-SERVICE>
 
+    <M-MODEL-LIFECYCLE NAME="ModelLifecycleService" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Process-local lifecycle facade exposing model deletion, registry refresh, and best-effort download orchestration to HTTP transports without coupling them to a specific downloader implementation.</purpose>
+      <path>core/services/model_lifecycle.py</path>
+      <depends>M-MODEL-REGISTRY, M-MODELS, M-CONFIG</depends>
+      <verification-ref>V-M-MODEL-LIFECYCLE</verification-ref>
+      <implementation-note>Phase 4.13 introduces `core/services/model_lifecycle.py::ModelLifecycleService` together with the frozen `ModelDownloadJob` descriptor and a `default_downloader` that returns a deterministic "no_downloader_configured" failure. The service exposes `delete_model(model_id)` (rmtree the per-model folder under `models_dir`), `submit_download(model_id, source=None, run_async=True)` (creates a tracked job and runs the configured downloader on a background thread), `get_download(job_id)` / `list_downloads()` (in-memory job lookup), and `refresh()` (best-effort detection of `reload_manifest` / `refresh` / `rebuild` hooks on the underlying registry). `core/bootstrap.py::CoreRuntime` now also carries `model_lifecycle: ModelLifecycleService`, and `server/app.py` surfaces it as `app.state.model_lifecycle` so `server/api/routes_models.py` can register `DELETE /api/v1/models/{model_id}`, `POST /api/v1/models/{model_id}/download`, `GET /api/v1/models/{model_id}/downloads/{job_id}`, and `POST /api/v1/models/refresh`.</implementation-note>
+      <annotations>
+        <class-ModelDownloadJob PURPOSE="Frozen descriptor for a single model download submission with status, progress, error, timestamps, and free-form details" />
+        <class-ModelLifecycleService PURPOSE="Process-local lifecycle facade for delete/refresh/download orchestration over the active ModelRegistry" />
+        <fn-default_downloader PURPOSE="Deterministic no_downloader_configured failure used when no downloader is injected" />
+      </annotations>
+      <CrossLink from="M-MODEL-LIFECYCLE" to="M-MODEL-REGISTRY" relation="reads-model-specs" />
+      <CrossLink from="M-MODEL-LIFECYCLE" to="M-SERVER" relation="powers-lifecycle-endpoints" />
+    </M-MODEL-LIFECYCLE>
+
     <M-STREAMING NAME="AudioStreamingChunker" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Provide a transport-agnostic seam that turns a completed GenerationResult into an iterator of fixed-size audio chunks so HTTP streaming endpoints (and future native-streaming backends) share one chunking contract.</purpose>
       <path>core/services/streaming.py</path>

@@ -33,6 +33,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event, Lock
 from time import sleep, time
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -485,6 +486,97 @@ def test_custom_tts_happy_path(client: TestClient):
     assert response.status_code == 200
     assert response.headers["x-saved-output-file"] == "saved_custom.wav"
     assert "x-saved-output-path" not in response.headers
+
+
+def _install_lifecycle_service(client: TestClient, *, models_dir: Path, specs: tuple) -> None:
+    from core.services.model_lifecycle import ModelLifecycleService
+
+    fake_registry = SimpleNamespace(model_specs=specs)
+    client.app.state.model_lifecycle = ModelLifecycleService(
+        models_dir=models_dir, registry=fake_registry
+    )
+
+
+def test_delete_model_endpoint_removes_folder(client: TestClient, tmp_path: Path):
+    spec = SimpleNamespace(api_name="ModelA", folder="ModelA", key="model-a", model_id="ModelA")
+    target = tmp_path / "ModelA"
+    target.mkdir()
+    (target / "config.json").write_text("{}")
+    _install_lifecycle_service(client, models_dir=tmp_path, specs=(spec,))
+
+    response = client.delete("/api/v1/models/ModelA")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {"model_id": "ModelA", "removed": True}
+    assert not target.exists()
+
+
+def test_delete_model_endpoint_returns_404_for_unknown(client: TestClient, tmp_path: Path):
+    _install_lifecycle_service(client, models_dir=tmp_path, specs=())
+
+    response = client.delete("/api/v1/models/missing")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "model_not_found"
+
+
+def test_submit_model_download_returns_default_failure(client: TestClient, tmp_path: Path):
+    spec = SimpleNamespace(api_name="ModelA", folder="ModelA", key="model-a", model_id="ModelA")
+    _install_lifecycle_service(client, models_dir=tmp_path, specs=(spec,))
+
+    response = client.post("/api/v1/models/ModelA/download", json={"source": "hf://example/repo"})
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["model_id"] == "ModelA"
+    assert payload["status"] in {"pending", "running", "failed"}
+    assert response.headers["location"].startswith("/api/v1/models/ModelA/downloads/")
+
+    job_id = payload["id"]
+    final_status = payload
+    deadline = time() + 2.0
+    while final_status["status"] not in {"failed", "succeeded"} and time() < deadline:
+        sleep(0.02)
+        fetch = client.get(f"/api/v1/models/ModelA/downloads/{job_id}")
+        assert fetch.status_code == 200
+        final_status = fetch.json()
+    assert final_status["status"] == "failed"
+    assert final_status["error"] == "no_downloader_configured"
+
+
+def test_get_model_download_returns_status(client: TestClient, tmp_path: Path):
+    spec = SimpleNamespace(api_name="ModelA", folder="ModelA", key="model-a", model_id="ModelA")
+    _install_lifecycle_service(client, models_dir=tmp_path, specs=(spec,))
+
+    submit = client.post("/api/v1/models/ModelA/download", json={})
+    assert submit.status_code == 202
+    job_id = submit.json()["id"]
+
+    fetch = client.get(f"/api/v1/models/ModelA/downloads/{job_id}")
+    assert fetch.status_code == 200
+    payload = fetch.json()
+    assert payload["id"] == job_id
+    assert payload["model_id"] == "ModelA"
+
+
+def test_get_model_download_returns_404_for_unknown_job(client: TestClient, tmp_path: Path):
+    _install_lifecycle_service(client, models_dir=tmp_path, specs=())
+
+    response = client.get("/api/v1/models/ModelA/downloads/missing-id")
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "download_job_not_found"
+
+
+def test_refresh_models_endpoint_reports_outcome(client: TestClient, tmp_path: Path):
+    spec = SimpleNamespace(api_name="ModelA", folder="ModelA", key="model-a", model_id="ModelA")
+    _install_lifecycle_service(client, models_dir=tmp_path, specs=(spec,))
+
+    response = client.post("/api/v1/models/refresh")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["supported"] is False
+    assert payload["model_count"] == 1
 
 
 def test_custom_tts_stream_happy_path(client: TestClient):

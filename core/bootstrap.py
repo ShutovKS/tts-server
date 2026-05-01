@@ -60,6 +60,7 @@ from core.infrastructure import (
 )
 from core.metrics import OperationalMetricsRegistry
 from core.models.composite import load_composite_manifest
+from core.services.model_lifecycle import ModelLifecycleService
 from core.services.model_registry import ModelRegistry
 from core.services.tts_service import TTSService
 
@@ -68,7 +69,7 @@ logger = logging.getLogger(__name__)
 
 # START_CONTRACT: CoreRuntime
 #   PURPOSE: Hold the fully assembled shared runtime components for transport adapters.
-#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, registry: ModelRegistry - Model discovery and loading service, tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, inference_guard: InferenceGuard - Shared inference concurrency guard, metrics: OperationalMetricsRegistry - Operational metrics facade }
+#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, registry: ModelRegistry - Model discovery and loading service, model_lifecycle: ModelLifecycleService - Lifecycle facade for delete/refresh/download submissions, tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, inference_guard: InferenceGuard - Shared inference concurrency guard, metrics: OperationalMetricsRegistry - Operational metrics facade }
 #   OUTPUTS: { instance - Immutable runtime composition root }
 #   SIDE_EFFECTS: none
 #   LINKS: M-BOOTSTRAP
@@ -78,6 +79,7 @@ class CoreRuntime:
     settings: CoreSettings
     backend_registry: BackendRegistry
     registry: ModelRegistry
+    model_lifecycle: ModelLifecycleService
     tts_service: TTSService
     application: TTSApplicationService
     job_artifact_store: JobArtifactStore
@@ -206,6 +208,10 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
     )
     tts_service = TTSService(registry=registry, settings=settings, inference_guard=inference_guard)
     application = TTSApplicationService(tts_service=tts_service)
+    model_lifecycle = ModelLifecycleService(
+        models_dir=settings.models_dir,
+        registry=registry,
+    )
     # END_BLOCK_INIT_SERVICES
     # START_BLOCK_INIT_JOB_SYSTEM
     job_artifact_store = build_job_artifact_store(settings)
@@ -223,6 +229,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         settings=settings,
         backend_registry=backend_registry,
         registry=registry,
+        model_lifecycle=model_lifecycle,
         tts_service=tts_service,
         application=application,
         job_artifact_store=job_artifact_store,
