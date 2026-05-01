@@ -1,5 +1,5 @@
 # FILE: core/bootstrap.py
-# VERSION: 1.1.0
+# VERSION: 1.1.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Assemble the full CoreRuntime from settings by wiring all components together via auto-discovery (backend classes via discover_backend_classes(), manifest via load_composite_manifest(), TTSBackend.from_settings() factory) so adding a new backend or model does not require editing this file.
 #   SCOPE: CoreRuntime dataclass, build_runtime factory, sub-component factory helpers, build_backends helper that drives auto-discovery of TTSBackend subclasses
@@ -19,7 +19,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Phase 2.8: replaced hardcoded backend list and manifest-path wiring with discover_backend_classes() + TTSBackend.from_settings() + load_composite_manifest()]
+#   LAST_CHANGE: [v1.1.1 - Allowed degraded runtime assembly when no backend is ready so readiness and validation flows can report host limitations without failing bootstrap]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -205,6 +205,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         backends,
         requested_backend=settings.backend,
         autoselect=settings.backend_autoselect,
+        allow_unready_selection=True,
         model_manifest=model_manifest,
     )
     # END_BLOCK_INIT_BACKENDS

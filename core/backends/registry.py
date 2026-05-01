@@ -1,8 +1,8 @@
 # FILE: core/backends/registry.py
-# VERSION: 1.0.0
+# VERSION: 1.0.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Select and manage TTS inference backends based on configuration and availability.
-#   SCOPE: BackendRegistry class with backend selection, model spec resolution
+#   SCOPE: BackendRegistry class with backend selection, degraded runtime fallback, and model spec resolution
 #   DEPENDS: M-CONFIG, M-ERRORS, M-OBSERVABILITY
 #   LINKS: M-BACKENDS
 #   ROLE: RUNTIME
@@ -15,7 +15,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Added explainable per-model backend route reporting for mixed-family readiness]
+#   LAST_CHANGE: [v1.0.2 - Added opt-in degraded backend selection so runtime bootstrap can surface readiness diagnostics without failing startup when no backend is ready]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -57,6 +57,7 @@ class BackendRegistry:
         *,
         requested_backend: str | None = None,
         autoselect: bool = True,
+        allow_unready_selection: bool = False,
         model_manifest_path=None,
         model_manifest: ModelManifest | None = None,
     ):
@@ -65,6 +66,7 @@ class BackendRegistry:
         self._backends = {backend.key: backend for backend in backends}
         self._requested_backend = requested_backend
         self._autoselect = autoselect
+        self._allow_unready_selection = allow_unready_selection
         if model_manifest is not None:
             self._model_manifest = model_manifest
         elif model_manifest_path is not None:
@@ -385,6 +387,16 @@ class BackendRegistry:
                     selection_reason=candidate.reason,
                 )
         # END_BLOCK_AUTOSELECT_READY_BACKEND
+        # START_BLOCK_ALLOW_DEGRADED_SELECTION
+        if self._allow_unready_selection and candidates:
+            fallback_key = candidates[0].backend_key
+            return BackendSelection(
+                backend=self._backends[fallback_key],
+                requested_backend=None,
+                auto_selected=True,
+                selection_reason="no_ready_backend_available",
+            )
+        # END_BLOCK_ALLOW_DEGRADED_SELECTION
         # START_BLOCK_REJECT_WITHOUT_READY_BACKEND
         raise BackendNotAvailableError(
             "No registered backend is ready for the current host",

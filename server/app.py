@@ -1,5 +1,5 @@
 # FILE: server/app.py
-# VERSION: 1.0.3
+# VERSION: 1.0.4
 # START_MODULE_CONTRACT
 #   PURPOSE: Compose the FastAPI application with all routes, middleware, and error handlers.
 #   SCOPE: FastAPI app factory, route registration, middleware setup, lifespan management
@@ -12,11 +12,12 @@
 # START_MODULE_MAP
 #   LOGGER - Module logger for server application events
 #   create_app - Build and configure the FastAPI application
-#   app - FastAPI application instance
+#   _LazyApp - Lazy ASGI wrapper that defers runtime assembly until first use
+#   app - Lazy ASGI application exported for uvicorn and package imports
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.3 - Exposed async correlation headers through CORS so remote multi-client consumers can read stable job and submit identifiers]
+#   LAST_CHANGE: [v1.0.4 - Deferred default app construction until first ASGI use so imports and tests do not fail during backend-unavailable module import]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -56,6 +57,22 @@ DEFAULT_DEMO_CORS_ORIGINS = (
     "http://0.0.0.0:8030",
     "https://split-tts.drive-vr.ru",
 )
+
+
+class _LazyApp:
+    def __init__(self) -> None:
+        self._app: FastAPI | None = None
+
+    def _resolve(self) -> FastAPI:
+        if self._app is None:
+            self._app = create_app()
+        return self._app
+
+    async def __call__(self, scope, receive, send) -> None:
+        await self._resolve()(scope, receive, send)
+
+    def __getattr__(self, name: str):
+        return getattr(self._resolve(), name)
 
 
 # START_CONTRACT: create_app
@@ -236,7 +253,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+app = _LazyApp()
 
 __all__ = [
     "LOGGER",
