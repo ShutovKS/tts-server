@@ -487,6 +487,25 @@ def test_custom_tts_happy_path(client: TestClient):
     assert "x-saved-output-path" not in response.headers
 
 
+def test_custom_tts_stream_happy_path(client: TestClient):
+    response = client.post(
+        "/api/v1/tts/custom/stream",
+        json={
+            "text": "Hello stream",
+            "speaker": "Vivian",
+            "emotion": "Happy",
+            "speed": 1.0,
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("audio/wav")
+    assert int(response.headers["x-tts-stream-chunks"]) >= 1
+    assert response.headers["x-model-id"]
+    assert response.headers["x-tts-mode"] == "custom"
+    assert response.headers["x-backend-id"]
+    assert len(response.content) > 0
+
+
 def test_design_tts_happy_path(client: TestClient):
     response = client.post(
         "/api/v1/tts/design",

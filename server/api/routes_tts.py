@@ -1,9 +1,9 @@
 # FILE: server/api/routes_tts.py
-# VERSION: 1.1.0
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Define synchronous and async TTS HTTP endpoints.
-#   SCOPE: POST /v1/audio/speech, POST /api/v1/tts/custom|design|clone, async job endpoints
-#   DEPENDS: M-APPLICATION, M-CONTRACTS, M-ERRORS, M-OBSERVABILITY
+#   SCOPE: POST /v1/audio/speech, POST /api/v1/tts/custom|design|clone, POST /api/v1/tts/custom/stream, async job endpoints
+#   DEPENDS: M-APPLICATION, M-CONTRACTS, M-ERRORS, M-OBSERVABILITY, M-STREAMING
 #   LINKS: M-SERVER
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -33,7 +33,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Hardened central-host async semantics by freezing public job states, adding async correlation headers, and logging submit/read/cancel lifecycle phases explicitly]
+#   LAST_CHANGE: [v1.2.0 - Phase 4.12: registered POST /api/v1/tts/custom/stream that returns the WAV bytes of a completed custom synthesis result as a chunked StreamingResponse using core.services.streaming.stream_generation_result, with the chunk count surfaced via the x-tts-stream-chunks header]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from fastapi import FastAPI, File, Form, Header, Request, Response, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from core.contracts.commands import (
@@ -73,6 +73,10 @@ from core.errors import (
 )
 from core.infrastructure.audio_io import convert_audio_to_wav_if_needed
 from core.observability import Timer, log_event, operation_scope
+from core.services.streaming import (
+    DEFAULT_AUDIO_STREAM_CHUNK_SIZE,
+    stream_generation_result,
+)
 from server.api.auth import ensure_job_owner_access
 from server.api.contracts import ErrorDescriptor
 from server.api.policies import (
@@ -928,6 +932,107 @@ def register_tts_routes(app: FastAPI, logger) -> None:
             # START_BLOCK_BUILD_CUSTOM_RESPONSE
             return build_audio_response(request, result, "wav", logger)
             # END_BLOCK_BUILD_CUSTOM_RESPONSE
+
+    @app.post(
+        "/api/v1/tts/custom/stream",
+        tags=["tts"],
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            500: {"model": ErrorResponse},
+        },
+    )
+    # START_CONTRACT: tts_custom_stream
+    #   PURPOSE: Stream the WAV bytes of a custom voice synthesis result to the client over a chunked HTTP response.
+    #   INPUTS: { request: Request - incoming HTTP request, payload: CustomTTSRequest - validated custom synthesis payload }
+    #   OUTPUTS: { StreamingResponse - chunked WAV audio stream with x-request-id, x-model-id, x-tts-mode, x-backend-id, and x-tts-stream-chunks headers }
+    #   SIDE_EFFECTS: Consumes admission quota, emits endpoint logs, triggers synthesis execution, and writes chunked HTTP frames
+    #   LINKS: M-SERVER, M-APPLICATION, M-STREAMING
+    # END_CONTRACT: tts_custom_stream
+    async def tts_custom_stream(request: Request, payload: CustomTTSRequest) -> Response:
+        with operation_scope("server.tts_custom_stream"):
+            # START_BLOCK_PREPARE_CUSTOM_STREAM_REQUEST
+            instruct = payload.instruct or payload.emotion or "Normal tone"
+            resolved_save_output = resolve_save_output(
+                payload.save_output, request.app.state.settings.default_save_output
+            )
+            log_event(
+                logger,
+                level=logging.INFO,
+                event="[RoutesTTS][tts_custom_stream][BLOCK_PREPARE_CUSTOM_STREAM_REQUEST]",
+                message="Custom TTS streaming request received",
+                endpoint="/api/v1/tts/custom/stream",
+                model=payload.model,
+                mode="custom",
+                language=payload.language,
+                save_output=resolved_save_output,
+            )
+            # END_BLOCK_PREPARE_CUSTOM_STREAM_REQUEST
+            # START_BLOCK_VALIDATE_CUSTOM_STREAM_REQUEST
+            await enforce_sync_tts_admission(request)
+            try:
+                text = enforce_text_length(
+                    value=payload.text,
+                    field_name="text",
+                    max_chars=request.app.state.settings.max_input_text_chars,
+                )
+            except ValueError as exc:
+                return build_text_length_error(request=request, field_name="text", message=str(exc))
+            ensure_requested_model_capability(request, payload.model, execution_mode="custom")
+            # END_BLOCK_VALIDATE_CUSTOM_STREAM_REQUEST
+            # START_BLOCK_EXECUTE_CUSTOM_STREAM_SYNTHESIS
+            result = await run_inference_with_timeout(
+                request=request,
+                operation_name="synthesize_custom",
+                call=lambda: request.app.state.application.synthesize_custom(
+                    CustomVoiceCommand(
+                        text=text,
+                        model=payload.model,
+                        save_output=resolved_save_output,
+                        language=payload.language,
+                        speaker=payload.speaker,
+                        instruct=instruct,
+                        speed=payload.speed,
+                    )
+                ),
+            )
+            # END_BLOCK_EXECUTE_CUSTOM_STREAM_SYNTHESIS
+            # START_BLOCK_BUILD_CUSTOM_STREAM_RESPONSE
+            chunks = list(
+                stream_generation_result(result, chunk_size=DEFAULT_AUDIO_STREAM_CHUNK_SIZE)
+            )
+            request_id = getattr(request.state, "request_id", "unknown")
+            headers = {
+                "x-request-id": request_id,
+                "x-model-id": result.model,
+                "x-tts-mode": result.mode,
+                "x-backend-id": result.backend,
+                "x-tts-stream-chunks": str(len(chunks)),
+            }
+
+            def _iter_chunks():
+                for chunk in chunks:
+                    yield chunk.data
+
+            log_event(
+                logger,
+                level=logging.INFO,
+                event="[RoutesTTS][tts_custom_stream][BLOCK_BUILD_CUSTOM_STREAM_RESPONSE]",
+                message="Custom TTS streaming response is ready",
+                endpoint="/api/v1/tts/custom/stream",
+                model=result.model,
+                mode=result.mode,
+                backend=result.backend,
+                stream_chunks=len(chunks),
+                media_type=result.audio.media_type,
+            )
+            return StreamingResponse(
+                _iter_chunks(),
+                media_type=result.audio.media_type,
+                headers=headers,
+            )
+            # END_BLOCK_BUILD_CUSTOM_STREAM_RESPONSE
 
     @app.post(
         "/api/v1/tts/design",

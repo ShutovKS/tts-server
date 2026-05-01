@@ -350,6 +350,21 @@
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-FAMILY" relation="prepares-execution" />
     </M-TTS-SERVICE>
 
+    <M-STREAMING NAME="AudioStreamingChunker" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Provide a transport-agnostic seam that turns a completed GenerationResult into an iterator of fixed-size audio chunks so HTTP streaming endpoints (and future native-streaming backends) share one chunking contract.</purpose>
+      <path>core/services/streaming.py</path>
+      <depends>M-CONTRACTS</depends>
+      <verification-ref>V-M-STREAMING</verification-ref>
+      <implementation-note>Phase 4.12 introduces `core/services/streaming.py` with `iter_audio_chunks(payload, chunk_size)` (generic byte slicer that emits at least one boundary chunk for empty payloads and rejects non-positive chunk sizes) and `stream_generation_result(result, chunk_size)` (wraps each slice in an `AudioStreamChunk` carrying `index`, `total_chunks`, `data`, `final`, `media_type`, `model`, `mode`, and `backend`). The new `POST /api/v1/tts/custom/stream` route in `server/api/routes_tts.py` consumes the chunker through `StreamingResponse`, surfaces the chunk count via the `x-tts-stream-chunks` header alongside the existing `x-request-id`, `x-model-id`, `x-tts-mode`, and `x-backend-id` headers, and reuses `synthesize_custom(...)` so the backend-side execution pipeline is unchanged. Native-streaming backends can later replace `stream_generation_result` with a true async generator of decoded audio frames without changing the public route shape.</implementation-note>
+      <annotations>
+        <class-AudioStreamChunk PURPOSE="Frozen container describing a single chunk of streamed audio plus its position metadata" />
+        <fn-iter_audio_chunks PURPOSE="Generic byte chunker that yields fixed-size byte slices from a bytes blob" />
+        <fn-stream_generation_result PURPOSE="Wrap a GenerationResult's audio payload as an iterator of AudioStreamChunk values with model/mode/backend metadata" />
+      </annotations>
+      <CrossLink from="M-STREAMING" to="M-TTS-SERVICE" relation="streams-generation-results" />
+      <CrossLink from="M-STREAMING" to="M-SERVER" relation="powers-streaming-endpoints" />
+    </M-STREAMING>
+
     <M-TTS-COORDINATOR NAME="SynthesisCoordinator" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Refactor the current TTS service into a coordinator over planner resolution, family execution semantics, persistence, and observability.</purpose>
       <path>core/services/tts_service.py</path>
