@@ -47,19 +47,35 @@ Legacy root-level Docker assets such as the removed `Dockerfile` and `compose.ya
 
 ### Dependency sets
 
-- `requirements.txt` — default local operator install for the stable shared environment composed from `profiles/packs/`
+- `requirements.txt` — legacy/dev compatibility install composed from `profiles/packs/`; runtime launchers prefer `.envs/<family>` instead
 - `requirements-ci.txt` — lighter CI/test dependency set for repository verification without heavyweight optional runtimes
 - `profiles/packs/base/common.txt` — shared foundation for family/module/platform compilation
 - `profiles/packs/module/server.txt` — server adapter dependencies
 - `profiles/packs/module/telegram.txt` — Telegram adapter dependencies
-- `profiles/packs/family/qwen.txt` — standard Qwen Torch lane for the shared default environment
-- `profiles/packs/family/piper.txt` — Piper ONNX lane for the shared default environment
+- `profiles/packs/family/qwen.txt` — standard Qwen Torch lane for `.envs/qwen`
+- `profiles/packs/family/piper.txt` — Piper ONNX lane for `.envs/piper`
 - `profiles/packs/family/qwen-fast-addon.txt` — optional accelerated Qwen lane for supported CUDA hosts
-- `profiles/packs/family/omnivoice.txt` — dedicated OmniVoice family pack for a separate environment
+- `profiles/packs/family/omnivoice.txt` — OmniVoice family pack for `.envs/omnivoice`
 
-The important operational change is that OmniVoice is not part of the default shared install anymore. It remains supported by the runtime, but should be installed in a dedicated environment when you want live execution because its upstream dependency stack may diverge from the stable Qwen environment.
+The canonical runtime model is now **one model family per Python environment**:
 
-The repository is now also moving toward a profile-driven launch model where each model family is treated as its own isolated runtime contour. In practice that means Qwen, Piper, and OmniVoice are expected to converge on distinct family environments rather than one implicit shared Python environment with optional package drift.
+- `qwen` runs from `.envs/qwen`
+- `piper` runs from `.envs/piper`
+- `omnivoice` runs from `.envs/omnivoice`
+
+The shared `.venv311`/`requirements.txt` path remains useful for CI, repository verification, and local development convenience, but it is not the supported runtime contour for live model execution. OmniVoice in particular must not be mixed into a Qwen environment because its upstream dependency stack may diverge from the Qwen pins.
+
+Use the profile-aware launcher to create or check a family environment:
+
+```bash
+python -m launcher create-env --family qwen --module server --apply
+python -m launcher create-env --family piper --module server --apply
+python -m launcher create-env --family omnivoice --module server --apply
+
+python -m launcher check-env --family qwen --module server
+python -m launcher check-env --family piper --module server
+python -m launcher check-env --family omnivoice --module server
+```
 
 ### macOS Apple Silicon
 
@@ -211,31 +227,54 @@ Important Linux notes:
 
 ### Recommended environment layouts
 
-#### Default shared runtime environment
+#### Canonical family runtime environments
 
-Use this when you want the stable operator lane documented by `requirements.txt`:
+Use these when you want live runtime execution. The launcher resolves the interpreter from the selected family and does not silently fall back to `.venv311`:
+
+```bash
+python -m launcher create-env --family qwen --module server --apply
+python -m launcher create-env --family piper --module server --apply
+python -m launcher create-env --family omnivoice --module server --apply
+```
+
+The resulting runtime interpreters are:
+
+- `.envs/qwen/bin/python` or `.envs/qwen\Scripts\python.exe`
+- `.envs/piper/bin/python` or `.envs/piper\Scripts\python.exe`
+- `.envs/omnivoice/bin/python` or `.envs/omnivoice\Scripts\python.exe`
+
+Run adapters through the same family contour:
+
+```bash
+python -m launcher exec --family qwen --module server
+python -m launcher exec --family piper --module server
+python -m launcher exec --family omnivoice --module server
+```
+
+#### Legacy shared development environment
+
+Use this only when you want the compatibility lane documented by `requirements.txt` for development or broad repository checks:
 
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-That environment is intended for:
+That environment is intentionally not the launcher-selected runtime contour. It is intended for:
 
-- standard Qwen Torch inference
-- optional `qwen_fast` route diagnostics exposed by self-checks
-- Piper ONNX inference
+- CI-style tests and local development tooling
+- lightweight repository verification
+- compatibility checks that do not require mixing live Qwen, Piper, and OmniVoice dependency stacks
 
 #### Dedicated OmniVoice environment
 
-Use a separate environment when you want to run OmniVoice locally:
+The launcher-managed OmniVoice environment is:
 
 ```bash
-python -m pip install --upgrade pip
-pip install -r profiles/packs/family/omnivoice.txt
+python -m launcher create-env --family omnivoice --module server --apply
 ```
 
-On the current Windows host, OmniVoice currently imports against a newer `transformers` surface than the shared Qwen environment, so isolating it in its own venv is the safe operator path.
+On the current validated host, OmniVoice imports against a newer `transformers` surface than the Qwen environment, so isolating it in `.envs/omnivoice` is the safe operator path.
 
 #### Optional accelerated Qwen environment
 
@@ -290,6 +329,7 @@ family=omnivoice
 pack_refs.base=[common]
 pack_refs.family=[omnivoice]
 isolated_env_name=omnivoice
+expected_env_root=.envs/omnivoice
 ```
 
 ## Models

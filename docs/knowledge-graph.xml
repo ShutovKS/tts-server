@@ -585,12 +585,14 @@
     </M-PROFILES>
 
     <M-LAUNCHER NAME="RuntimeLauncher" TYPE="SCRIPT" STATUS="implemented">
-      <purpose>Provide the profile-aware launcher CLI for inspect, plan-run, doctor, bootstrap-env, check-env, exec, create-env, and universal interactive launch runtime contours.</purpose>
+      <purpose>Provide the profile-aware launcher CLI for inspect, plan-run, doctor, bootstrap-env, check-env, exec, create-env, and universal interactive launch runtime contours with explicit one-family-one-environment policy payloads.</purpose>
       <path>launcher/main.py, launcher/__init__.py, launcher/__main__.py</path>
       <depends>M-PROFILES</depends>
       <verification-ref>V-M-LAUNCHER</verification-ref>
       <annotations>
         <fn-parse_args PURPOSE="Launcher CLI parser for inspect, plan-run, doctor, bootstrap-env, check-env, exec, create-env, and launch commands" />
+        <fn-_family_env_policy_payload PURPOSE="Serialize the canonical family-isolated environment policy for launcher JSON responses" />
+        <fn-_attach_runtime_payloads PURPOSE="Attach runtime capability bindings and family environment policy metadata to launcher payloads" />
         <fn-_interactive_launcher_command PURPOSE="Resolve the platform-specific wrapper command used by the universal interactive launch entrypoint" />
         <fn-_interactive_launcher_env PURPOSE="Build environment overrides for delegating the universal interactive launch entrypoint into existing wrappers" />
         <fn-main PURPOSE="Launcher command entrypoint for profile inspection, env diagnostics, execution planning, and wrapper dispatch" />

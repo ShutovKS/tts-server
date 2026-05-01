@@ -751,11 +751,13 @@
 
     <M-LAUNCHER NAME="RuntimeLauncher" TYPE="SCRIPT" LAYER="4" ORDER="6" STATUS="implemented">
       <contract>
-        <purpose>Provide the profile-aware launcher CLI for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env runtime contours.</purpose>
+        <purpose>Provide the profile-aware launcher CLI for inspect, plan-run, doctor, bootstrap-env, check-env, exec, create-env, and universal launch runtime contours with explicit one-family-one-environment policy metadata.</purpose>
       </contract>
       <interface>
-        <export-parse_args PURPOSE="Launcher CLI parser for inspect, plan-run, doctor, bootstrap-env, check-env, exec, and create-env commands" />
-        <export-main PURPOSE="Launcher command entrypoint for profile inspection, env diagnostics, and execution planning" />
+        <export-parse_args PURPOSE="Launcher CLI parser for inspect, plan-run, doctor, bootstrap-env, check-env, exec, create-env, and launch commands" />
+        <export-_family_env_policy_payload PURPOSE="Serialize canonical per-family environment policy metadata for launcher JSON surfaces" />
+        <export-_attach_runtime_payloads PURPOSE="Attach runtime binding and family environment policy metadata to launcher payloads" />
+        <export-main PURPOSE="Launcher command entrypoint for profile inspection, env diagnostics, execution planning, and wrapper dispatch" />
       </interface>
       <depends>M-PROFILES</depends>
       <target>

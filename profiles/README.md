@@ -9,15 +9,24 @@ The goal is to stop relying on one shared implicit environment and move toward:
 - module profiles
 - resolved launch profiles
 
-Current Phase 1 scope is non-breaking groundwork only. Existing `server`, `telegram_bot`, and `cli`
-entrypoints remain valid while the profile resolver is introduced on top of the current runtime.
+Existing `server`, `telegram_bot`, and `cli` entrypoints remain valid for development, but
+profile-aware launcher commands are the canonical runtime path when preparing or executing a live
+model family contour.
 
-## Family isolation direction
+## Family isolation policy
 
-The target operating model is **one isolated environment per model family**.
+The operating model is **one isolated environment per model family**.
 
-- `qwen` remains the default shared family contour for standard Qwen execution.
-- `piper` remains the ONNX-based contour for local Piper voices.
-- `omnivoice` is treated as a dedicated Torch family contour with its own dependency pack.
+- `qwen` resolves to `.envs/qwen` for standard Qwen execution.
+- `piper` resolves to `.envs/piper` for local Piper ONNX voices.
+- `omnivoice` resolves to `.envs/omnivoice` for its Torch-backed dependency contour.
 
 The intent is to stop forcing incompatible upstream dependency stacks into one implicit environment.
+Launcher JSON responses expose this contract through the `family_environment` payload, including
+`environment_isolated: true`, `policy: one_family_one_environment`, the expected env root, the
+expected interpreter path, and whether a legacy `.venv311` compatibility environment is present.
+
+`.venv311` and `requirements.txt` remain useful for CI/dev compatibility checks, but they are not
+the supported live runtime contour. Use `python -m launcher create-env --family <family> --module
+<module> --apply` and `python -m launcher exec --family <family> --module <module>` for runtime
+paths.

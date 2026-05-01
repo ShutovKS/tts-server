@@ -713,14 +713,14 @@
         <check-1>python -m pytest tests/unit/scripts/test_runtime_profiles.py tests/unit/scripts/test_launcher_plan_run.py tests/unit/scripts/test_launcher_exec.py tests/unit/scripts/test_launcher_launch.py tests/unit/scripts/test_launcher_doctor.py tests/unit/scripts/test_launcher_bootstrap_env.py tests/unit/scripts/test_launcher_check_env.py tests/unit/scripts/test_launcher_create_env.py -m unit</check-1>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">Launcher plan-run coverage, together with shared runtime profile assertions, preserves resolved family/module launch plans with dependency-pack previews and expected interpreter paths.</scenario-1>
-        <scenario-2 kind="success">Launcher doctor, bootstrap-env, check-env, and create-env commands expose deterministic isolated-environment guidance and current implementation command previews for supported family contours.</scenario-2>
-        <scenario-3 kind="failure">Launcher exec reports missing isolated interpreters as structured JSON instead of opaque process failures.</scenario-3>
+        <scenario-1 kind="success">Launcher plan-run coverage, together with shared runtime profile assertions, preserves resolved family/module launch plans with dependency-pack previews, expected interpreter paths, and the canonical `family_environment` isolation policy.</scenario-1>
+        <scenario-2 kind="success">Launcher doctor, bootstrap-env, check-env, and create-env commands expose deterministic isolated-environment guidance, current implementation command previews, shared `.venv311` legacy detection, and `environment_isolated=true` for supported family contours.</scenario-2>
+        <scenario-3 kind="failure">Launcher exec reports missing isolated interpreters as structured JSON instead of opaque process failures and keeps the command rooted in `.envs/&lt;family&gt;` rather than a shared environment fallback.</scenario-3>
         <scenario-4 kind="success">Create-env preview output retains the current implementation command strings, including Windows-oriented pip-safe path formatting and compiled requirements references for the selected family pack.</scenario-4>
         <scenario-5 kind="success">Launcher launch dispatches to the existing platform-specific interactive wrapper for the active host while preserving the Windows CMD compatibility path for signed-script constrained environments.</scenario-5>
       </scenarios>
       <coverage-notes>
-        <note-1>Launcher coverage in this plan is limited to the listed unit suites; wording here is restricted to plan-run, exec, launch, doctor, bootstrap-env, check-env, and create-env behaviors directly evidenced by those tests.</note-1>
+        <note-1>Launcher coverage in this plan is limited to the listed unit suites; wording here is restricted to plan-run, exec, launch, doctor, bootstrap-env, check-env, create-env, and the `family_environment` one-family-one-environment payloads directly evidenced by those tests.</note-1>
       </coverage-notes>
     </V-M-LAUNCHER>
     <V-M-WINDOWS-LAUNCHER MODULE="M-WINDOWS-LAUNCHER" PRIORITY="medium">
