@@ -317,16 +317,19 @@
     </M-BACKENDS-V2>
 
     <M-TTS-SERVICE NAME="TTSService" TYPE="CORE_LOGIC" STATUS="implemented">
-      <purpose>Coordinate inference for custom, design, and clone synthesis modes.</purpose>
-      <path>core/services/tts_service.py</path>
-      <depends>M-MODEL-REGISTRY, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE</depends>
+      <purpose>Coordinate inference for custom, design, and clone synthesis modes via the SynthesisRouter unified seam, while keeping the transport-facing TTSService.synthesize_X(...) facade stable.</purpose>
+      <path>core/services/tts_service.py, core/services/synthesis_router.py</path>
+      <depends>M-MODEL-REGISTRY, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY</depends>
       <verification-ref>V-M-TTS-SERVICE</verification-ref>
+      <implementation-note>Phase 3.9 introduces `core/services/synthesis_router.py::SynthesisRouter` as the unified Command -&gt; backend seam. `TTSService.__init__` now builds a `SynthesisRouter(coordinator=...)` and `synthesize_custom`, `synthesize_design`, and `synthesize_clone` all delegate through `self.router.route_custom/_design/_clone(...)`. The router exposes a single public `route(command: GenerationCommand) -&gt; GenerationResult` entry-point that dispatches by `isinstance(command, ...)`, raising `TTSGenerationError` with structured details when the command type is unsupported. The existing `SynthesisCoordinator` remains in place as the per-mode worker (planner -&gt; family adapter -&gt; guarded inference -&gt; backend) and `generate_audio` still lives in `tts_service.py` so existing tests that monkeypatch `core.services.tts_service.generate_audio` keep working. Phase 3.11 will collapse `generate_audio` into the router and rename the coordinator. From the consumer's perspective this collapses the public pipeline from six perceived layers (TTSService -&gt; Coordinator -&gt; planner -&gt; adapter -&gt; generate_audio -&gt; backend) to three (TTSService -&gt; SynthesisRouter -&gt; backend) without changing the internal plumbing.</implementation-note>
       <annotations>
-        <class-TTSService PURPOSE="Core synthesis coordinator with inference guard" />
-        <fn-generate_audio PURPOSE="Dispatch family-prepared execution requests to the backend contract" />
+        <class-TTSService PURPOSE="Core synthesis coordinator with inference guard; delegates each synthesize_X call through SynthesisRouter" />
+        <class-SynthesisRouter PURPOSE="Phase 3.9 unified Command -&gt; backend routing seam exposing route(command) plus per-mode helpers" />
+        <fn-generate_audio PURPOSE="Dispatch family-prepared execution requests to the backend contract (kept here for monkeypatch compatibility; collapsed into the router in Phase 3.11)" />
       </annotations>
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-REGISTRY" relation="resolves-models" />
       <CrossLink from="M-TTS-SERVICE" to="M-INFRASTRUCTURE" relation="uses-audio-io" />
+      <CrossLink from="M-TTS-SERVICE" to="M-MODEL-FAMILY" relation="prepares-execution" />
     </M-TTS-SERVICE>
 
     <M-TTS-COORDINATOR NAME="SynthesisCoordinator" TYPE="CORE_LOGIC" STATUS="implemented">

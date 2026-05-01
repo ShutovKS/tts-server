@@ -1,9 +1,9 @@
 # FILE: core/services/tts_service.py
-# VERSION: 1.0.0
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Coordinate inference for custom, design, and clone synthesis modes.
-#   SCOPE: TTSService class with synthesize_custom/design/clone, generate_audio dispatcher
-#   DEPENDS: M-MODEL-REGISTRY, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE
+#   PURPOSE: Coordinate inference for custom, design, and clone synthesis modes via the SynthesisRouter unified seam, while preserving the transport-facing TTSService.synthesize_X(...) facade for backwards compatibility.
+#   SCOPE: TTSService class with synthesize_custom/design/clone delegating through SynthesisRouter, SynthesisCoordinator (kept as the per-mode worker), generate_audio dispatcher (still in place; collapsed in Phase 3.11)
+#   DEPENDS: M-MODEL-REGISTRY, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY
 #   LINKS: M-TTS-SERVICE
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -11,13 +11,13 @@
 #
 # START_MODULE_MAP
 #   LOGGER - Module logger for synthesis service events
-#   SynthesisCoordinator - Internal coordinator over planning, family preparation, and guarded generation
-#   TTSService - Public synthesis facade preserving transport-facing command methods
-#   generate_audio - Dispatch family-prepared execution requests to the backend contract
+#   SynthesisCoordinator - Internal coordinator over planning, family preparation, and guarded generation; remains the per-mode worker invoked by SynthesisRouter
+#   TTSService - Public synthesis facade preserving transport-facing command methods; delegates each call through SynthesisRouter to keep the public pipeline at three layers (TTSService -> SynthesisRouter -> backend)
+#   generate_audio - Dispatch family-prepared execution requests to the backend contract (kept here so existing tests can monkeypatch the symbol; collapsed into the router in Phase 3.11)
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Tightened coordinator/runtime seams to depend on explicit registry and handle contracts instead of duck-typed fallback access]
+#   LAST_CHANGE: [v1.2.0 - Phase 3.9: routed every synthesize_X call through the new SynthesisRouter seam (TTSService.router) so the public pipeline collapses from six perceived layers to three; SynthesisCoordinator and generate_audio remain in place to keep backwards compatibility for existing tests]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -357,6 +357,8 @@ class TTSService:
         settings: CoreSettings,
         inference_guard: InferenceGuard | None = None,
     ):
+        from core.services.synthesis_router import SynthesisRouter
+
         self.registry = registry
         self.settings = settings
         self.inference_guard = inference_guard or InferenceGuard()
@@ -373,6 +375,7 @@ class TTSService:
             planner=self.planner,
             family_adapters=self._family_adapters,
         )
+        self.router = SynthesisRouter(coordinator=self.coordinator)
 
     def _selected_backend_key(self) -> str:
         return self.registry.backend.key
@@ -398,7 +401,7 @@ class TTSService:
                 language=command.language,
                 backend=self._selected_backend_key(),
             )
-            result = self.coordinator.synthesize_custom(command)
+            result = self.router.route_custom(command)
             log_event(
                 LOGGER,
                 level=20,
@@ -432,7 +435,7 @@ class TTSService:
                 language=command.language,
                 backend=self._selected_backend_key(),
             )
-            result = self.coordinator.synthesize_design(command)
+            result = self.router.route_design(command)
             log_event(
                 LOGGER,
                 level=20,
@@ -480,7 +483,7 @@ class TTSService:
                 ref_audio_path=str(command.ref_audio_path),
                 backend=self._selected_backend_key(),
             )
-            result = self.coordinator.synthesize_clone(command)
+            result = self.router.route_clone(command)
             return result
 
 

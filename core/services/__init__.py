@@ -1,5 +1,5 @@
 # WN|# FILE: core/services/__init__.py
-# BV|# VERSION: 1.0.1
+# BV|# VERSION: 1.1.0
 # TR|# START_MODULE_CONTRACT
 # TR|#   PURPOSE: Re-export public service and planning-adjacent types used by the shared runtime.
 # MZ|#   SCOPE: barrel re-exports with lazy resolution
@@ -13,10 +13,11 @@
 # MV|#   ModelRegistry - Re-export model discovery and readiness service
 # KM|#   TTSService - Re-export core synthesis orchestration service
 # MQ|#   SynthesisPlanner - Re-export synthesis planner
+# YR|#   SynthesisRouter - Re-export the unified Command -> backend routing seam
 # PQ|# END_MODULE_MAP
 # BZ|#
 # ZR|# START_CHANGE_SUMMARY
-# XV|#   LAST_CHANGE: [v1.0.1 - Switched the services barrel to lazy export resolution so lightweight imports do not pull the runtime graph eagerly]
+# XV|#   LAST_CHANGE: [v1.1.0 - Phase 3.9: re-exported SynthesisRouter so transports can depend on the unified routing seam without reaching into core.services.synthesis_router]
 # JV|# END_CHANGE_SUMMARY
 # RJ|
 # SK|from __future__ import annotations
@@ -26,22 +27,27 @@
 # WX|if TYPE_CHECKING:
 # WR|    from core.planning import SynthesisPlanner
 # WS|    from core.services.model_registry import ModelRegistry
-# WT|    from core.services.tts_service import TTSService
-# WU|
+# WT|    from core.services.synthesis_router import SynthesisRouter
+# WU|    from core.services.tts_service import TTSService
 # WV|
-# WW|def __getattr__(name: str) -> Any:
-# WX|    if name == "ModelRegistry":
-# WY|        from core.services.model_registry import ModelRegistry
-# WZ|
-# XA|        return ModelRegistry
-# XB|    if name == "TTSService":
-# XC|        from core.services.tts_service import TTSService
-# XD|
-# XE|        return TTSService
-# XF|    if name == "SynthesisPlanner":
-# XG|        from core.planning import SynthesisPlanner
-# XH|
-# XI|        return SynthesisPlanner
-# XJ|    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-# XK|
-# XL|__all__ = ["ModelRegistry", "SynthesisPlanner", "TTSService"]
+# WW|
+# WX|def __getattr__(name: str) -> Any:
+# WY|    if name == "ModelRegistry":
+# WZ|        from core.services.model_registry import ModelRegistry
+# XA|
+# XB|        return ModelRegistry
+# XC|    if name == "TTSService":
+# XD|        from core.services.tts_service import TTSService
+# XE|
+# XF|        return TTSService
+# XG|    if name == "SynthesisPlanner":
+# XH|        from core.planning import SynthesisPlanner
+# XI|
+# XJ|        return SynthesisPlanner
+# YS|    if name == "SynthesisRouter":
+# YT|        from core.services.synthesis_router import SynthesisRouter
+# YU|
+# YV|        return SynthesisRouter
+# XK|    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+# XL|
+# XM|__all__ = ["ModelRegistry", "SynthesisPlanner", "SynthesisRouter", "TTSService"]
