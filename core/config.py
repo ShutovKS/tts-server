@@ -39,13 +39,13 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Mapping, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODELS_DIR = PROJECT_ROOT / ".models"
@@ -211,6 +211,8 @@ def _coerce_csv_tuple(raw: Any) -> tuple[str, ...]:
         if value and value not in values:
             values.append(value)
     return tuple(values)
+
+
 # END_BLOCK_PYDANTIC_SETTINGS_HELPERS
 
 
@@ -429,9 +431,7 @@ def env_int(name: str, default: int, environ: Mapping[str, str] | None = None) -
 #   SIDE_EFFECTS: none
 #   LINKS: M-CONFIG
 # END_CONTRACT: env_bool
-def env_bool(
-    name: str, default: bool, environ: Mapping[str, str] | None = None
-) -> bool:
+def env_bool(name: str, default: bool, environ: Mapping[str, str] | None = None) -> bool:
     value = env_value(name, environ)
     if value is None:
         return default
@@ -445,9 +445,7 @@ def env_bool(
 #   SIDE_EFFECTS: none
 #   LINKS: M-CONFIG
 # END_CONTRACT: _parse_csv_env
-def _parse_csv_env(
-    name: str, environ: Mapping[str, str] | None = None
-) -> tuple[str, ...]:
+def _parse_csv_env(name: str, environ: Mapping[str, str] | None = None) -> tuple[str, ...]:
     return _coerce_csv_tuple(env_text(name, "", environ))
 
 
@@ -458,9 +456,7 @@ def _parse_csv_env(
 #   SIDE_EFFECTS: none
 #   LINKS: M-CONFIG
 # END_CONTRACT: env_path
-def env_path(
-    name: str, default: Path, environ: Mapping[str, str] | None = None
-) -> Path:
+def env_path(name: str, default: Path, environ: Mapping[str, str] | None = None) -> Path:
     value = env_value(name, environ)
     return Path(str(default) if value is None else value).resolve()
 
