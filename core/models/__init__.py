@@ -1,8 +1,8 @@
 # FILE: core/models/__init__.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Re-export public model metadata types and catalog helpers.
-#   SCOPE: barrel re-exports for manifest and catalog symbols
+#   PURPOSE: Re-export public model metadata types, catalog helpers, and the composite manifest loader.
+#   SCOPE: barrel re-exports for manifest and catalog symbols plus composite manifest helpers
 #   DEPENDS: M-MODELS
 #   LINKS: M-MODELS
 #   ROLE: BARREL
@@ -18,10 +18,13 @@
 #   EMOTION_EXAMPLES - Example voice design prompts
 #   get_model_manifest - Load the model manifest
 #   get_model_specs - Build mutable model spec mapping
+#   load_composite_manifest - Build a manifest from base + per-model fragments + .models/ scan
+#   discover_model_manifests - Yield (label, payload) pairs for fragment files
+#   CompositeManifestError - Raised on composite manifest merge failures
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.1.0 - Phase 2.7: re-exported the composite manifest loader and discovery helpers.]
 # END_CHANGE_SUMMARY
 
 from core.models.catalog import (
@@ -31,15 +34,23 @@ from core.models.catalog import (
     get_model_manifest,
     get_model_specs,
 )
+from core.models.composite import (
+    CompositeManifestError,
+    discover_model_manifests,
+    load_composite_manifest,
+)
 from core.models.manifest import ModelManifest, ModelManifestValidationError, ModelSpec
 
 __all__ = [
+    "CompositeManifestError",
     "EMOTION_EXAMPLES",
     "MODEL_SPECS",
     "ModelManifest",
     "ModelManifestValidationError",
     "ModelSpec",
     "SPEAKER_MAP",
+    "discover_model_manifests",
     "get_model_manifest",
     "get_model_specs",
+    "load_composite_manifest",
 ]

@@ -90,15 +90,19 @@
     </M-CONTRACTS>
 
     <M-MODELS NAME="ModelMetadata" TYPE="TYPES" STATUS="implemented">
-      <purpose>Define current manifest-backed model metadata, rollout state, and backend artifact validation rules.</purpose>
+      <purpose>Define current manifest-backed model metadata, rollout state, backend artifact validation rules, and the composite manifest loader that merges per-family fragments and .models/ auto-discovery into a single ModelManifest.</purpose>
       <path>core/models/</path>
       <depends>none</depends>
       <verification-ref>V-M-MODELS</verification-ref>
+      <implementation-note>Phase 2.7 introduces `core/models/composite.py` with `load_composite_manifest(...)` which loads the base `manifest.v1.json`, walks an optional fragments directory (`core/models/manifests/*.json` by default) and an optional `.models/`-style directory for per-folder `model_manifest.json` files, then merges every fragment's `models[]` entries into the base before re-running `ModelManifest.from_mapping(...)` validation. Fragment files accept three shapes: `{"models": [...]}`, `{"model": {...}}`, or a single model object with `key` + `folder`. Existing call sites continue to use `load_model_manifest(...)`; Phase 2.8 will switch bootstrap to call the composite loader.</implementation-note>
       <annotations>
         <class-ModelManifest PURPOSE="Typed model manifest container" />
         <class-ModelSpec PURPOSE="Typed model specification for current catalog entries" />
-        <fn-load_model_manifest PURPOSE="Parse and validate manifest data from disk" />
+        <class-CompositeManifestError PURPOSE="Raised on composite manifest merge failures" />
+        <fn-load_model_manifest PURPOSE="Parse and validate the single base manifest file from disk" />
         <fn-get_model_manifest PURPOSE="Expose the active model manifest to registry consumers" />
+        <fn-load_composite_manifest PURPOSE="Build a single manifest by merging the base manifest with per-family fragments and .models/ auto-discovery" />
+        <fn-discover_model_manifests PURPOSE="Yield (label, payload) pairs for every JSON fragment found in fragments_dir + models_dir" />
       </annotations>
     </M-MODELS>
 
