@@ -150,6 +150,21 @@
       <CrossLink from="M-BACKENDS" to="M-MODELS" relation="reads-manifest-models" />
     </M-BACKENDS>
 
+    <M-DISCOVERY NAME="DiscoveryHelpers" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Auto-discover concrete TTSBackend, ModelFamilyAdapter, and ModelFamilyPlugin classes from in-process __subclasses__() recursion plus optional importlib.metadata entry points so that bootstrap can wire backends and families without hardcoded imports.</purpose>
+      <path>core/discovery.py</path>
+      <depends>M-BACKENDS, M-MODEL-FAMILY</depends>
+      <verification-ref>V-M-DISCOVERY</verification-ref>
+      <implementation-note>Two discovery sources combined per call: (1) recursive `__subclasses__()` traversal of the relevant base class (`TTSBackend`, `ModelFamilyAdapter`, or `ModelFamilyPlugin`) which works whether or not the project is pip-installed; (2) `importlib.metadata.entry_points()` lookup against `tts_server.backends`, `tts_server.family_adapters`, and `tts_server.model_families` which lets external pip packages register their classes without editing `bootstrap.py`. Abstract classes are filtered out, results are deduplicated by fully qualified name, and sorted by `(declared key, qualified name)` for determinism. Phase 2.6 introduces these helpers; Phase 2.8 removes the hardcoded backend / family wiring from `bootstrap.py` by switching it to call these helpers.</implementation-note>
+      <annotations>
+        <fn-discover_backend_classes PURPOSE="Enumerate concrete TTSBackend implementations (subclass scan + entry points)" />
+        <fn-discover_family_adapter_classes PURPOSE="Enumerate concrete ModelFamilyAdapter implementations" />
+        <fn-discover_family_plugin_classes PURPOSE="Enumerate concrete ModelFamilyPlugin implementations" />
+      </annotations>
+      <CrossLink from="M-DISCOVERY" to="M-BACKENDS" relation="discovers-backend-classes" />
+      <CrossLink from="M-DISCOVERY" to="M-MODEL-FAMILY" relation="discovers-family-classes" />
+    </M-DISCOVERY>
+
     <M-MODEL-FAMILY NAME="ModelFamilyAdapter" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Define family-level capability matching and execution preparation independent of transport adapters.</purpose>
       <path>core/model_families/base.py, core/model_families/plugin.py</path>
