@@ -95,10 +95,21 @@ class ContentionTTSService(DummyTTSService):
         return super().synthesize_custom(request)
 
 
+class _StubBackend:
+    key = "torch"
+    label = "PyTorch + Transformers"
+
+    def __init__(self) -> None:
+        self.execute = lambda request: None  # type: ignore[assignment]
+
+
 class StubRegistry:
+    def __init__(self) -> None:
+        self._backend = _StubBackend()
+
     @property
     def backend(self):
-        return type("BackendStub", (), {"key": "torch", "label": "PyTorch + Transformers"})()
+        return self._backend
 
     def get_model_spec(self, model_name=None, mode=None):
         from core.models.catalog import MODEL_SPECS
@@ -2020,14 +2031,11 @@ def test_clone_endpoint_returns_controlled_error_when_generation_artifact_missin
     settings.ensure_directories()
     monkeypatch.setattr("server.api.routes_health.check_ffmpeg_available", lambda: True)
 
-    def fake_generate_audio(**kwargs):
-        return None
-
-    monkeypatch.setattr("core.services.tts_service.generate_audio", fake_generate_audio)
-
     app = create_app(settings)
     app.state.registry = StubRegistry()
-    app.state.tts_service = TTSService(registry=StubRegistry(), settings=settings)
+    tts_registry = StubRegistry()
+    tts_registry.backend.execute = lambda request: None
+    app.state.tts_service = TTSService(registry=tts_registry, settings=settings)
     app.state.application = TTSApplicationService(tts_service=app.state.tts_service)
     object.__setattr__(
         app.state.job_execution.manager.executor,

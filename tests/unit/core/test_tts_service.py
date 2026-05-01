@@ -1,5 +1,5 @@
 # FILE: tests/unit/core/test_tts_service.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for the core TTS service orchestration and logging.
 #   SCOPE: Clone synthesis, language normalization, structured log emission
@@ -10,16 +10,20 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   StubRegistry - Minimal registry stub returning model specs by mode
+#   _StubBackend - Stable backend stub with a configurable execute() callback used in place of the removed generate_audio shim
+#   StubRegistry - Minimal registry stub returning model specs by mode and backed by a stable _StubBackend instance
 #   LoggingRegistry - Registry stub that counts model resolution calls
 #   _make_core_settings - Build isolated core settings for unit tests
+#   _capture_execute - Build an execute callback that records the ExecutionRequest fields the tests assert on
 #   test_synthesize_clone_passes_ref_audio_as_string - Verifies clone requests pass file paths as strings to generation
 #   test_synthesize_clone_passes_explicit_language - Verifies clone requests normalize explicit language values
+#   test_synthesize_clone_preserves_missing_ref_text - Verifies clone requests preserve None ref_text in the kwargs
 #   test_tts_service_emits_structured_logs - Verifies structured synthesis logs include mode and language context
+#   test_tts_service_routes_omnivoice_family_payload_to_backend - Verifies the OmniVoice family routes its payload through the backend execution contract
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.1.0 - Phase 3.11: replaced generate_audio monkeypatches with a stable _StubBackend whose execute() callback is overridden per test, mirroring the new SynthesisCoordinator -> backend.execute(ExecutionRequest) flow]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ from pathlib import Path
 
 import pytest
 
+from core.backends.base import ExecutionRequest
 from core.config import CoreSettings
 from core.contracts.commands import VoiceCloneCommand, VoiceDesignCommand
 from core.models.catalog import MODEL_SPECS
@@ -38,10 +43,21 @@ from tests.support.api_fakes import extract_json_logs, make_wav_bytes
 pytestmark = pytest.mark.unit
 
 
+class _StubBackend:
+    key = "torch"
+    label = "PyTorch + Transformers"
+
+    def __init__(self) -> None:
+        self.execute = lambda request: None  # type: ignore[assignment]
+
+
 class StubRegistry:
+    def __init__(self) -> None:
+        self._backend = _StubBackend()
+
     @property
     def backend(self):
-        return type("BackendStub", (), {"key": "torch", "label": "PyTorch + Transformers"})()
+        return self._backend
 
     def get_model_spec(self, model_name=None, mode=None):
         if model_name is not None:
@@ -68,6 +84,7 @@ class StubRegistry:
 
 class LoggingRegistry(StubRegistry):
     def __init__(self):
+        super().__init__()
         self.calls = 0
 
     def get_model(self, model_name=None, mode=None):
@@ -79,6 +96,20 @@ class FamilyAwareRegistry(StubRegistry):
     def get_model(self, model_name=None, mode=None):
         spec = self.get_model_spec(model_name=model_name, mode=mode)
         return spec, type("HandleStub", (), {"backend_key": "torch", "spec": spec})()
+
+
+def _capture_execute(captured: dict, *, write_audio: bool = True):
+    def _execute(request: ExecutionRequest) -> None:
+        captured.update(request.generation_kwargs)
+        captured["text"] = request.text
+        captured["language"] = request.language
+        captured["output_path"] = str(request.output_dir)
+        captured["mode"] = request.execution_mode
+        captured["handle"] = request.handle
+        if write_audio:
+            (Path(request.output_dir) / "audio_0001.wav").write_bytes(make_wav_bytes())
+
+    return _execute
 
 
 def _make_core_settings(tmp_path: Path) -> CoreSettings:
@@ -104,21 +135,14 @@ def _make_core_settings(tmp_path: Path) -> CoreSettings:
     return settings
 
 
-def test_synthesize_clone_passes_ref_audio_as_string(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_synthesize_clone_passes_ref_audio_as_string(tmp_path: Path):
     settings = _make_core_settings(tmp_path)
     ref_audio_path = tmp_path / "reference.wav"
     ref_audio_path.write_bytes(make_wav_bytes())
-    service = TTSService(registry=StubRegistry(), settings=settings)  # type: ignore[arg-type]
-    captured_kwargs = {}
-
-    def fake_generate_audio(**kwargs):
-        captured_kwargs.update(kwargs)
-        output_dir = Path(kwargs["output_path"])
-        (output_dir / "audio_0001.wav").write_bytes(make_wav_bytes())
-
-    monkeypatch.setattr("core.services.tts_service.generate_audio", fake_generate_audio)
+    registry = StubRegistry()
+    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    captured_kwargs: dict = {}
+    registry.backend.execute = _capture_execute(captured_kwargs)
 
     result = service.synthesize_clone(
         VoiceCloneCommand(
@@ -134,19 +158,14 @@ def test_synthesize_clone_passes_ref_audio_as_string(
     assert captured_kwargs["language"] == "auto"
 
 
-def test_synthesize_clone_passes_explicit_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_synthesize_clone_passes_explicit_language(tmp_path: Path):
     settings = _make_core_settings(tmp_path)
     ref_audio_path = tmp_path / "reference.wav"
     ref_audio_path.write_bytes(make_wav_bytes())
-    service = TTSService(registry=StubRegistry(), settings=settings)  # type: ignore[arg-type]
-    captured_kwargs = {}
-
-    def fake_generate_audio(**kwargs):
-        captured_kwargs.update(kwargs)
-        output_dir = Path(kwargs["output_path"])
-        (output_dir / "audio_0001.wav").write_bytes(make_wav_bytes())
-
-    monkeypatch.setattr("core.services.tts_service.generate_audio", fake_generate_audio)
+    registry = StubRegistry()
+    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    captured_kwargs: dict = {}
+    registry.backend.execute = _capture_execute(captured_kwargs)
 
     service.synthesize_clone(
         VoiceCloneCommand(
@@ -160,21 +179,14 @@ def test_synthesize_clone_passes_explicit_language(tmp_path: Path, monkeypatch: 
     assert captured_kwargs["language"] == "ru"
 
 
-def test_synthesize_clone_preserves_missing_ref_text(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_synthesize_clone_preserves_missing_ref_text(tmp_path: Path):
     settings = _make_core_settings(tmp_path)
     ref_audio_path = tmp_path / "reference.wav"
     ref_audio_path.write_bytes(make_wav_bytes())
-    service = TTSService(registry=StubRegistry(), settings=settings)  # type: ignore[arg-type]
-    captured_kwargs = {}
-
-    def fake_generate_audio(**kwargs):
-        captured_kwargs.update(kwargs)
-        output_dir = Path(kwargs["output_path"])
-        (output_dir / "audio_0001.wav").write_bytes(make_wav_bytes())
-
-    monkeypatch.setattr("core.services.tts_service.generate_audio", fake_generate_audio)
+    registry = StubRegistry()
+    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    captured_kwargs: dict = {}
+    registry.backend.execute = _capture_execute(captured_kwargs)
 
     service.synthesize_clone(
         VoiceCloneCommand(
@@ -188,20 +200,14 @@ def test_synthesize_clone_preserves_missing_ref_text(
     assert captured_kwargs["ref_text"] is None
 
 
-def test_tts_service_emits_structured_logs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-):
+def test_tts_service_emits_structured_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture):
     settings = _make_core_settings(tmp_path)
     registry = LoggingRegistry()
     service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
     ref_audio_path = tmp_path / "reference.wav"
     ref_audio_path.write_bytes(make_wav_bytes())
-
-    def fake_generate_audio(**kwargs):
-        output_dir = Path(kwargs["output_path"])
-        (output_dir / "audio_0001.wav").write_bytes(make_wav_bytes())
-
-    monkeypatch.setattr("core.services.tts_service.generate_audio", fake_generate_audio)
+    captured_kwargs: dict = {}
+    registry.backend.execute = _capture_execute(captured_kwargs)
     caplog.set_level(logging.INFO)
 
     result = service.synthesize_clone(
@@ -230,19 +236,12 @@ def test_tts_service_emits_structured_logs(
     )
 
 
-def test_tts_service_routes_omnivoice_family_payload_to_backend(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_tts_service_routes_omnivoice_family_payload_to_backend(tmp_path: Path):
     settings = _make_core_settings(tmp_path)
-    service = TTSService(registry=FamilyAwareRegistry(), settings=settings)  # type: ignore[arg-type]
-    captured_kwargs = {}
-
-    def fake_generate_audio(**kwargs):
-        captured_kwargs.update(kwargs)
-        output_dir = Path(kwargs["output_path"])
-        (output_dir / "audio_0001.wav").write_bytes(make_wav_bytes())
-
-    monkeypatch.setattr("core.services.tts_service.generate_audio", fake_generate_audio)
+    registry = FamilyAwareRegistry()
+    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    captured_kwargs: dict = {}
+    registry.backend.execute = _capture_execute(captured_kwargs)
 
     result = service.synthesize_design(
         VoiceDesignCommand(

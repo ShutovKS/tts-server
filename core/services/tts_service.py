@@ -1,8 +1,8 @@
 # FILE: core/services/tts_service.py
-# VERSION: 1.2.0
+# VERSION: 1.3.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Coordinate inference for custom, design, and clone synthesis modes via the SynthesisRouter unified seam, while preserving the transport-facing TTSService.synthesize_X(...) facade for backwards compatibility.
-#   SCOPE: TTSService class with synthesize_custom/design/clone delegating through SynthesisRouter, SynthesisCoordinator (kept as the per-mode worker), generate_audio dispatcher (still in place; collapsed in Phase 3.11)
+#   SCOPE: TTSService class with synthesize_custom/design/clone delegating through SynthesisRouter, SynthesisCoordinator (kept as the per-mode worker; now invokes backend.execute directly without a module-level generate_audio shim).
 #   DEPENDS: M-MODEL-REGISTRY, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY
 #   LINKS: M-TTS-SERVICE
 #   ROLE: RUNTIME
@@ -11,13 +11,12 @@
 #
 # START_MODULE_MAP
 #   LOGGER - Module logger for synthesis service events
-#   SynthesisCoordinator - Internal coordinator over planning, family preparation, and guarded generation; remains the per-mode worker invoked by SynthesisRouter
+#   SynthesisCoordinator - Internal coordinator over planning, family preparation, and guarded generation; the per-mode worker invoked by SynthesisRouter; now invokes backend.execute(ExecutionRequest(...)) directly inside _run_generation.
 #   TTSService - Public synthesis facade preserving transport-facing command methods; delegates each call through SynthesisRouter to keep the public pipeline at three layers (TTSService -> SynthesisRouter -> backend)
-#   generate_audio - Dispatch family-prepared execution requests to the backend contract (kept here so existing tests can monkeypatch the symbol; collapsed into the router in Phase 3.11)
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.0 - Phase 3.9: routed every synthesize_X call through the new SynthesisRouter seam (TTSService.router) so the public pipeline collapses from six perceived layers to three; SynthesisCoordinator and generate_audio remain in place to keep backwards compatibility for existing tests]
+#   LAST_CHANGE: [v1.3.0 - Phase 3.11: removed the generate_audio() intermediate dispatcher; SynthesisCoordinator._run_generation now calls backend.execute(ExecutionRequest(...)) directly so the synthesis pipeline collapses to TTSService -> SynthesisRouter -> SynthesisCoordinator -> backend without an extra free-function hop]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -55,32 +54,6 @@ from core.observability import Timer, get_logger, log_event, operation_scope
 from core.planning import SynthesisPlanner
 
 LOGGER = get_logger(__name__)
-
-
-# START_CONTRACT: generate_audio
-#   PURPOSE: Dispatch a family-prepared generation request to the backend execution contract.
-#   INPUTS: { args: tuple[object, ...] - Positional passthrough arguments, kwargs: dict[str, Any] - Backend, handle, mode, text, output_path, and mode-specific generation fields }
-#   OUTPUTS: { None - Invokes the backend execution contract and writes output artifacts }
-#   SIDE_EFFECTS: Triggers backend inference and writes generated audio files into the provided output directory
-#   LINKS: M-TTS-SERVICE
-# END_CONTRACT: generate_audio
-def generate_audio(*args, **kwargs):
-    backend = kwargs.pop("backend")
-    mode = kwargs.pop("mode")
-    handle = kwargs.pop("handle")
-    output_path = Path(kwargs.pop("output_path"))
-    text = kwargs.pop("text")
-    language = kwargs.pop("language")
-    backend.execute(
-        ExecutionRequest(
-            handle=handle,
-            text=text,
-            output_dir=output_path,
-            language=language,
-            execution_mode=mode,
-            generation_kwargs=dict(kwargs),
-        )
-    )
 
 
 class SynthesisCoordinator:
@@ -235,15 +208,18 @@ class SynthesisCoordinator:
         try:
             with temporary_output_dir(prefix="qwen3_tts_output_") as output_dir:
                 try:
-                    generate_audio(
-                        backend=backend,
-                        handle=handle,
-                        mode=spec.mode,
-                        text=text,
-                        language=language,
-                        output_path=str(output_dir),
-                        **generation_kwargs,
+                    # START_BLOCK_DISPATCH_TO_BACKEND
+                    backend.execute(
+                        ExecutionRequest(
+                            handle=handle,
+                            text=text,
+                            output_dir=Path(output_dir),
+                            language=language,
+                            execution_mode=spec.mode,
+                            generation_kwargs=dict(generation_kwargs),
+                        )
                     )
+                    # END_BLOCK_DISPATCH_TO_BACKEND
                     audio = read_generated_wav(output_dir)
                 except AudioArtifactNotFoundError as exc:
                     log_event(
@@ -490,6 +466,5 @@ class TTSService:
 __all__ = [
     "LOGGER",
     "SynthesisCoordinator",
-    "generate_audio",
     "TTSService",
 ]
