@@ -236,6 +236,49 @@ def test_tts_service_emits_structured_logs(tmp_path: Path, caplog: pytest.LogCap
     )
 
 
+def test_tts_service_uses_result_cache_to_short_circuit_repeat_requests(tmp_path: Path):
+    from core.contracts.commands import CustomVoiceCommand
+    from core.services.result_cache import FileSystemResultCache
+
+    settings = _make_core_settings(tmp_path)
+    registry = StubRegistry()
+    cache = FileSystemResultCache(tmp_path / ".cache" / "results")
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        result_cache=cache,
+    )
+    captured_kwargs: dict = {}
+    call_counter = {"n": 0}
+
+    def _execute(request: ExecutionRequest) -> None:
+        call_counter["n"] += 1
+        _capture_execute(captured_kwargs)(request)
+
+    registry.backend.execute = _execute
+
+    qwen_custom_model = next(
+        spec.model_id
+        for spec in MODEL_SPECS.values()
+        if spec.family == "Qwen3-TTS" and spec.mode == "custom"
+    )
+    command = CustomVoiceCommand(
+        text="Cache me",
+        model=qwen_custom_model,
+        speaker="Vivian",
+        instruct="Normal tone",
+        speed=1.0,
+    )
+
+    first = service.synthesize_custom(command)
+    second = service.synthesize_custom(command)
+
+    assert call_counter["n"] == 1
+    assert first.audio.bytes_data == second.audio.bytes_data
+    assert second.model == first.model
+    assert second.backend == first.backend
+
+
 def test_tts_service_routes_omnivoice_family_payload_to_backend(tmp_path: Path):
     settings = _make_core_settings(tmp_path)
     registry = FamilyAwareRegistry()

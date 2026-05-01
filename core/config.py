@@ -52,6 +52,7 @@ DEFAULT_MODELS_DIR = PROJECT_ROOT / ".models"
 DEFAULT_OUTPUTS_DIR = PROJECT_ROOT / ".outputs"
 DEFAULT_VOICES_DIR = PROJECT_ROOT / ".voices"
 DEFAULT_UPLOAD_STAGING_DIR = PROJECT_ROOT / ".uploads"
+DEFAULT_RESULT_CACHE_DIR = PROJECT_ROOT / ".cache" / "results"
 DEFAULT_MODEL_MANIFEST_PATH = PROJECT_ROOT / "core" / "models" / "manifest.v1.json"
 
 
@@ -113,6 +114,9 @@ class CoreSettingsEnv(TypedDict):
     request_timeout_seconds: int
     inference_busy_status_code: int
     auto_play_cli: bool
+    result_cache_enabled: bool
+    result_cache_dir: Path
+    result_cache_max_entries: int
 
 
 # START_CONTRACT: CoreSettings
@@ -167,6 +171,9 @@ class CoreSettings:
     request_timeout_seconds: int = 300
     inference_busy_status_code: int = 503
     auto_play_cli: bool = True
+    result_cache_enabled: bool = False
+    result_cache_dir: Path = field(default_factory=lambda: DEFAULT_RESULT_CACHE_DIR)
+    result_cache_max_entries: int = 1024
 
     def ensure_directories(self) -> None:
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -282,6 +289,9 @@ class CoreEnvSettings(BaseSettings):
     request_timeout_seconds: int = 300
     inference_busy_status_code: int = 503
     auto_play_cli: bool = True
+    result_cache_enabled: bool = False
+    result_cache_dir: Path = Field(default_factory=lambda: DEFAULT_RESULT_CACHE_DIR.resolve())
+    result_cache_max_entries: int = 1024
 
     @field_validator(
         "models_dir",
@@ -290,6 +300,7 @@ class CoreEnvSettings(BaseSettings):
         "voices_dir",
         "upload_staging_dir",
         "model_manifest_path",
+        "result_cache_dir",
         mode="before",
     )
     @classmethod
@@ -376,6 +387,7 @@ class CoreEnvSettings(BaseSettings):
         "quota_enabled",
         "default_save_output",
         "auto_play_cli",
+        "result_cache_enabled",
         mode="before",
     )
     @classmethod
@@ -513,6 +525,7 @@ __all__ = [
     "DEFAULT_OUTPUTS_DIR",
     "DEFAULT_VOICES_DIR",
     "DEFAULT_UPLOAD_STAGING_DIR",
+    "DEFAULT_RESULT_CACHE_DIR",
     "DEFAULT_MODEL_MANIFEST_PATH",
     "LOCAL_JOB_EXECUTION_BACKEND",
     "LOCAL_JOB_METADATA_BACKEND",

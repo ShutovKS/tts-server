@@ -118,6 +118,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     app.state.runtime = runtime.core
     app.state.registry = runtime.core.registry
     app.state.model_lifecycle = runtime.core.model_lifecycle
+    app.state.result_cache = runtime.core.result_cache
     app.state.tts_service = runtime.core.tts_service
     app.state.application = runtime.core.application
     app.state.job_store = runtime.core.job_store

@@ -23,7 +23,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from core.services.result_cache import ResultCache
 
 from core.backends.base import ExecutionRequest
 from core.config import CoreSettings
@@ -332,7 +335,9 @@ class TTSService:
         registry: RuntimeExecutionRegistry,
         settings: CoreSettings,
         inference_guard: InferenceGuard | None = None,
+        result_cache: ResultCache | None = None,
     ):
+        from core.services.result_cache import NullResultCache
         from core.services.synthesis_router import SynthesisRouter
 
         self.registry = registry
@@ -351,7 +356,15 @@ class TTSService:
             planner=self.planner,
             family_adapters=self._family_adapters,
         )
-        self.router = SynthesisRouter(coordinator=self.coordinator)
+        self._result_cache = result_cache or NullResultCache()
+        self.router = SynthesisRouter(
+            coordinator=self.coordinator,
+            result_cache=self._result_cache,
+        )
+
+    @property
+    def result_cache(self) -> ResultCache:
+        return self._result_cache
 
     def _selected_backend_key(self) -> str:
         return self.registry.backend.key

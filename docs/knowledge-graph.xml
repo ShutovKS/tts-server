@@ -350,6 +350,23 @@
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-FAMILY" relation="prepares-execution" />
     </M-TTS-SERVICE>
 
+    <M-RESULT-CACHE NAME="ResultCache" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Provide a swappable, transport-agnostic cache for completed synthesis results so identical (text, model, parameters) commands can short-circuit GPU work without changing the public TTSService API.</purpose>
+      <path>core/services/result_cache.py</path>
+      <depends>M-CONTRACTS, M-CONFIG, M-OBSERVABILITY</depends>
+      <verification-ref>V-M-RESULT-CACHE</verification-ref>
+      <implementation-note>Phase 4.14 introduces `core/services/result_cache.py` with the `CachedResult` frozen container, the `ResultCache` ABC (`get` / `put` / `clear`), the always-miss `NullResultCache` default, and `FileSystemResultCache` which stores audio payloads as `.bin` blobs alongside `.meta.json` descriptors and evicts the oldest entries when `max_entries` is exceeded. The canonicaliser `build_cache_key(kind, params)` produces a SHA-256 hex digest from a sorted JSON projection so dict-order variations collapse onto the same key. `core/services/synthesis_router.py` (v1.1.0) accepts an optional `result_cache=` argument and consults it for every `route_custom` / `route_design` / `route_clone` invocation; on hit it reconstructs a `GenerationResult` from the cached entry without touching the underlying coordinator. `core/config.py` exposes `result_cache_enabled`, `result_cache_dir`, and `result_cache_max_entries` (with `DEFAULT_RESULT_CACHE_DIR = .cache/results`) and `core/bootstrap.py` builds either a `FileSystemResultCache` or a `NullResultCache` based on the flag, threading it through `CoreRuntime.result_cache`, `TTSService(result_cache=...)`, and `app.state.result_cache`.</implementation-note>
+      <annotations>
+        <class-CachedResult PURPOSE="Frozen container holding the cached audio bytes plus replay metadata (model, mode, backend, saved_path, created_at)" />
+        <class-ResultCache PURPOSE="Abstract storage facade describing the get/put/clear contract for cached synthesis results" />
+        <class-NullResultCache PURPOSE="Always-miss default used when caching is disabled" />
+        <class-FileSystemResultCache PURPOSE="Local-disk backed cache that persists payload + meta on put and evicts the oldest entries when max_entries is exceeded" />
+        <fn-build_cache_key PURPOSE="Deterministic SHA-256 cache key built from a command kind plus a JSON-serialisable parameter mapping" />
+      </annotations>
+      <CrossLink from="M-RESULT-CACHE" to="M-TTS-SERVICE" relation="short-circuits-router" />
+      <CrossLink from="M-RESULT-CACHE" to="M-BOOTSTRAP" relation="wired-by" />
+    </M-RESULT-CACHE>
+
     <M-MODEL-LIFECYCLE NAME="ModelLifecycleService" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Process-local lifecycle facade exposing model deletion, registry refresh, and best-effort download orchestration to HTTP transports without coupling them to a specific downloader implementation.</purpose>
       <path>core/services/model_lifecycle.py</path>

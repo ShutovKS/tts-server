@@ -62,6 +62,11 @@ from core.metrics import OperationalMetricsRegistry
 from core.models.composite import load_composite_manifest
 from core.services.model_lifecycle import ModelLifecycleService
 from core.services.model_registry import ModelRegistry
+from core.services.result_cache import (
+    FileSystemResultCache,
+    NullResultCache,
+    ResultCache,
+)
 from core.services.tts_service import TTSService
 
 logger = logging.getLogger(__name__)
@@ -69,7 +74,7 @@ logger = logging.getLogger(__name__)
 
 # START_CONTRACT: CoreRuntime
 #   PURPOSE: Hold the fully assembled shared runtime components for transport adapters.
-#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, registry: ModelRegistry - Model discovery and loading service, model_lifecycle: ModelLifecycleService - Lifecycle facade for delete/refresh/download submissions, tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, inference_guard: InferenceGuard - Shared inference concurrency guard, metrics: OperationalMetricsRegistry - Operational metrics facade }
+#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, registry: ModelRegistry - Model discovery and loading service, model_lifecycle: ModelLifecycleService - Lifecycle facade for delete/refresh/download submissions, result_cache: ResultCache - Process-wide synthesis result cache (NullResultCache when disabled), tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, inference_guard: InferenceGuard - Shared inference concurrency guard, metrics: OperationalMetricsRegistry - Operational metrics facade }
 #   OUTPUTS: { instance - Immutable runtime composition root }
 #   SIDE_EFFECTS: none
 #   LINKS: M-BOOTSTRAP
@@ -80,6 +85,7 @@ class CoreRuntime:
     backend_registry: BackendRegistry
     registry: ModelRegistry
     model_lifecycle: ModelLifecycleService
+    result_cache: ResultCache
     tts_service: TTSService
     application: TTSApplicationService
     job_artifact_store: JobArtifactStore
@@ -206,7 +212,19 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         preload_model_ids=settings.model_preload_ids,
         metrics=metrics,
     )
-    tts_service = TTSService(registry=registry, settings=settings, inference_guard=inference_guard)
+    if settings.result_cache_enabled:
+        result_cache: ResultCache = FileSystemResultCache(
+            settings.result_cache_dir,
+            max_entries=settings.result_cache_max_entries,
+        )
+    else:
+        result_cache = NullResultCache()
+    tts_service = TTSService(
+        registry=registry,
+        settings=settings,
+        inference_guard=inference_guard,
+        result_cache=result_cache,
+    )
     application = TTSApplicationService(tts_service=tts_service)
     model_lifecycle = ModelLifecycleService(
         models_dir=settings.models_dir,
@@ -230,6 +248,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         backend_registry=backend_registry,
         registry=registry,
         model_lifecycle=model_lifecycle,
+        result_cache=result_cache,
         tts_service=tts_service,
         application=application,
         job_artifact_store=job_artifact_store,
