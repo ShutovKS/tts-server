@@ -1,9 +1,9 @@
 # FILE: core/bootstrap.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Assemble the full CoreRuntime from settings by wiring all components together.
-#   SCOPE: CoreRuntime dataclass, build_runtime factory, sub-component factory helpers
-#   DEPENDS: M-CONFIG, M-BACKENDS, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS
+#   PURPOSE: Assemble the full CoreRuntime from settings by wiring all components together via auto-discovery (backend classes via discover_backend_classes(), manifest via load_composite_manifest(), TTSBackend.from_settings() factory) so adding a new backend or model does not require editing this file.
+#   SCOPE: CoreRuntime dataclass, build_runtime factory, sub-component factory helpers, build_backends helper that drives auto-discovery of TTSBackend subclasses
+#   DEPENDS: M-CONFIG, M-BACKENDS, M-MODELS, M-DISCOVERY, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS
 #   LINKS: M-BOOTSTRAP
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -11,18 +11,20 @@
 #
 # START_MODULE_MAP
 #   CoreRuntime - Frozen dataclass holding all wired runtime components
-#   build_runtime - Factory function that assembles CoreRuntime from settings
+#   build_runtime - Factory function that assembles CoreRuntime from settings via auto-discovered backends + composite manifest
+#   build_backends - Auto-discover concrete TTSBackend subclasses and build an instance per class via TTSBackend.from_settings()
 #   build_job_artifact_store - Factory for job artifact store
 #   build_job_metadata_store - Factory for job metadata store
 #   build_job_execution_backend - Factory for job execution backend
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.1.0 - Phase 2.8: replaced hardcoded backend list and manifest-path wiring with discover_backend_classes() + TTSBackend.from_settings() + load_composite_manifest()]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from core.application import (
@@ -35,12 +37,19 @@ from core.application import (
     RateLimiter,
     TTSApplicationService,
 )
-from core.backends.mlx_backend import MLXBackend
-from core.backends.onnx_backend import ONNXBackend
-from core.backends.qwen_fast_backend import QwenFastBackend
+from core.backends.base import TTSBackend
+
+# The four built-in backend modules are imported here only to ensure their
+# subclasses are registered before discover_backend_classes() walks
+# TTSBackend.__subclasses__(). Their concrete classes are NOT referenced
+# directly by build_runtime.
+from core.backends.mlx_backend import MLXBackend  # noqa: F401
+from core.backends.onnx_backend import ONNXBackend  # noqa: F401
+from core.backends.qwen_fast_backend import QwenFastBackend  # noqa: F401
 from core.backends.registry import BackendRegistry
-from core.backends.torch_backend import TorchBackend
+from core.backends.torch_backend import TorchBackend  # noqa: F401
 from core.config import CoreSettings
+from core.discovery import discover_backend_classes
 from core.infrastructure import (
     InferenceGuard,
     LocalBoundedExecutionManager,
@@ -50,8 +59,11 @@ from core.infrastructure import (
     build_rate_limiter,
 )
 from core.metrics import OperationalMetricsRegistry
+from core.models.composite import load_composite_manifest
 from core.services.model_registry import ModelRegistry
 from core.services.tts_service import TTSService
+
+logger = logging.getLogger(__name__)
 
 
 # START_CONTRACT: CoreRuntime
@@ -126,6 +138,33 @@ def build_job_execution_backend(
     raise ValueError(f"Unsupported job execution backend: {settings.job_execution_backend}")
 
 
+# START_CONTRACT: build_backends
+#   PURPOSE: Auto-discover every concrete TTSBackend subclass currently registered (via __subclasses__() and entry_points) and build one instance per class through TTSBackend.from_settings(), so the bootstrap no longer hardcodes which backend classes exist.
+#   INPUTS: { settings: CoreSettings - Runtime settings, metrics: OperationalMetricsRegistry - Shared metrics facade threaded into every backend }
+#   OUTPUTS: { tuple[TTSBackend, ...] - Constructed backends in deterministic discovery order; backends whose construction raises are skipped with a warning log }
+#   SIDE_EFFECTS: Logs a warning whenever a discovered backend class fails to construct
+#   LINKS: M-BACKENDS, M-DISCOVERY, M-BOOTSTRAP
+# END_CONTRACT: build_backends
+def build_backends(
+    settings: CoreSettings,
+    *,
+    metrics: OperationalMetricsRegistry,
+) -> tuple[TTSBackend, ...]:
+    # START_BLOCK_BUILD_BACKENDS
+    instances: list[TTSBackend] = []
+    for backend_cls in discover_backend_classes():
+        try:
+            instances.append(backend_cls.from_settings(settings, metrics=metrics))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "[Bootstrap][build_backends][SKIP] backend=%s reason=%s",
+                f"{backend_cls.__module__}.{backend_cls.__qualname__}",
+                exc,
+            )
+    return tuple(instances)
+    # END_BLOCK_BUILD_BACKENDS
+
+
 # START_CONTRACT: build_runtime
 #   PURPOSE: Assemble the full CoreRuntime graph from normalized shared settings.
 #   INPUTS: { settings: CoreSettings - Runtime settings controlling backend, storage, and policy wiring }
@@ -140,20 +179,22 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
     metrics = OperationalMetricsRegistry()
     # END_BLOCK_INIT_INFRASTRUCTURE
     # START_BLOCK_INIT_BACKENDS
+    backends = build_backends(settings, metrics=metrics)
+    if not backends:
+        raise RuntimeError(
+            "No backend implementations were discovered. "
+            "Ensure at least one TTSBackend subclass is importable or "
+            "registered via the 'tts_server.backends' entry-point group."
+        )
+    model_manifest = load_composite_manifest(
+        base_path=settings.model_manifest_path,
+        models_dir=settings.models_dir,
+    )
     backend_registry = BackendRegistry(
-        [
-            MLXBackend(settings.mlx_models_dir, metrics=metrics),
-            QwenFastBackend(
-                settings.models_dir,
-                enabled=settings.qwen_fast_enabled,
-                metrics=metrics,
-            ),
-            TorchBackend(settings.models_dir, metrics=metrics),
-            ONNXBackend(settings.models_dir, metrics=metrics),
-        ],
+        backends,
         requested_backend=settings.backend,
         autoselect=settings.backend_autoselect,
-        model_manifest_path=settings.model_manifest_path,
+        model_manifest=model_manifest,
     )
     # END_BLOCK_INIT_BACKENDS
     # START_BLOCK_INIT_SERVICES
@@ -199,8 +240,9 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
 
 __all__ = [
     "CoreRuntime",
+    "build_backends",
     "build_job_artifact_store",
-    "build_job_metadata_store",
     "build_job_execution_backend",
+    "build_job_metadata_store",
     "build_runtime",
 ]

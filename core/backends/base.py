@@ -1,8 +1,8 @@
 # FILE: core/backends/base.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Define the direct execution contract for TTS inference backends.
-#   SCOPE: TTSBackend abstract class, LoadedModelHandle dataclass, ExecutionRequest dataclass
+#   PURPOSE: Define the direct execution contract for TTS inference backends and the from_settings factory hook used by the bootstrap auto-discovery wiring.
+#   SCOPE: TTSBackend abstract class with from_settings factory, LoadedModelHandle dataclass, ExecutionRequest dataclass
 #   DEPENDS: M-ERRORS
 #   LINKS: M-BACKENDS
 #   ROLE: TYPES
@@ -10,13 +10,13 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   TTSBackend - Abstract backend interface with first-class execute contract
+#   TTSBackend - Abstract backend interface with first-class execute contract and a from_settings factory used by bootstrap auto-discovery
 #   LoadedModelHandle - Handle to a loaded model with metadata
 #   ExecutionRequest - Runtime-oriented execution request carrying family-prepared inputs
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.1.0 - Phase 2.8: added TTSBackend.from_settings classmethod default factory used by bootstrap auto-discovery]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -24,10 +24,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
 from core.models.catalog import ModelSpec
+
+if TYPE_CHECKING:
+    from core.config import CoreSettings
+    from core.metrics import OperationalMetricsRegistry
 
 
 # START_CONTRACT: LoadedModelHandle
@@ -207,6 +211,22 @@ class TTSBackend(ABC):
     # END_CONTRACT: execute
     def execute(self, request: ExecutionRequest) -> None:
         raise NotImplementedError
+
+    # START_CONTRACT: from_settings
+    #   PURPOSE: Build a backend instance from CoreSettings using a uniform factory signature so bootstrap auto-discovery can instantiate any TTSBackend subclass without per-backend wiring.
+    #   INPUTS: { settings: CoreSettings - Runtime settings, metrics: OperationalMetricsRegistry | None - Optional shared metrics facade }
+    #   OUTPUTS: { TTSBackend - Constructed backend instance ready to be registered }
+    #   SIDE_EFFECTS: Default implementation calls cls(settings.models_dir, metrics=metrics); subclasses with non-default constructor signatures override to map their own settings.
+    #   LINKS: M-BACKENDS, M-BOOTSTRAP
+    # END_CONTRACT: from_settings
+    @classmethod
+    def from_settings(
+        cls,
+        settings: CoreSettings,
+        *,
+        metrics: OperationalMetricsRegistry | None = None,
+    ) -> TTSBackend:
+        return cls(settings.models_dir, metrics=metrics)
 
 
 __all__ = [

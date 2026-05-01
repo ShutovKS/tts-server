@@ -28,7 +28,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
@@ -36,6 +36,9 @@ from core.errors import ModelLoadError, TTSGenerationError
 from core.metrics import OperationalMetricsRegistry
 from core.models.catalog import ModelSpec
 from core.observability import Timer, get_logger, log_event, operation_scope
+
+if TYPE_CHECKING:
+    from core.config import CoreSettings
 
 try:
     from mlx_audio.tts.generate import generate_audio
@@ -135,6 +138,22 @@ class MLXBackend(TTSBackend):
         self._normalized_runtime_dirs: dict[str, Path] = {}
         self._normalized_runtime_tempdirs: dict[str, tempfile.TemporaryDirectory[str]] = {}
         self._metrics = metrics or OperationalMetricsRegistry()
+
+    # START_CONTRACT: from_settings
+    #   PURPOSE: Build an MLXBackend from settings using the dedicated mlx_models_dir, since MLX models live alongside but separately from the shared Torch/ONNX models tree.
+    #   INPUTS: { settings: CoreSettings - Runtime settings, metrics: OperationalMetricsRegistry | None - Optional shared metrics facade }
+    #   OUTPUTS: { MLXBackend - Constructed backend bound to settings.mlx_models_dir }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-BACKENDS, M-BOOTSTRAP
+    # END_CONTRACT: from_settings
+    @classmethod
+    def from_settings(
+        cls,
+        settings: CoreSettings,
+        *,
+        metrics: OperationalMetricsRegistry | None = None,
+    ) -> MLXBackend:
+        return cls(settings.mlx_models_dir, metrics=metrics)
 
     # START_CONTRACT: capabilities
     #   PURPOSE: Describe the synthesis features and platform constraints supported by the MLX backend.

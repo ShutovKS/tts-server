@@ -338,6 +338,46 @@ def test_build_runtime_passes_manifest_path_to_backend_registry(tmp_path: Path):
     runtime.job_manager.stop()
 
 
+def test_build_backends_auto_discovers_concrete_subclasses(tmp_path: Path):
+    """Phase 2.8: build_backends() must instantiate every importable concrete
+    TTSBackend subclass via cls.from_settings(...) instead of relying on a
+    hardcoded class list in core/bootstrap.py.
+    """
+
+    from core.backends.base import TTSBackend
+    from core.bootstrap import build_backends
+    from core.metrics import OperationalMetricsRegistry
+
+    settings = CoreSettings(
+        models_dir=tmp_path / "models",
+        mlx_models_dir=tmp_path / "mlx-models",
+        outputs_dir=tmp_path / "outputs",
+        voices_dir=tmp_path / "voices",
+        upload_staging_dir=tmp_path / "uploads",
+    )
+    metrics = OperationalMetricsRegistry()
+
+    backends = build_backends(settings, metrics=metrics)
+
+    keys = {backend.key for backend in backends}
+    # The four built-in backends imported by core.bootstrap must all show up.
+    assert {"mlx", "torch", "onnx", "qwen_fast"}.issubset(keys)
+    # Every produced instance is a concrete TTSBackend.
+    for backend in backends:
+        assert isinstance(backend, TTSBackend)
+    # MLXBackend overrides from_settings to use mlx_models_dir, not models_dir.
+    mlx_backend = next(b for b in backends if b.key == "mlx")
+    assert mlx_backend.models_dir == (tmp_path / "mlx-models")
+    # QwenFastBackend overrides from_settings to thread qwen_fast_enabled.
+    qwen_fast_backend = next(b for b in backends if b.key == "qwen_fast")
+    assert qwen_fast_backend.enabled is True
+    # Torch + ONNX use the default from_settings; both bind to settings.models_dir.
+    torch_backend = next(b for b in backends if b.key == "torch")
+    assert torch_backend.models_dir == (tmp_path / "models")
+    onnx_backend = next(b for b in backends if b.key == "onnx")
+    assert onnx_backend.models_dir == (tmp_path / "models")
+
+
 def test_core_settings_resolve_runtime_model_binding_by_mode():
     settings = CoreSettings(
         models_dir=DEFAULT_MODELS_DIR,
