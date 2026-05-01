@@ -1,5 +1,5 @@
 # FILE: tests/smoke/test_local_runtime.py
-# VERSION: 1.3.0
+# VERSION: 1.4.2
 # START_MODULE_CONTRACT
 #   PURPOSE: Smoke tests for the local runtime HTTP service.
 #   SCOPE: Health endpoints, sync/async synthesis smoke checks
@@ -17,8 +17,9 @@
 #   request_binary - Binary HTTP helper for smoke audio/result checks
 #   resolve_runtime_model_entry - Resolve a runtime model record from the live models endpoint
 #   assert_target_runtime_ready - Verify readiness and live model metadata before issuing smoke synthesis requests
+#   infer_model_family_key - Infer a stable family key from model metadata or known model-id prefixes
 #   build_runtime_failure_request - Build a target-aware sync request for an unavailable runtime model candidate
-#   resolve_runtime_failure_candidate - Find a live custom-model failure candidate that exposes missing-assets or backend-mismatch semantics
+#   resolve_runtime_failure_candidate - Find a live same-family custom-model failure candidate that exposes missing-assets or backend-mismatch semantics
 #   assert_machine_readable_error_response - Verify structured error payload evidence for failure-path smoke checks
 #   skip_if_missing_runtime_feature - Skip smoke checks when optional runtime endpoints are absent
 #   wait_for_terminal_job_status - Poll async jobs until a terminal snapshot is returned
@@ -34,7 +35,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.4.1 - Simplified smoke targets to Qwen, OmniVoice, and Piper after retiring unsupported families]
+#   LAST_CHANGE: [v1.4.2 - Scoped failure-path candidate selection to the active family so isolated runtime smokes do not cross-load another family]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -62,7 +64,9 @@ SMOKE_MODEL_ID = os.getenv("TTS_SMOKE_MODEL_ID", "Qwen3-TTS-12Hz-1.7B-CustomVoic
 EXPECTED_BACKEND = os.getenv("TTS_SMOKE_EXPECTED_BACKEND")
 DEFAULT_CUSTOM_SMOKE_TEXT = "Smoke test for local custom voice endpoint."
 ASYNC_CUSTOM_SMOKE_TEXT = "Smoke async job test for local custom voice endpoint."
-SMOKE_TARGETS: dict[str, dict[str, str | Path | bool | dict[str, object]]] = {
+SmokeTarget = dict[str, Any]
+
+SMOKE_TARGETS: dict[str, SmokeTarget] = {
     "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit": {
         "model_id": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
         "model_dir": CUSTOM_MODEL_DIR,
@@ -160,7 +164,7 @@ def require_smoke_prerequisites():
         pytest.skip("local runtime reports zero runtime-ready models")
 
 
-def resolve_smoke_target() -> dict[str, str | Path | bool]:
+def resolve_smoke_target() -> SmokeTarget:
     smoke_model_id = SMOKE_MODEL_ID.strip()
     if smoke_model_id not in SUPPORTED_SMOKE_MODEL_IDS:
         pytest.skip(
@@ -266,7 +270,7 @@ def resolve_runtime_model_entry(model_id: str) -> dict[str, object]:
     pytest.fail(f"Expected /api/v1/models to expose smoke model '{model_id}'")
 
 
-def assert_target_runtime_ready(smoke_target: dict[str, str | Path | bool]) -> dict[str, object]:
+def assert_target_runtime_ready(smoke_target: SmokeTarget) -> dict[str, object]:
     ready_response = request_json("GET", "/health/ready")
     assert ready_response["status"] == 200
     assert ready_response["json"]["status"] in {"ok", "degraded"}
@@ -284,8 +288,23 @@ def assert_target_runtime_ready(smoke_target: dict[str, str | Path | bool]) -> d
     return model_entry
 
 
+def infer_model_family_key(model_entry: dict[str, object]) -> str | None:
+    family_key = model_entry.get("family_key")
+    if isinstance(family_key, str) and family_key:
+        return family_key
+
+    model_id = str(model_entry.get("id") or "")
+    if model_id.startswith("Qwen3-"):
+        return "qwen3_tts"
+    if model_id.startswith("OmniVoice"):
+        return "omnivoice"
+    if model_id.startswith("Piper-"):
+        return "piper"
+    return None
+
+
 def build_runtime_failure_request(model_entry: dict[str, object]) -> tuple[str, dict[str, object]]:
-    if model_entry.get("family_key") == "piper":
+    if infer_model_family_key(model_entry) == "piper":
         return (
             "/v1/audio/speech",
             {
@@ -313,9 +332,20 @@ def resolve_runtime_failure_candidate(
 ) -> dict[str, object] | None:
     models_response = request_json("GET", "/api/v1/models")
     assert models_response["status"] == 200
+    active_entry = next(
+        (
+            item
+            for item in models_response["json"]["data"]
+            if item["id"] == active_model_id
+        ),
+        None,
+    )
+    active_family_key = infer_model_family_key(active_entry) if active_entry else None
     candidates = []
     for item in models_response["json"]["data"]:
         if item["id"] == active_model_id:
+            continue
+        if active_family_key and infer_model_family_key(item) != active_family_key:
             continue
         if item.get("mode") != "custom":
             continue
@@ -369,11 +399,7 @@ def assert_machine_readable_error_response(
     if response["status"] == 422:
         assert payload["code"] in {"backend_capability_missing", "model_not_available"}
         return
-    assert payload["code"] in (
-        {"model_load_failed", "model_not_available"}
-        if allow_model_load_failure
-        else {"model_not_available"}
-    )
+    assert payload["code"] in {"model_load_failed", "model_not_available"}
 
 
 def skip_if_missing_runtime_feature(exc: urllib.error.HTTPError, *, feature: str) -> None:
@@ -391,6 +417,7 @@ def wait_for_terminal_job_status(job_id: str) -> dict:
             status_response = request_json("GET", f"/api/v1/tts/jobs/{job_id}")
         except urllib.error.HTTPError as exc:
             skip_if_missing_runtime_feature(exc, feature="async job status")
+            raise
         assert status_response["status"] == 200, (
             f"Expected async status polling to return HTTP 200 for job {job_id}"
         )
@@ -462,6 +489,7 @@ def test_custom_tts_endpoint_smoke():
         )
     except urllib.error.HTTPError as exc:
         skip_if_missing_runtime_feature(exc, feature="sync custom TTS")
+        raise
 
     assert_audio_response(response, expected_model=str(smoke_target["model_id"]))
     expected_backend = str(smoke_target["expected_backend"] or "")
@@ -485,6 +513,7 @@ def test_async_custom_job_flow_smoke():
         )
     except urllib.error.HTTPError as exc:
         skip_if_missing_runtime_feature(exc, feature="async custom job submit")
+        raise
 
     assert submit_response["status"] == 202
     submit_payload = submit_response["json"]
@@ -521,6 +550,7 @@ def test_async_custom_job_flow_smoke():
         result_response = request_binary("GET", f"/api/v1/tts/jobs/{job_id}/result")
     except urllib.error.HTTPError as exc:
         skip_if_missing_runtime_feature(exc, feature="async job result")
+        raise
 
     assert_audio_response(result_response, expected_model=str(smoke_target["model_id"]))
     assert result_response["headers"].get("x-job-id") == job_id
@@ -553,6 +583,7 @@ def test_async_custom_job_idempotency_smoke():
         )
     except urllib.error.HTTPError as exc:
         skip_if_missing_runtime_feature(exc, feature="async custom idempotent submit")
+        raise
 
     assert first_submit["status"] == 202
     assert second_submit["status"] == 202
@@ -589,7 +620,8 @@ def test_sync_runtime_failure_smoke():
         model_id=str(failure_candidate["id"]),
         allow_model_load_failure=not bool(failure_candidate.get("missing_artifacts")),
     )
-    route = failure_candidate.get("route") or {}
+    route = failure_candidate.get("route")
+    assert isinstance(route, dict)
     if route.get("selected_backend_compatible_with_model") is False and route.get(
         "execution_backend"
     ):
