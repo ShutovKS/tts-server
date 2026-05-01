@@ -107,16 +107,34 @@
     </M-MODELS>
 
     <M-EXECUTION-PLAN NAME="ExecutionPlanContracts" TYPE="TYPES" STATUS="implemented">
-      <purpose>Define normalized capability, request, and execution-plan types for planned synthesis orchestration.</purpose>
+      <purpose>Define normalized capability, request, and execution-plan types for planned synthesis orchestration; capabilities are now an open string alias backed by the dynamic CapabilityRegistry instead of a closed Literal.</purpose>
       <path>core/contracts/synthesis.py</path>
-      <depends>M-CONTRACTS, M-MODELS</depends>
+      <depends>M-CONTRACTS, M-MODELS, M-CAPABILITIES</depends>
       <verification-ref>V-M-EXECUTION-PLAN</verification-ref>
+      <implementation-note>Phase 3.10 broadens `SynthesisCapability` from a closed `Literal[...]` to an open `str` alias. The forward (`capability_to_execution_mode`) and reverse (`execution_mode_to_capability`) helpers now defer to `core.contracts.capabilities.DEFAULT_CAPABILITY_REGISTRY`, so introducing a new capability (e.g. `emotion_transfer`) only requires registering a new `CapabilitySpec` with the registry — no edits to `core/contracts/synthesis.py`. The three built-in capabilities (`preset_speaker_tts`/`custom`, `voice_description_tts`/`design`, `reference_voice_clone`/`clone`) remain pre-registered at module load.</implementation-note>
       <annotations>
-        <type-SynthesisCapability PURPOSE="Normalized synthesis capability identifier" />
+        <type-SynthesisCapability PURPOSE="Open string alias for synthesis capability identifiers; concrete validation lives in DEFAULT_CAPABILITY_REGISTRY" />
         <class-SynthesisRequest PURPOSE="Normalized request shape used by planner and coordinator" />
         <class-ExecutionPlan PURPOSE="Resolved family, model, backend, and execution parameters" />
       </annotations>
+      <CrossLink from="M-EXECUTION-PLAN" to="M-CAPABILITIES" relation="resolves-capability-metadata" />
     </M-EXECUTION-PLAN>
+
+    <M-CAPABILITIES NAME="CapabilityRegistry" TYPE="TYPES" STATUS="implemented">
+      <purpose>Provide a process-local registry that owns the capability &lt;-&gt; execution_mode mapping so new model families can introduce new capabilities at runtime without editing the closed Literal that previously lived in core/contracts/synthesis.py.</purpose>
+      <path>core/contracts/capabilities.py</path>
+      <depends>M-CONTRACTS</depends>
+      <verification-ref>V-M-CAPABILITIES</verification-ref>
+      <implementation-note>Phase 3.10 introduces `core/contracts/capabilities.py` with a frozen `CapabilitySpec(name, execution_mode, description, aliases)` dataclass and a `CapabilityRegistry` class that exposes `register(spec)`, `get(name)`, `is_supported(name)`, `execution_mode_for(name)`, `capability_for_mode(mode)`, `names()`, `execution_modes()`, and `specs()`. The module also instantiates `DEFAULT_CAPABILITY_REGISTRY` pre-populated with the three built-in capabilities (preset_speaker_tts, voice_description_tts, reference_voice_clone) and re-exports it through `core.contracts.__init__`. Aliases resolve through `get/is_supported` but are excluded from `names()` to avoid double-counting. Collisions on either name or execution_mode raise `ValueError` so the registry stays bijective across modes.</implementation-note>
+      <annotations>
+        <class-CapabilitySpec PURPOSE="Frozen description of a single synthesis capability (name, execution_mode, description, aliases)" />
+        <class-CapabilityRegistry PURPOSE="Process-local registry that owns the capability &lt;-&gt; execution_mode mapping" />
+        <fn-register_default_capability PURPOSE="Convenience helper that mutates DEFAULT_CAPABILITY_REGISTRY" />
+        <fn-is_supported_capability PURPOSE="Predicate that defers to DEFAULT_CAPABILITY_REGISTRY" />
+      </annotations>
+      <CrossLink from="M-CAPABILITIES" to="M-CONTRACTS" relation="extends-runtime-contract" />
+      <CrossLink from="M-CAPABILITIES" to="M-EXECUTION-PLAN" relation="declares-capability-mode-mapping" />
+    </M-CAPABILITIES>
 
     <M-HOST-PROBE NAME="HostProbe" TYPE="UTILITY" STATUS="implemented">
       <purpose>Detect active OS, architecture, accelerators, and runtime features for capability-based planning.</purpose>

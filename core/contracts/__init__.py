@@ -1,15 +1,16 @@
 # FILE: core/contracts/__init__.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Re-export public contract types for commands, synthesis planning, results, and jobs.
+#   PURPOSE: Re-export public contract types for commands, synthesis planning, results, and jobs, including the runtime CapabilityRegistry seam introduced in Phase 3.10.
 #   SCOPE: barrel re-exports
 #   DEPENDS: none
-#   LINKS: M-CONTRACTS
+#   LINKS: M-CONTRACTS, M-CAPABILITIES
 #   ROLE: BARREL
 #   MAP_MODE: SUMMARY
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
+#   Capability contracts - Re-export the dynamic CapabilityRegistry seam (Phase 3.10)
 #   Command contracts - Re-export custom, clone, and design request command types
 #   Job contracts - Re-export async job snapshots, statuses, operations, and submission helpers
 #   Runtime seam contracts - Re-export typed runtime registry protocols and backend-route payloads
@@ -18,9 +19,16 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.1.0 - Phase 3.10: re-exported CapabilityRegistry, CapabilitySpec, and DEFAULT_CAPABILITY_REGISTRY so transports and tests can register new capabilities without reaching into the contract submodules]
 # END_CHANGE_SUMMARY
 
+from core.contracts.capabilities import (
+    DEFAULT_CAPABILITY_REGISTRY,
+    CapabilityRegistry,
+    CapabilitySpec,
+    is_supported_capability,
+    register_default_capability,
+)
 from core.contracts.commands import (
     CustomVoiceCommand,
     VoiceCloneCommand,
@@ -54,8 +62,11 @@ from core.contracts.synthesis import (
 )
 
 __all__ = [
+    "DEFAULT_CAPABILITY_REGISTRY",
     "AudioResult",
     "BackendRouteInfo",
+    "CapabilityRegistry",
+    "CapabilitySpec",
     "CustomVoiceCommand",
     "ExecutionPlan",
     "GenerationResult",
@@ -67,15 +78,17 @@ __all__ = [
     "JobStatusTransition",
     "JobSubmission",
     "JobSuccessSnapshot",
-    "StoredJob",
-    "SynthesisRequest",
     "PresetSpeakerPayload",
     "RuntimeExecutionRegistry",
     "RuntimePlanningRegistry",
+    "StoredJob",
+    "SynthesisRequest",
     "VoiceCloneCommand",
     "VoiceClonePayload",
     "VoiceDesignCommand",
     "VoiceDesignPayload",
     "create_job_submission",
     "create_queued_job",
+    "is_supported_capability",
+    "register_default_capability",
 ]

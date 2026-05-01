@@ -1,37 +1,41 @@
 # FILE: core/contracts/synthesis.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Define normalized synthesis capability, request, and execution-plan contracts for planner-driven runtime orchestration.
-#   SCOPE: Capability types, normalized request payloads, and execution plan dataclasses
-#   DEPENDS: M-CONTRACTS, M-MODELS
-#   LINKS: M-EXECUTION-PLAN
+#   PURPOSE: Define normalized synthesis capability, request, and execution-plan contracts for planner-driven runtime orchestration; capabilities are now declared as runtime data via core.contracts.capabilities.DEFAULT_CAPABILITY_REGISTRY instead of as a closed Literal type, so new families can introduce new capabilities without editing this module.
+#   SCOPE: Capability type alias, normalized request payloads, execution plan dataclass, and capability/execution-mode helpers that defer to the default capability registry.
+#   DEPENDS: M-CONTRACTS, M-MODELS, M-CAPABILITIES
+#   LINKS: M-EXECUTION-PLAN, M-CAPABILITIES
 #   ROLE: TYPES
 #   MAP_MODE: EXPORTS
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   SynthesisCapability - Normalized capability identifier for synthesis planning
+#   SynthesisCapability - Open string alias for synthesis capability identifiers (kept for backwards compatibility; concrete validation is done via the default capability registry).
 #   PresetSpeakerPayload - Payload for preset-speaker synthesis requests
 #   VoiceDesignPayload - Payload for voice-description synthesis requests
 #   VoiceClonePayload - Payload for reference-audio clone synthesis requests
 #   SynthesisPayload - Union payload covering all normalized synthesis request variants
 #   SynthesisRequest - Normalized synthesis request consumed by planner and family adapters
 #   ExecutionPlan - Planner output describing family, model, backend, and selection rationale
-#   capability_to_execution_mode - Map normalized capability to execution mode identifiers
-#   execution_mode_to_capability - Map execution mode identifiers to normalized capability identifiers
+#   capability_to_execution_mode - Forward lookup helper that delegates to the default capability registry.
+#   execution_mode_to_capability - Reverse lookup helper that delegates to the default capability registry.
 #   normalize_family_key - Normalize family labels from manifest metadata into stable family keys
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Added missing SynthesisPayload export to keep GRACE module-map integrity clean]
+#   LAST_CHANGE: [v1.1.0 - Phase 3.10: replaced the closed SynthesisCapability Literal with an open str alias backed by DEFAULT_CAPABILITY_REGISTRY; the module-level forward/reverse helpers now defer to the registry so new capabilities can be registered at runtime without editing this contract module]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
+from core.contracts.capabilities import (
+    DEFAULT_CAPABILITY_REGISTRY,
+    default_capability_for_mode,
+    default_execution_mode_for,
+)
 from core.contracts.commands import (
     CustomVoiceCommand,
     GenerationCommand,
@@ -40,21 +44,10 @@ from core.contracts.commands import (
 )
 from core.models.manifest import ModelSpec
 
-SynthesisCapability = Literal[
-    "preset_speaker_tts",
-    "voice_description_tts",
-    "reference_voice_clone",
-]
-
-_CAPABILITY_TO_EXECUTION_MODE: dict[SynthesisCapability, str] = {
-    "preset_speaker_tts": "custom",
-    "voice_description_tts": "design",
-    "reference_voice_clone": "clone",
-}
-
-_EXECUTION_MODE_TO_CAPABILITY: dict[str, SynthesisCapability] = {
-    value: key for key, value in _CAPABILITY_TO_EXECUTION_MODE.items()
-}
+# Open string alias kept for backwards compatibility. The closed Literal that
+# used to live here forced every new capability to be hardcoded in this module;
+# concrete validation now lives in DEFAULT_CAPABILITY_REGISTRY.
+SynthesisCapability = str
 
 
 @dataclass(frozen=True)
@@ -79,14 +72,11 @@ SynthesisPayload = PresetSpeakerPayload | VoiceDesignPayload | VoiceClonePayload
 
 
 def capability_to_execution_mode(capability: SynthesisCapability) -> str:
-    return _CAPABILITY_TO_EXECUTION_MODE[capability]
+    return default_execution_mode_for(capability)
 
 
 def execution_mode_to_capability(mode: str) -> SynthesisCapability:
-    try:
-        return _EXECUTION_MODE_TO_CAPABILITY[mode]
-    except KeyError as exc:  # pragma: no cover
-        raise ValueError(f"Unsupported execution mode: {mode}") from exc
+    return default_capability_for_mode(mode)
 
 
 def normalize_family_key(family_label: str | None) -> str:
@@ -178,6 +168,7 @@ class ExecutionPlan:
 
 
 __all__ = [
+    "DEFAULT_CAPABILITY_REGISTRY",
     "ExecutionPlan",
     "PresetSpeakerPayload",
     "SynthesisCapability",
