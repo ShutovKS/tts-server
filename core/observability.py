@@ -1,5 +1,5 @@
 # FILE: core/observability.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide request context propagation, structured logging, and timing utilities.
 #   SCOPE: Context variables for request ID and operation, structured JSON log emitter, Timer
@@ -22,7 +22,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.1.0 - Phase 4.15: OperationScope bridges into OpenTelemetry via core.services.telemetry.start_span when telemetry is enabled, while remaining a pure contextvars helper otherwise]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -49,12 +49,38 @@ class OperationScope:
     def __init__(self, operation: str):
         self.operation = operation
         self._token = None
+        self._span_cm: Any | None = None
+        self._span: Any | None = None
 
     def __enter__(self) -> OperationScope:
         self._token = _OPERATION.set(self.operation)
+        # START_BLOCK_BRIDGE_OTEL_SPAN
+        try:
+            from core.services.telemetry import get_active_state, start_span
+
+            state = get_active_state()
+            if state is not None and state.enabled:
+                self._span_cm = start_span(
+                    self.operation,
+                    attributes={"request_id": _REQUEST_ID.get()},
+                )
+                self._span = self._span_cm.__enter__()
+        except Exception:
+            self._span_cm = None
+            self._span = None
+        # END_BLOCK_BRIDGE_OTEL_SPAN
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        # START_BLOCK_CLOSE_OTEL_SPAN
+        if self._span_cm is not None:
+            try:
+                self._span_cm.__exit__(exc_type, exc, tb)
+            except Exception:
+                pass
+            self._span_cm = None
+            self._span = None
+        # END_BLOCK_CLOSE_OTEL_SPAN
         if self._token is not None:
             _OPERATION.reset(self._token)
 

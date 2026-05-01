@@ -117,6 +117,9 @@ class CoreSettingsEnv(TypedDict):
     result_cache_enabled: bool
     result_cache_dir: Path
     result_cache_max_entries: int
+    otel_enabled: bool
+    otel_service_name: str
+    otel_exporter_endpoint: str | None
 
 
 # START_CONTRACT: CoreSettings
@@ -174,6 +177,9 @@ class CoreSettings:
     result_cache_enabled: bool = False
     result_cache_dir: Path = field(default_factory=lambda: DEFAULT_RESULT_CACHE_DIR)
     result_cache_max_entries: int = 1024
+    otel_enabled: bool = False
+    otel_service_name: str = "tts-server"
+    otel_exporter_endpoint: str | None = None
 
     def ensure_directories(self) -> None:
         self.outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -292,6 +298,9 @@ class CoreEnvSettings(BaseSettings):
     result_cache_enabled: bool = False
     result_cache_dir: Path = Field(default_factory=lambda: DEFAULT_RESULT_CACHE_DIR.resolve())
     result_cache_max_entries: int = 1024
+    otel_enabled: bool = False
+    otel_service_name: str = "tts-server"
+    otel_exporter_endpoint: str | None = None
 
     @field_validator(
         "models_dir",
@@ -388,6 +397,7 @@ class CoreEnvSettings(BaseSettings):
         "default_save_output",
         "auto_play_cli",
         "result_cache_enabled",
+        "otel_enabled",
         mode="before",
     )
     @classmethod

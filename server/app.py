@@ -227,6 +227,12 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
     register_models_routes(app, LOGGER)
     register_tts_routes(app, LOGGER)
     # END_BLOCK_REGISTER_ROUTES
+
+    # START_BLOCK_INSTRUMENT_TELEMETRY
+    from core.services.telemetry import instrument_fastapi
+
+    instrument_fastapi(app, runtime.core.telemetry)
+    # END_BLOCK_INSTRUMENT_TELEMETRY
     return app
 
 

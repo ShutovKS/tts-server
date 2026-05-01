@@ -350,6 +350,25 @@
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-FAMILY" relation="prepares-execution" />
     </M-TTS-SERVICE>
 
+    <M-TELEMETRY NAME="Telemetry" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Provide an opt-in OpenTelemetry tracing facade that bridges OperationScope and FastAPI HTTP handling into OTLP-compatible spans without making OpenTelemetry a hard runtime dependency.</purpose>
+      <path>core/services/telemetry.py</path>
+      <depends>M-CONFIG, M-OBSERVABILITY</depends>
+      <verification-ref>V-M-TELEMETRY</verification-ref>
+      <implementation-note>Phase 4.15 introduces `core/services/telemetry.py` exposing the immutable `TelemetryState` (enabled flag, service_name, exporter_endpoint, cached tracer, resource attributes) plus four helpers: `configure_telemetry(settings)` builds either a disabled state (when `settings.otel_enabled` is false or the `opentelemetry` packages are not importable) or an enabled state with an OTLP/HTTP `BatchSpanProcessor` (falling back to a `ConsoleSpanExporter` when no endpoint is configured); `instrument_fastapi(app, state)` wraps a FastAPI application via `FastAPIInstrumentor.instrument_app` when telemetry is active; `start_span(name, attributes)` is a context manager that emits a span when telemetry is active and yields silently otherwise; `get_active_state()` / `reset_active_state()` expose the process-local cache. `core/observability.py` is bumped to v1.1.0 - `OperationScope.__enter__` now consults the active TelemetryState and bridges the scope into an OpenTelemetry span via `start_span` while remaining a pure contextvars helper when telemetry is disabled. `core/config.py` exposes three new settings (`otel_enabled`, `otel_service_name`, `otel_exporter_endpoint`) and `core/bootstrap.py` calls `configure_telemetry(settings)` early in `build_runtime`, threads the `TelemetryState` through `CoreRuntime.telemetry`, and `server/app.py` invokes `instrument_fastapi(app, runtime.core.telemetry)` after route registration. `pyproject.toml` adds an opt-in `telemetry` extra (`pip install -e .[telemetry]`) carrying `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http`, and `opentelemetry-instrumentation-fastapi`.</implementation-note>
+      <annotations>
+        <class-TelemetryState PURPOSE="Frozen container holding the resolved telemetry runtime (enabled flag, tracer, service name, exporter endpoint, resource attributes)" />
+        <fn-configure_telemetry PURPOSE="Build a TelemetryState from CoreSettings; produces a disabled state when telemetry is off or OTel is not importable" />
+        <fn-instrument_fastapi PURPOSE="Best-effort FastAPI instrumentation installer that wires HTTP request spans when telemetry is active" />
+        <fn-start_span PURPOSE="Context manager that emits an OpenTelemetry span when telemetry is active and yields silently otherwise" />
+        <fn-get_active_state PURPOSE="Read the process-local active TelemetryState" />
+        <fn-reset_active_state PURPOSE="Test-only helper that drops the cached TelemetryState" />
+      </annotations>
+      <CrossLink from="M-TELEMETRY" to="M-OBSERVABILITY" relation="bridges-operation-scope" />
+      <CrossLink from="M-TELEMETRY" to="M-BOOTSTRAP" relation="configured-by" />
+      <CrossLink from="M-TELEMETRY" to="M-SERVER" relation="instruments-fastapi" />
+    </M-TELEMETRY>
+
     <M-RESULT-CACHE NAME="ResultCache" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Provide a swappable, transport-agnostic cache for completed synthesis results so identical (text, model, parameters) commands can short-circuit GPU work without changing the public TTSService API.</purpose>
       <path>core/services/result_cache.py</path>

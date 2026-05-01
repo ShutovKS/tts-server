@@ -67,6 +67,7 @@ from core.services.result_cache import (
     NullResultCache,
     ResultCache,
 )
+from core.services.telemetry import TelemetryState, configure_telemetry
 from core.services.tts_service import TTSService
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ logger = logging.getLogger(__name__)
 
 # START_CONTRACT: CoreRuntime
 #   PURPOSE: Hold the fully assembled shared runtime components for transport adapters.
-#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, registry: ModelRegistry - Model discovery and loading service, model_lifecycle: ModelLifecycleService - Lifecycle facade for delete/refresh/download submissions, result_cache: ResultCache - Process-wide synthesis result cache (NullResultCache when disabled), tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, inference_guard: InferenceGuard - Shared inference concurrency guard, metrics: OperationalMetricsRegistry - Operational metrics facade }
+#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, registry: ModelRegistry - Model discovery and loading service, model_lifecycle: ModelLifecycleService - Lifecycle facade for delete/refresh/download submissions, result_cache: ResultCache - Process-wide synthesis result cache (NullResultCache when disabled), telemetry: TelemetryState - Active OpenTelemetry runtime state (disabled when otel_enabled is false), tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, inference_guard: InferenceGuard - Shared inference concurrency guard, metrics: OperationalMetricsRegistry - Operational metrics facade }
 #   OUTPUTS: { instance - Immutable runtime composition root }
 #   SIDE_EFFECTS: none
 #   LINKS: M-BOOTSTRAP
@@ -86,6 +87,7 @@ class CoreRuntime:
     registry: ModelRegistry
     model_lifecycle: ModelLifecycleService
     result_cache: ResultCache
+    telemetry: TelemetryState
     tts_service: TTSService
     application: TTSApplicationService
     job_artifact_store: JobArtifactStore
@@ -183,6 +185,7 @@ def build_backends(
 def build_runtime(settings: CoreSettings) -> CoreRuntime:
     # START_BLOCK_INIT_INFRASTRUCTURE
     settings.ensure_directories()
+    telemetry = configure_telemetry(settings)
     inference_guard = InferenceGuard()
     metrics = OperationalMetricsRegistry()
     # END_BLOCK_INIT_INFRASTRUCTURE
@@ -249,6 +252,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         registry=registry,
         model_lifecycle=model_lifecycle,
         result_cache=result_cache,
+        telemetry=telemetry,
         tts_service=tts_service,
         application=application,
         job_artifact_store=job_artifact_store,
