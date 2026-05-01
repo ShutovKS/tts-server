@@ -152,11 +152,16 @@
 
     <M-MODEL-FAMILY NAME="ModelFamilyAdapter" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Define family-level capability matching and execution preparation independent of transport adapters.</purpose>
-      <path>core/model_families/base.py</path>
+      <path>core/model_families/base.py, core/model_families/plugin.py</path>
       <depends>M-EXECUTION-PLAN, M-CONTRACTS, M-MODELS</depends>
       <verification-ref>V-M-MODEL-FAMILY</verification-ref>
+      <implementation-note>Two coexisting extension seams during the migration to plugin-first architecture: the legacy `ModelFamilyAdapter` (`core/model_families/base.py`) which only owns planner preparation, and the unified `ModelFamilyPlugin` (`core/model_families/plugin.py`) which bundles availability, model loading, synthesis, and artifact validation behind a single contract. Phase 2.5 introduces `ModelFamilyPlugin` and the `FamilyPluginRegistry`; Phase 2.6 will wire entry-point discovery (`tts_server.model_families`); Phase 3 begins migrating adapter consumers onto the plugin surface.</implementation-note>
       <annotations>
-        <class-ModelFamilyAdapter PURPOSE="Base family adapter contract" />
+        <class-ModelFamilyAdapter PURPOSE="Legacy planner-side family adapter contract (capability + prepare_execution)" />
+        <class-ModelFamilyPlugin PURPOSE="Unified family extension contract (is_available, load_model, synthesize, validate_artifacts)" />
+        <class-FamilyPluginRegistry PURPOSE="Process-local registry that holds plugins and answers capability/backend lookups" />
+        <class-FamilyExecutionRequest PURPOSE="Frozen synthesis-input DTO handed to plugin.synthesize" />
+        <class-FamilyExecutionResult PURPOSE="Frozen synthesis-output DTO (waveforms + sample rate) returned by plugin.synthesize" />
       </annotations>
       <CrossLink from="M-MODEL-FAMILY" to="M-EXECUTION-PLAN" relation="consumes-normalized-plans" />
       <CrossLink from="M-MODEL-FAMILY" to="M-MODELS" relation="interprets-model-family-metadata" />
