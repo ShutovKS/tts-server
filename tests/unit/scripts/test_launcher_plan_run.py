@@ -27,13 +27,14 @@
 
 from __future__ import annotations
 
-import json
 import importlib
+import json
 import platform
 import sys
 from pathlib import Path
 
 import pytest
+
 from profiles.schema import HostProfile
 
 launcher_main = importlib.import_module("launcher.main")
@@ -88,7 +89,10 @@ def _expected_python_path(env_name: str, project_root: Path = PROJECT_ROOT) -> s
 #   LINKS: V-M-LAUNCHER
 # END_CONTRACT: _expected_platform_pack_name
 def _expected_platform_pack_name(host_profile: HostProfile) -> str:
-    if host_profile.platform_system.lower() == "darwin" and host_profile.architecture.lower() in {"arm64", "aarch64"}:
+    if host_profile.platform_system.lower() == "darwin" and host_profile.architecture.lower() in {
+        "arm64",
+        "aarch64",
+    }:
         return "apple-silicon"
     return "cpu"
 
@@ -103,8 +107,20 @@ def _expected_platform_pack_name(host_profile: HostProfile) -> str:
 def _expected_pack_files(family: str, module: str, host_profile: HostProfile) -> list[str]:
     return [
         str(PROJECT_ROOT / "profiles" / "packs" / "base" / "common.txt"),
-        str(PROJECT_ROOT / "profiles" / "packs" / "platform" / f"{host_profile.platform_system.lower()}.txt"),
-        str(PROJECT_ROOT / "profiles" / "packs" / "platform" / f"{_expected_platform_pack_name(host_profile)}.txt"),
+        str(
+            PROJECT_ROOT
+            / "profiles"
+            / "packs"
+            / "platform"
+            / f"{host_profile.platform_system.lower()}.txt"
+        ),
+        str(
+            PROJECT_ROOT
+            / "profiles"
+            / "packs"
+            / "platform"
+            / f"{_expected_platform_pack_name(host_profile)}.txt"
+        ),
         str(PROJECT_ROOT / "profiles" / "packs" / "module" / f"{module}.txt"),
         str(PROJECT_ROOT / "profiles" / "packs" / "family" / f"{family}.txt"),
     ]
@@ -158,9 +174,21 @@ def _run_plan_run(
         "environ",
         {
             "TTS_ACTIVE_FAMILY": family,
-            "TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit" if family == "qwen" else "Piper-en_US-lessac-medium" if family == "piper" else "OmniVoice",
-            "TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit" if family == "qwen" else "OmniVoice" if family == "omnivoice" else "",
-            "TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit" if family == "qwen" else "OmniVoice" if family == "omnivoice" else "",
+            "TTS_DEFAULT_CUSTOM_MODEL": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+            if family == "qwen"
+            else "Piper-en_US-lessac-medium"
+            if family == "piper"
+            else "OmniVoice",
+            "TTS_DEFAULT_DESIGN_MODEL": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit"
+            if family == "qwen"
+            else "OmniVoice"
+            if family == "omnivoice"
+            else "",
+            "TTS_DEFAULT_CLONE_MODEL": "Qwen3-TTS-12Hz-1.7B-Base-8bit"
+            if family == "qwen"
+            else "OmniVoice"
+            if family == "omnivoice"
+            else "",
         },
     )
     monkeypatch.setattr(
@@ -191,7 +219,10 @@ def test_launcher_plan_run_outputs_deterministic_qwen_server_launch_plan(
         "dependency_plan": {
             "pack_refs": {
                 "base": ["common"],
-                "platform": [host_profile.platform_system.lower(), _expected_platform_pack_name(host_profile)],
+                "platform": [
+                    host_profile.platform_system.lower(),
+                    _expected_platform_pack_name(host_profile),
+                ],
                 "module": ["server"],
                 "family": ["qwen"],
             },
@@ -211,9 +242,21 @@ def test_launcher_plan_run_outputs_deterministic_qwen_server_launch_plan(
                 "clone_model": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
             },
             "capability_status": {
-                "custom": {"bound": True, "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit", "env_var": "TTS_DEFAULT_CUSTOM_MODEL"},
-                "design": {"bound": True, "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit", "env_var": "TTS_DEFAULT_DESIGN_MODEL"},
-                "clone": {"bound": True, "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit", "env_var": "TTS_DEFAULT_CLONE_MODEL"},
+                "custom": {
+                    "bound": True,
+                    "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+                    "env_var": "TTS_DEFAULT_CUSTOM_MODEL",
+                },
+                "design": {
+                    "bound": True,
+                    "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+                    "env_var": "TTS_DEFAULT_DESIGN_MODEL",
+                },
+                "clone": {
+                    "bound": True,
+                    "model": "Qwen3-TTS-12Hz-1.7B-Base-8bit",
+                    "env_var": "TTS_DEFAULT_CLONE_MODEL",
+                },
             },
         },
     }
@@ -234,7 +277,10 @@ def test_launcher_plan_run_outputs_deterministic_piper_cli_launch_plan(
         "dependency_plan": {
             "pack_refs": {
                 "base": ["common"],
-                "platform": [host_profile.platform_system.lower(), _expected_platform_pack_name(host_profile)],
+                "platform": [
+                    host_profile.platform_system.lower(),
+                    _expected_platform_pack_name(host_profile),
+                ],
                 "module": ["cli"],
                 "family": ["piper"],
             },
@@ -254,7 +300,11 @@ def test_launcher_plan_run_outputs_deterministic_piper_cli_launch_plan(
                 "clone_model": None,
             },
             "capability_status": {
-                "custom": {"bound": True, "model": "Piper-en_US-lessac-medium", "env_var": "TTS_DEFAULT_CUSTOM_MODEL"},
+                "custom": {
+                    "bound": True,
+                    "model": "Piper-en_US-lessac-medium",
+                    "env_var": "TTS_DEFAULT_CUSTOM_MODEL",
+                },
                 "design": {"bound": False, "model": None, "env_var": "TTS_DEFAULT_DESIGN_MODEL"},
                 "clone": {"bound": False, "model": None, "env_var": "TTS_DEFAULT_CLONE_MODEL"},
             },
@@ -277,7 +327,10 @@ def test_launcher_plan_run_outputs_deterministic_omnivoice_cli_launch_plan(
         "dependency_plan": {
             "pack_refs": {
                 "base": ["common"],
-                "platform": [host_profile.platform_system.lower(), _expected_platform_pack_name(host_profile)],
+                "platform": [
+                    host_profile.platform_system.lower(),
+                    _expected_platform_pack_name(host_profile),
+                ],
                 "module": ["cli"],
                 "family": ["omnivoice"],
             },
@@ -297,9 +350,21 @@ def test_launcher_plan_run_outputs_deterministic_omnivoice_cli_launch_plan(
                 "clone_model": "OmniVoice",
             },
             "capability_status": {
-                "custom": {"bound": True, "model": "OmniVoice", "env_var": "TTS_DEFAULT_CUSTOM_MODEL"},
-                "design": {"bound": True, "model": "OmniVoice", "env_var": "TTS_DEFAULT_DESIGN_MODEL"},
-                "clone": {"bound": True, "model": "OmniVoice", "env_var": "TTS_DEFAULT_CLONE_MODEL"},
+                "custom": {
+                    "bound": True,
+                    "model": "OmniVoice",
+                    "env_var": "TTS_DEFAULT_CUSTOM_MODEL",
+                },
+                "design": {
+                    "bound": True,
+                    "model": "OmniVoice",
+                    "env_var": "TTS_DEFAULT_DESIGN_MODEL",
+                },
+                "clone": {
+                    "bound": True,
+                    "model": "OmniVoice",
+                    "env_var": "TTS_DEFAULT_CLONE_MODEL",
+                },
             },
         },
     }

@@ -38,11 +38,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Optional
+from dataclasses import dataclass
+from typing import Any
 
 from telegram_bot.observability import (
     METRICS,
@@ -54,10 +53,8 @@ from telegram_bot.observability import (
     TelegramCorrelationContext,
     TelegramMetrics,
     classify_telegram_error,
-    get_correlation,
     log_telegram_event,
 )
-
 
 LOGGER = logging.getLogger("telegram_bot.polling")
 
@@ -100,7 +97,7 @@ class ExponentialBackoff:
     Provides predictable backoff delays for retry scenarios.
     """
 
-    def __init__(self, config: Optional[BackoffConfig] = None):
+    def __init__(self, config: BackoffConfig | None = None):
         self._config = config or BackoffConfig()
         self._attempt = 0
 
@@ -382,8 +379,8 @@ class PollingAdapter:
         dispatcher: telegram_bot.handlers.dispatcher.CommandDispatcher,
         settings: telegram_bot.config.TelegramSettings,
         logger: logging.Logger | None = None,
-        metrics: Optional[TelegramMetrics] = None,
-        backoff_config: Optional[BackoffConfig] = None,
+        metrics: TelegramMetrics | None = None,
+        backoff_config: BackoffConfig | None = None,
     ):
         """
         Initialize polling adapter.
@@ -514,16 +511,12 @@ class PollingAdapter:
                 severity=classified.severity.value,
             )
 
-            self._metrics.polling_error(
-                classified.error_class.value, classified.should_stop
-            )
+            self._metrics.polling_error(classified.error_class.value, classified.should_stop)
             self._on_error(classified)
 
             if classified.should_stop:
                 self._set_state(PollingState.STOPPED)
-                raise RuntimeError(
-                    f"Telegram connection failed (fatal): {exc}"
-                ) from exc
+                raise RuntimeError(f"Telegram connection failed (fatal): {exc}") from exc
 
             # Non-fatal: try to continue with degraded state
             self._set_degraded(f"connection_failed: {exc}")
@@ -635,9 +628,7 @@ class PollingAdapter:
                 consecutive_errors=self._health.consecutive_errors,
             )
 
-            self._metrics.polling_error(
-                classified.error_class.value, classified.should_stop
-            )
+            self._metrics.polling_error(classified.error_class.value, classified.should_stop)
             self._on_error(classified)
             # END_BLOCK_CLASSIFY_POLLING_FAILURE
 
@@ -839,8 +830,7 @@ class PollingAdapter:
 
         # Check for degradation threshold
         if (
-            self._health.consecutive_errors
-            >= self._backoff_config.degradation_threshold
+            self._health.consecutive_errors >= self._backoff_config.degradation_threshold
             and self._health.state == PollingState.HEALTHY
         ):
             self._set_degraded(f"consecutive_errors:{self._health.consecutive_errors}")
@@ -1000,8 +990,8 @@ def classify_telegram_error(exc: Exception) -> ClassifiedError:
 
 
 # Import here to avoid circular reference
-import telegram_bot.handlers.dispatcher
 import telegram_bot.config
+import telegram_bot.handlers.dispatcher
 
 __all__ = [
     "LOGGER",

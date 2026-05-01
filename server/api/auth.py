@@ -31,13 +31,11 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Optional
 
 from fastapi import Request
 
 from core.errors import ForbiddenError, UnauthorizedError
 from server.bootstrap import ServerSettings
-
 
 AUTH_MODE_OFF = "off"
 AUTH_MODE_STATIC_BEARER = "static_bearer"
@@ -65,7 +63,7 @@ class RequestPrincipal:
     principal_id: str
     subject_type: str
     authenticated: bool
-    credential_id: Optional[str] = None
+    credential_id: str | None = None
 
 
 # START_CONTRACT: build_local_default_principal
@@ -133,22 +131,16 @@ def resolve_request_principal(request: Request) -> RequestPrincipal:
 #   SIDE_EFFECTS: Reads request headers and raises unauthorized errors when credentials are missing or invalid
 #   LINKS: M-SERVER, M-ERRORS
 # END_CONTRACT: authenticate_static_bearer
-def authenticate_static_bearer(
-    request: Request, settings: ServerSettings
-) -> RequestPrincipal:
+def authenticate_static_bearer(request: Request, settings: ServerSettings) -> RequestPrincipal:
     token = extract_bearer_token(request)
     configured_token = settings.auth_static_bearer_token
     if configured_token is None:
-        raise UnauthorizedError(
-            reason="Static bearer auth is enabled but no token is configured"
-        )
+        raise UnauthorizedError(reason="Static bearer auth is enabled but no token is configured")
     if token is None:
         raise UnauthorizedError(reason="Missing bearer token")
     if token != configured_token:
         raise UnauthorizedError(reason="Bearer token is invalid")
-    credential_id = settings.auth_static_bearer_credential_id or build_credential_id(
-        token
-    )
+    credential_id = settings.auth_static_bearer_credential_id or build_credential_id(token)
     principal_id = settings.auth_static_bearer_principal_id or credential_id
     return RequestPrincipal(
         principal_id=principal_id,
@@ -165,15 +157,13 @@ def authenticate_static_bearer(
 #   SIDE_EFFECTS: Raises unauthorized errors for malformed authorization schemes
 #   LINKS: M-SERVER, M-ERRORS
 # END_CONTRACT: extract_bearer_token
-def extract_bearer_token(request: Request) -> Optional[str]:
+def extract_bearer_token(request: Request) -> str | None:
     authorization = request.headers.get("authorization")
     if authorization is None:
         return None
     scheme, _, credentials = authorization.partition(" ")
     if scheme.lower() != "bearer" or not credentials.strip():
-        raise UnauthorizedError(
-            reason="Authorization header must use Bearer authentication"
-        )
+        raise UnauthorizedError(reason="Authorization header must use Bearer authentication")
     return credentials.strip()
 
 

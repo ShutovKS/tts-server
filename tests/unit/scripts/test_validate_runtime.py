@@ -65,35 +65,34 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
 from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from tests.support.api_fakes import (
-    ManagedProcessDouble,
-    make_validation_model_entry,
-    make_validation_self_check_payload,
-)
 from scripts.validate_runtime import (
     CUSTOM_SMOKE_MODEL_ID,
     OMNIVOICE_SMOKE_MODEL_ID,
     PIPER_SMOKE_MODEL_ID,
+    ValidationCommandError,
     _find_matching_update,
     _next_update_offset,
     build_validation_env,
     main,
     parse_args,
-    ValidationCommandError,
-    run_representative_model_validation,
-    run_server_docker_validation,
     run_artifact_review_validation,
     run_host_matrix_validation,
+    run_representative_model_validation,
+    run_server_docker_validation,
     run_smoke_server_validation,
     run_telegram_docker_validation,
     run_telegram_live_validation,
 )
-
+from tests.support.api_fakes import (
+    ManagedProcessDouble,
+    make_validation_model_entry,
+    make_validation_self_check_payload,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -309,18 +308,9 @@ def test_run_host_matrix_validation_respects_disabled_qwen_fast_config():
     assert summary["status"] == "ok"
     assert summary["simulated_qwen_fast"]["eligible"]["ready"] is False
     assert summary["simulated_qwen_fast"]["eligible"]["reason"] == "disabled_by_config"
-    assert (
-        summary["simulated_qwen_fast"]["eligible"]["custom_route_reason"]
-        == "disabled_by_config"
-    )
-    assert (
-        summary["simulated_qwen_fast"]["eligible"]["design_route_reason"]
-        == "disabled_by_config"
-    )
-    assert (
-        summary["simulated_qwen_fast"]["eligible"]["clone_route_reason"]
-        == "disabled_by_config"
-    )
+    assert summary["simulated_qwen_fast"]["eligible"]["custom_route_reason"] == "disabled_by_config"
+    assert summary["simulated_qwen_fast"]["eligible"]["design_route_reason"] == "disabled_by_config"
+    assert summary["simulated_qwen_fast"]["eligible"]["clone_route_reason"] == "disabled_by_config"
 
 
 def test_run_representative_model_validation_skips_missing_assets_target(
@@ -440,7 +430,10 @@ def test_run_representative_model_validation_skips_optional_dependency_target(
 
     assert summary["status"] == "advisory"
     assert summary["targets"][0]["reason"] == "optional_dependency_pack_missing"
-    assert any(advisory["reason"] == "optional_dependency_pack_missing" for advisory in summary["advisories"])
+    assert any(
+        advisory["reason"] == "optional_dependency_pack_missing"
+        for advisory in summary["advisories"]
+    )
 
 
 def test_run_representative_model_validation_reuses_smoke_server_for_ready_target(
@@ -901,7 +894,10 @@ def test_run_server_docker_validation_returns_probe_and_log_artifacts(
     evidence_dir = tmp_path / ".sisyphus" / "evidence"
 
     monkeypatch.setattr("scripts.validate_runtime.PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr("scripts.validate_runtime.SERVER_DOCKER_COMPOSE_FILE", tmp_path / "docker-compose.server.yaml")
+    monkeypatch.setattr(
+        "scripts.validate_runtime.SERVER_DOCKER_COMPOSE_FILE",
+        tmp_path / "docker-compose.server.yaml",
+    )
     (tmp_path / "docker-compose.server.yaml").write_text("services: {}", encoding="utf-8")
     monkeypatch.setattr(
         "scripts.validate_runtime._resolve_compose_invocation",
@@ -938,7 +934,12 @@ def test_run_server_docker_validation_returns_probe_and_log_artifacts(
     assert summary["teardown"]["succeeded"] is True
     assert summary["artifacts"]["health_live_path"].endswith("server-docker-health-live.json")
     assert summary["artifacts"]["server_log_path"].endswith("server-docker-log.txt")
-    assert json.loads((evidence_dir / "server-docker-health-ready.json").read_text(encoding="utf-8"))["status"] == "ok"
+    assert (
+        json.loads((evidence_dir / "server-docker-health-ready.json").read_text(encoding="utf-8"))[
+            "status"
+        ]
+        == "ok"
+    )
 
 
 def test_run_server_docker_validation_selects_free_host_port_for_compose_mapping(
@@ -1026,7 +1027,10 @@ def test_run_server_docker_validation_returns_skipped_summary_when_compose_is_un
     env = _make_smoke_env(tmp_path)
 
     monkeypatch.setattr("scripts.validate_runtime.PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr("scripts.validate_runtime.SERVER_DOCKER_COMPOSE_FILE", tmp_path / "docker-compose.server.yaml")
+    monkeypatch.setattr(
+        "scripts.validate_runtime.SERVER_DOCKER_COMPOSE_FILE",
+        tmp_path / "docker-compose.server.yaml",
+    )
     (tmp_path / "docker-compose.server.yaml").write_text("services: {}", encoding="utf-8")
     monkeypatch.setattr(
         "scripts.validate_runtime._resolve_compose_invocation",
@@ -1051,14 +1055,19 @@ def test_run_server_docker_validation_reports_teardown_failure_with_retained_art
     calls: list[list[str]] = []
 
     monkeypatch.setattr("scripts.validate_runtime.PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr("scripts.validate_runtime.SERVER_DOCKER_COMPOSE_FILE", tmp_path / "docker-compose.server.yaml")
+    monkeypatch.setattr(
+        "scripts.validate_runtime.SERVER_DOCKER_COMPOSE_FILE",
+        tmp_path / "docker-compose.server.yaml",
+    )
     (tmp_path / "docker-compose.server.yaml").write_text("services: {}", encoding="utf-8")
     monkeypatch.setattr(
         "scripts.validate_runtime._resolve_compose_invocation",
         lambda: (["docker", "compose"], "docker compose"),
     )
 
-    def _fake_run_compose_command(_compose_command, _compose_file, _project_name, compose_args, **_kwargs):
+    def _fake_run_compose_command(
+        _compose_command, _compose_file, _project_name, compose_args, **_kwargs
+    ):
         calls.append(list(compose_args))
         if compose_args[:1] == ["down"]:
             return argparse.Namespace(returncode=1, stdout="", stderr="teardown failed")
@@ -1141,18 +1150,16 @@ def test_run_telegram_live_validation_returns_connectivity_summary_without_updat
     client = MagicMock()
     client.get_me = AsyncMock(
         return_value={
-        "id": 123,
-        "username": "test_bot",
-        "first_name": "Test",
+            "id": 123,
+            "username": "test_bot",
+            "first_name": "Test",
         }
     )
     client.send_message = AsyncMock()
     client.get_updates = AsyncMock()
     client.close = AsyncMock()
 
-    monkeypatch.setattr(
-        "scripts.validate_runtime.TelegramBotClient", lambda **_: client
-    )
+    monkeypatch.setattr("scripts.validate_runtime.TelegramBotClient", lambda **_: client)
 
     args = argparse.Namespace(
         command="telegram-live",
@@ -1181,13 +1188,12 @@ def test_run_telegram_live_validation_returns_connectivity_summary_without_updat
     assert summary["update_checked"] is False
     assert summary["dedicated_chat_check_requested"] is False
     assert summary["remote_server_boundary"]["topology"] == "telegram_remote_client"
-    assert (
-        summary["remote_server_boundary"]["server_base_url"]
-        == "http://server.internal:8000"
-    )
+    assert summary["remote_server_boundary"]["server_base_url"] == "http://server.internal:8000"
     assert summary["remote_server_boundary"]["telegram_bot_api_checked"] is True
     assert summary["remote_server_boundary"]["server_side_execution_checked"] is False
-    assert summary["remote_server_boundary"]["boundary_status"] == "configured_remote_server_declared"
+    assert (
+        summary["remote_server_boundary"]["boundary_status"] == "configured_remote_server_declared"
+    )
     client.get_me.assert_awaited_once()
     client.send_message.assert_not_called()
     client.get_updates.assert_not_called()
@@ -1200,18 +1206,16 @@ def test_run_telegram_live_validation_sends_message_when_chat_id_provided(
     client = MagicMock()
     client.get_me = AsyncMock(
         return_value={
-        "id": 123,
-        "username": "test_bot",
-        "first_name": "Test",
+            "id": 123,
+            "username": "test_bot",
+            "first_name": "Test",
         }
     )
     client.send_message = AsyncMock(return_value={"message_id": 777})
     client.get_updates = AsyncMock()
     client.close = AsyncMock()
 
-    monkeypatch.setattr(
-        "scripts.validate_runtime.TelegramBotClient", lambda **_: client
-    )
+    monkeypatch.setattr("scripts.validate_runtime.TelegramBotClient", lambda **_: client)
 
     args = argparse.Namespace(
         command="telegram-live",
@@ -1245,9 +1249,9 @@ def test_run_telegram_live_validation_checks_matching_inbound_update(
     client = MagicMock()
     client.get_me = AsyncMock(
         return_value={
-        "id": 123,
-        "username": "test_bot",
-        "first_name": "Test",
+            "id": 123,
+            "username": "test_bot",
+            "first_name": "Test",
         }
     )
     client.send_message = AsyncMock()
@@ -1268,9 +1272,7 @@ def test_run_telegram_live_validation_checks_matching_inbound_update(
     )
     client.close = AsyncMock()
 
-    monkeypatch.setattr(
-        "scripts.validate_runtime.TelegramBotClient", lambda **_: client
-    )
+    monkeypatch.setattr("scripts.validate_runtime.TelegramBotClient", lambda **_: client)
 
     args = argparse.Namespace(
         command="telegram-live",
@@ -1318,18 +1320,16 @@ def test_run_telegram_live_validation_returns_advisory_when_update_chat_context_
     client = MagicMock()
     client.get_me = AsyncMock(
         return_value={
-        "id": 123,
-        "username": "test_bot",
-        "first_name": "Test",
+            "id": 123,
+            "username": "test_bot",
+            "first_name": "Test",
         }
     )
     client.send_message = AsyncMock()
     client.get_updates = AsyncMock()
     client.close = AsyncMock()
 
-    monkeypatch.setattr(
-        "scripts.validate_runtime.TelegramBotClient", lambda **_: client
-    )
+    monkeypatch.setattr("scripts.validate_runtime.TelegramBotClient", lambda **_: client)
 
     args = argparse.Namespace(
         command="telegram-live",
@@ -1366,9 +1366,9 @@ def test_run_telegram_live_validation_returns_advisory_when_matching_update_text
     client = MagicMock()
     client.get_me = AsyncMock(
         return_value={
-        "id": 123,
-        "username": "test_bot",
-        "first_name": "Test",
+            "id": 123,
+            "username": "test_bot",
+            "first_name": "Test",
         }
     )
     client.send_message = AsyncMock(return_value={"message_id": 901})
@@ -1380,9 +1380,7 @@ def test_run_telegram_live_validation_returns_advisory_when_matching_update_text
     )
     client.close = AsyncMock()
 
-    monkeypatch.setattr(
-        "scripts.validate_runtime.TelegramBotClient", lambda **_: client
-    )
+    monkeypatch.setattr("scripts.validate_runtime.TelegramBotClient", lambda **_: client)
 
     args = argparse.Namespace(
         command="telegram-live",
@@ -1421,18 +1419,16 @@ def test_run_telegram_live_validation_returns_advisory_when_matching_update_not_
     client = MagicMock()
     client.get_me = AsyncMock(
         return_value={
-        "id": 123,
-        "username": "test_bot",
-        "first_name": "Test",
+            "id": 123,
+            "username": "test_bot",
+            "first_name": "Test",
         }
     )
     client.send_message = AsyncMock(return_value={"message_id": 901})
     client.get_updates = AsyncMock(side_effect=[[], []])
     client.close = AsyncMock()
 
-    monkeypatch.setattr(
-        "scripts.validate_runtime.TelegramBotClient", lambda **_: client
-    )
+    monkeypatch.setattr("scripts.validate_runtime.TelegramBotClient", lambda **_: client)
 
     args = argparse.Namespace(
         command="telegram-live",
@@ -1745,7 +1741,7 @@ def test_run_artifact_review_validation_returns_advisory_summary_for_persisted_e
 
     summary = run_artifact_review_validation(
         _make_artifact_review_args(explicit.as_posix()),
-            build_validation_env({"TTS_MODELS_DIR": str(tmp_path / "models")}),
+        build_validation_env({"TTS_MODELS_DIR": str(tmp_path / "models")}),
     )
 
     assert summary["status"] == "advisory"
@@ -1782,7 +1778,7 @@ def test_run_artifact_review_validation_surfaces_authoritative_failures_in_revie
 
     summary = run_artifact_review_validation(
         _make_artifact_review_args(),
-            build_validation_env({"TTS_MODELS_DIR": str(tmp_path / "models")}),
+        build_validation_env({"TTS_MODELS_DIR": str(tmp_path / "models")}),
     )
 
     assert summary["status"] == "advisory"

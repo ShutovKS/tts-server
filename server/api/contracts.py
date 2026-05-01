@@ -53,6 +53,7 @@ class ExceptionMapping:
     error_type: type[Exception]
     builder: Any
 
+
 __all__ = [
     "ErrorDescriptor",
     "ExceptionMapping",

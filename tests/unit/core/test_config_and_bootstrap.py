@@ -34,9 +34,7 @@ from core.bootstrap import (
     build_job_metadata_store,
     build_runtime,
 )
-from core.metrics import OperationalMetricsRegistry
 from core.config import (
-    CoreSettings,
     DEFAULT_MODELS_DIR,
     DEFAULT_OUTPUTS_DIR,
     DEFAULT_UPLOAD_STAGING_DIR,
@@ -47,6 +45,7 @@ from core.config import (
     LOCAL_QUOTA_BACKEND,
     LOCAL_RATE_LIMIT_BACKEND,
     PROJECT_ROOT,
+    CoreSettings,
     parse_core_settings_from_env,
 )
 from core.infrastructure.job_execution_local import (
@@ -54,8 +53,8 @@ from core.infrastructure.job_execution_local import (
     LocalInMemoryJobStore,
     LocalJobArtifactStore,
 )
+from core.metrics import OperationalMetricsRegistry
 from tests.unit.core.test_job_execution import StubApplicationService
-
 
 pytestmark = pytest.mark.unit
 
@@ -176,7 +175,9 @@ def test_parse_core_settings_from_env_ignores_legacy_qwen_names(tmp_path: Path):
     assert values["sample_rate"] == 24000
 
 
-def test_parse_core_settings_from_env_uses_only_tts_names_when_legacy_names_are_also_set(tmp_path: Path):
+def test_parse_core_settings_from_env_uses_only_tts_names_when_legacy_names_are_also_set(
+    tmp_path: Path,
+):
     values = parse_core_settings_from_env(
         {
             "TTS_MODELS_DIR": str(tmp_path / "canonical-models"),
@@ -236,9 +237,7 @@ def test_job_wiring_factories_reject_unknown_backend_ids(
             build_job_execution_backend(
                 settings,
                 store=LocalInMemoryJobStore(),
-                executor=InMemoryJobExecutor(
-                    application_service=StubApplicationService()
-                ),
+                executor=InMemoryJobExecutor(application_service=StubApplicationService()),
                 metrics=OperationalMetricsRegistry(),
             )
 
@@ -316,16 +315,11 @@ def test_build_runtime_passes_manifest_path_to_backend_registry(tmp_path: Path):
     runtime = build_runtime(settings)
 
     assert (
-        runtime.backend_registry.model_specs[0].api_name
-        == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+        runtime.backend_registry.model_specs[0].api_name == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     )
     assert runtime.backend_registry._model_manifest.metadata["catalog"] == "test"
-    assert runtime.backend_registry._backends["mlx"].models_dir == (
-        tmp_path / "mlx-models"
-    )
-    assert runtime.backend_registry._backends["torch"].models_dir == (
-        tmp_path / "models"
-    )
+    assert runtime.backend_registry._backends["mlx"].models_dir == (tmp_path / "mlx-models")
+    assert runtime.backend_registry._backends["torch"].models_dir == (tmp_path / "models")
     assert runtime.backend_registry._backends["qwen_fast"].enabled is True
     assert runtime.settings.runtime_capability_map() == {
         "family": None,

@@ -29,7 +29,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = [pytest.mark.architecture, pytest.mark.integration]
 
 FORBIDDEN_LOCAL_RUNTIME_IMPORT_PREFIXES = (
@@ -82,7 +81,9 @@ def test_run_telegram_bot_requires_remote_client_and_wires_dispatcher_remote_onl
     contents = Path("telegram_bot/__main__.py").read_text(encoding="utf-8")
 
     assert "if runtime.remote_server_client is None:" in contents
-    assert "Telegram runtime remote server client is required for async command execution" in contents
+    assert (
+        "Telegram runtime remote server client is required for async command execution" in contents
+    )
     assert "dispatcher = CommandDispatcher(" in contents
     assert "synthesizer=None," in contents
     assert "job_orchestrator=job_orchestrator," in contents

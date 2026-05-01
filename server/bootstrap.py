@@ -22,14 +22,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Mapping, Optional
 
 from core.bootstrap import CoreRuntime, build_runtime
 from core.config import CoreSettings, env_int, env_text, parse_core_settings_from_env
 from core.observability import get_logger, log_event
-
 
 LOGGER = get_logger(__name__)
 
@@ -55,7 +54,7 @@ class ServerSettings(CoreSettings):
     #   SIDE_EFFECTS: Reads environment-provided configuration values
     #   LINKS: M-SERVER, M-CONFIG
     # END_CONTRACT: from_env
-    def from_env(cls, environ: Mapping[str, str] | None = None) -> "ServerSettings":
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> ServerSettings:
         return cls(
             **parse_core_settings_from_env(environ),
             host=env_text("TTS_HOST", "0.0.0.0", environ),
@@ -98,7 +97,7 @@ class ServerRuntime:
 #   SIDE_EFFECTS: May read environment configuration and initialize shared runtime dependencies
 #   LINKS: M-SERVER, M-BOOTSTRAP
 # END_CONTRACT: build_server_runtime
-def build_server_runtime(settings: Optional[ServerSettings] = None) -> ServerRuntime:
+def build_server_runtime(settings: ServerSettings | None = None) -> ServerRuntime:
     # START_BLOCK_PARSE_SERVER_SETTINGS
     resolved_settings = settings or get_server_settings()
     # END_BLOCK_PARSE_SERVER_SETTINGS
@@ -114,6 +113,7 @@ def build_server_runtime(settings: Optional[ServerSettings] = None) -> ServerRun
     )
     return ServerRuntime(settings=resolved_settings, core=core_runtime)
     # END_BLOCK_BUILD_SERVER_RUNTIME
+
 
 __all__ = [
     "ServerSettings",

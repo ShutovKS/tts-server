@@ -89,9 +89,7 @@ class CoreRuntime:
 def build_job_artifact_store(settings: CoreSettings) -> JobArtifactStore:
     if settings.job_artifact_backend == "local":
         return LocalJobArtifactStore()
-    raise ValueError(
-        f"Unsupported job artifact backend: {settings.job_artifact_backend}"
-    )
+    raise ValueError(f"Unsupported job artifact backend: {settings.job_artifact_backend}")
 
 
 # START_CONTRACT: build_job_metadata_store
@@ -106,9 +104,7 @@ def build_job_metadata_store(
 ) -> JobMetadataStore:
     if settings.job_metadata_backend == "local":
         return LocalInMemoryJobStore(artifact_store=artifact_store)
-    raise ValueError(
-        f"Unsupported job metadata backend: {settings.job_metadata_backend}"
-    )
+    raise ValueError(f"Unsupported job metadata backend: {settings.job_metadata_backend}")
 
 
 # START_CONTRACT: build_job_execution_backend
@@ -126,12 +122,8 @@ def build_job_execution_backend(
     metrics: OperationalMetricsRegistry,
 ) -> JobExecutionBackend:
     if settings.job_execution_backend == "local":
-        return LocalBoundedExecutionManager(
-            store=store, executor=executor, metrics=metrics
-        )
-    raise ValueError(
-        f"Unsupported job execution backend: {settings.job_execution_backend}"
-    )
+        return LocalBoundedExecutionManager(store=store, executor=executor, metrics=metrics)
+    raise ValueError(f"Unsupported job execution backend: {settings.job_execution_backend}")
 
 
 # START_CONTRACT: build_runtime
@@ -171,9 +163,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         preload_model_ids=settings.model_preload_ids,
         metrics=metrics,
     )
-    tts_service = TTSService(
-        registry=registry, settings=settings, inference_guard=inference_guard
-    )
+    tts_service = TTSService(registry=registry, settings=settings, inference_guard=inference_guard)
     application = TTSApplicationService(tts_service=tts_service)
     # END_BLOCK_INIT_SERVICES
     # START_BLOCK_INIT_JOB_SYSTEM

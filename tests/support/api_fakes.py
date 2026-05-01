@@ -50,8 +50,8 @@ from core.errors import (
     TTSGenerationError,
 )
 from core.models.catalog import MODEL_SPECS
-from profiles import ProfileResolver
 from core.services.model_registry import ModelRegistry
+from profiles import ProfileResolver
 from server.bootstrap import ServerSettings
 
 
@@ -493,13 +493,13 @@ class DummyRegistry(ModelRegistry):
                     "selected": True,
                     "platform_supported": True,
                     "available": True,
-                "capabilities": {
-                    "supports_custom": True,
-                    "supports_design": True,
-                    "supports_clone": True,
-                    "supports_voice_description_tts": True,
-                    "supports_reference_voice_clone": True,
-                },
+                    "capabilities": {
+                        "supports_custom": True,
+                        "supports_design": True,
+                        "supports_clone": True,
+                        "supports_voice_description_tts": True,
+                        "supports_reference_voice_clone": True,
+                    },
                     "diagnostics": {
                         "backend": "mlx",
                         "label": "MLX Apple Silicon",
@@ -807,9 +807,7 @@ class FailingTTSService(DummyTTSService):
 
 class BusyTTSService(DummyTTSService):
     def synthesize_custom(self, request):
-        raise InferenceBusyError(
-            "Inference is already in progress", details={"queue_depth": 1}
-        )
+        raise InferenceBusyError("Inference is already in progress", details={"queue_depth": 1})
 
 
 class MissingModelTTSService(DummyTTSService):
@@ -927,7 +925,8 @@ def make_validation_model_entry(
                 if selected_backend_compatible_with_model is None
                 else selected_backend_compatible_with_model
             ),
-            "route_reason": route_reason or ("selected_backend_supports_model" if runtime_ready else "runtime_not_ready"),
+            "route_reason": route_reason
+            or ("selected_backend_supports_model" if runtime_ready else "runtime_not_ready"),
             "candidates": [
                 {"diagnostics": item} if "diagnostics" not in item else item
                 for item in list(candidate_diagnostics or [])

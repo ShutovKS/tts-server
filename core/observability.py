@@ -29,10 +29,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
 from contextvars import ContextVar
 from time import perf_counter
-from typing import Any, Iterator
-
+from typing import Any
 
 _REQUEST_ID: ContextVar[str] = ContextVar("request_id", default="system")
 _OPERATION: ContextVar[str] = ContextVar("operation", default="system")
@@ -50,7 +50,7 @@ class OperationScope:
         self.operation = operation
         self._token = None
 
-    def __enter__(self) -> "OperationScope":
+    def __enter__(self) -> OperationScope:
         self._token = _OPERATION.set(self.operation)
         return self
 
@@ -163,9 +163,8 @@ def log_event(
         "operation": get_operation(),
         **fields,
     }
-    logger.log(
-        level, json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-    )
+    logger.log(level, json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
+
 
 __all__ = [
     "OperationScope",

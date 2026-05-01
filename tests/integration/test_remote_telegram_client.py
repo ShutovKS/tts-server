@@ -56,7 +56,6 @@ from telegram_bot.remote_client import (
     RemoteServerTransportError,
 )
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -69,7 +68,9 @@ def _make_client(handler) -> RemoteServerClient:
     )
 
 
-def _wait_for_remote_server(ready_file_path: Path, process: subprocess.Popen[str], timeout_seconds: float = 10.0) -> tuple[str, int]:
+def _wait_for_remote_server(
+    ready_file_path: Path, process: subprocess.Popen[str], timeout_seconds: float = 10.0
+) -> tuple[str, int]:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -131,7 +132,9 @@ def _launch_remote_server_process(request_log_path: Path):
 def _read_request_log(path: Path) -> list[dict[str, object]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 @pytest.mark.anyio
@@ -512,7 +515,9 @@ async def test_failed_job_status_preserves_requested_job_and_known_submit_correl
 
 
 @pytest.mark.anyio
-async def test_split_topology_remote_client_crosses_real_process_boundary_and_sync_contract(tmp_path: Path):
+async def test_split_topology_remote_client_crosses_real_process_boundary_and_sync_contract(
+    tmp_path: Path,
+):
     request_log_path = tmp_path / "remote-server-requests.jsonl"
 
     with _launch_remote_server_process(request_log_path) as (base_url, server_pid):
@@ -579,12 +584,18 @@ async def test_split_topology_remote_client_crosses_real_process_boundary_and_sy
     assert sync_response.headers["x-tts-mode"] == "custom"
     assert sync_response.headers["x-backend-id"] == "stub"
 
-    observed_requests = {(entry["method"], entry["path"], entry["request_id"]) for entry in request_log}
+    observed_requests = {
+        (entry["method"], entry["path"], entry["request_id"]) for entry in request_log
+    }
     assert ("GET", "/health/ready", None) in observed_requests
     assert ("GET", "/health/ready", "req-split-ready") in observed_requests
     assert ("GET", "/api/v1/models", "req-split-models") in observed_requests
     assert ("POST", "/v1/audio/speech/jobs", "req-split-submit") in observed_requests
     assert ("GET", "/api/v1/tts/jobs/job-remote-123", "req-split-status") in observed_requests
-    assert ("GET", "/api/v1/tts/jobs/job-remote-123/result", "req-split-result") in observed_requests
+    assert (
+        "GET",
+        "/api/v1/tts/jobs/job-remote-123/result",
+        "req-split-result",
+    ) in observed_requests
     assert ("POST", "/v1/audio/speech", "req-sync-contract") in observed_requests
     assert all(entry["handler_pid"] == server_pid for entry in request_log)

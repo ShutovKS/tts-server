@@ -49,7 +49,6 @@ from core.registry.artifacts import ArtifactRegistry
 from core.registry.model_catalog import ModelCatalogRegistry
 from core.services.model_registry import ModelRegistry
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -138,11 +137,7 @@ class StubBackend(TTSBackend):
         }
 
     def readiness_diagnostics(self) -> BackendDiagnostics:
-        ready = (
-            self._available and self._platform_supported
-            if self._ready is None
-            else self._ready
-        )
+        ready = self._available and self._platform_supported if self._ready is None else self._ready
         return BackendDiagnostics(
             backend_key=self.key,
             backend_label=self.label,
@@ -398,9 +393,7 @@ def test_backend_registry_raises_model_not_available_when_mode_has_no_local_arti
                 available=True,
                 platform_supported=True,
                 missing_folders={
-                    spec.folder
-                    for spec in MODEL_SPECS.values()
-                    if spec.mode == "custom"
+                    spec.folder for spec in MODEL_SPECS.values() if spec.mode == "custom"
                 },
             )
         ],
@@ -437,9 +430,7 @@ def test_backend_registry_rejects_model_when_backend_is_not_in_affinity():
 
 def test_model_registry_applies_listed_preload_policy():
     backend = StubBackend(key="torch", available=True, platform_supported=True)
-    backend_registry = BackendRegistry(
-        [backend], requested_backend="torch", autoselect=True
-    )
+    backend_registry = BackendRegistry([backend], requested_backend="torch", autoselect=True)
 
     registry = ModelRegistry(
         backend_registry=backend_registry,
@@ -459,9 +450,7 @@ def test_model_registry_applies_listed_preload_policy():
 
 def test_model_registry_exposes_family_aware_descriptors():
     backend = StubBackend(key="torch", available=True, platform_supported=True)
-    backend_registry = BackendRegistry(
-        [backend], requested_backend="torch", autoselect=True
-    )
+    backend_registry = BackendRegistry([backend], requested_backend="torch", autoselect=True)
 
     registry = ModelRegistry(backend_registry=backend_registry)
 
@@ -474,9 +463,7 @@ def test_model_registry_exposes_family_aware_descriptors():
 
 def test_model_registry_exposes_split_registry_runtime_state():
     backend = StubBackend(key="torch", available=True, platform_supported=True)
-    backend_registry = BackendRegistry(
-        [backend], requested_backend="torch", autoselect=True
-    )
+    backend_registry = BackendRegistry([backend], requested_backend="torch", autoselect=True)
 
     registry = ModelRegistry(
         backend_registry=backend_registry,
@@ -496,12 +483,8 @@ def test_model_registry_exposes_split_registry_runtime_state():
 
 
 def test_artifact_registry_inspects_model_via_routed_backend():
-    selected_backend = StubBackend(
-        key="torch", available=True, platform_supported=True
-    )
-    routed_backend = StubBackend(
-        key="onnx", available=True, platform_supported=True
-    )
+    selected_backend = StubBackend(key="torch", available=True, platform_supported=True)
+    routed_backend = StubBackend(key="onnx", available=True, platform_supported=True)
     catalog = ModelCatalogRegistry((MODEL_SPECS["1"],))
     artifact_registry = ArtifactRegistry(
         catalog=catalog,
@@ -533,9 +516,7 @@ def test_model_registry_delegates_model_path_resolution_to_artifact_registry():
 
 def test_runtime_model_registry_uses_public_preload_report_contract():
     backend = StubBackend(key="torch", available=True, platform_supported=True)
-    backend_registry = BackendRegistry(
-        [backend], requested_backend="torch", autoselect=True
-    )
+    backend_registry = BackendRegistry([backend], requested_backend="torch", autoselect=True)
 
     registry = ModelRegistry(
         backend_registry=backend_registry,
@@ -630,19 +611,14 @@ def test_model_registry_lists_per_model_backend_for_second_family():
     registry = ModelRegistry(backend_registry=backend_registry)
 
     models = registry.list_models()
-    piper_item = next(
-        item for item in models if item["id"] == "Piper-en_US-lessac-medium"
-    )
+    piper_item = next(item for item in models if item["id"] == "Piper-en_US-lessac-medium")
 
     assert piper_item["backend"] == "onnx"
     assert piper_item["family_key"] == "piper"
     assert piper_item["selected_backend"] == "mlx"
     assert piper_item["execution_backend"] == "onnx"
     assert piper_item["route"]["routing_mode"] == "per_model_backend_override"
-    assert (
-        piper_item["route"]["route_reason"]
-        == "selected_backend_incompatible_with_model"
-    )
+    assert piper_item["route"]["route_reason"] == "selected_backend_incompatible_with_model"
 
 
 def test_backend_registry_explains_per_model_backend_route_for_piper():

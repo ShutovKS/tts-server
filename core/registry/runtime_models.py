@@ -19,7 +19,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from core.models.manifest import ModelDescriptor
 from core.registry.artifacts import ArtifactRegistry
@@ -37,9 +38,7 @@ class RuntimeModelRegistry:
     def preload_report(self) -> dict[str, object]:
         return dict(self._preload_report_provider())
 
-    def descriptor_runtime_state(
-        self, descriptor: ModelDescriptor
-    ) -> dict[str, object]:
+    def descriptor_runtime_state(self, descriptor: ModelDescriptor) -> dict[str, object]:
         artifact_state = self.artifact_registry.descriptor_state(descriptor)
         preload = self.preload_report()
         loaded_ids = set(preload.get("loaded_model_ids", []))

@@ -31,12 +31,13 @@ These tests verify:
 #   LAST_CHANGE: [v1.1.0 - Expanded startup self-check coverage for invalid Telegram settings and runtime validation failures]
 # END_CHANGE_SUMMARY
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from telegram_bot.__main__ import (
-    StartupCheckResult,
     StartupCheckPhase,
+    StartupCheckResult,
     run_startup_self_checks,
 )
 
@@ -93,9 +94,7 @@ class TestStartupCheckResult:
             success=True,
             phase=StartupCheckPhase.COMPLETE,
         )
-        result.warnings.append(
-            "WARNING: ALLOWLIST_EMPTY - No user restrictions configured"
-        )
+        result.warnings.append("WARNING: ALLOWLIST_EMPTY - No user restrictions configured")
 
         assert result.success
         assert len(result.warnings) == 1
@@ -208,9 +207,13 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
 
-        with patch("telegram_bot.__main__.verify_telegram_connectivity", AsyncMock(return_value=True)):
+        with patch(
+            "telegram_bot.__main__.verify_telegram_connectivity", AsyncMock(return_value=True)
+        ):
             result = await run_startup_self_checks(mock_runtime, client=MagicMock())
 
         assert result.success
@@ -227,7 +230,9 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings_no_token
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
         client = MagicMock()
         client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
@@ -247,7 +252,9 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
         client = MagicMock()
         client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
@@ -259,14 +266,14 @@ class TestRunStartupSelfChecks:
     @pytest.mark.anyio
     async def test_invalid_text_length_validation_is_fatal(self, mock_settings):
         """Settings validation errors for impossible text length abort startup."""
-        mock_settings.validate.return_value = [
-            "TTS_TELEGRAM_MAX_TEXT_LENGTH must be positive"
-        ]
+        mock_settings.validate.return_value = ["TTS_TELEGRAM_MAX_TEXT_LENGTH must be positive"]
         mock_settings.telegram_max_text_length = -1
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
         client = MagicMock()
         client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
@@ -282,7 +289,9 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
 
         client = MagicMock()
         client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
@@ -298,7 +307,9 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(side_effect=RuntimeError("readiness probe failed"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            side_effect=RuntimeError("readiness probe failed")
+        )
 
         client = MagicMock()
         client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
@@ -330,7 +341,9 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
         client = MagicMock()
         client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
@@ -345,7 +358,9 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings_no_allowlist
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
         client = MagicMock()
         client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
@@ -362,7 +377,9 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
         client = MagicMock()
         client.get_me = AsyncMock(return_value={"id": 1, "username": "bot", "first_name": "bot"})
 
@@ -381,7 +398,9 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
 
         result = await run_startup_self_checks(mock_runtime, client=MagicMock())
 
@@ -395,14 +414,14 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
 
         result = await run_startup_self_checks(mock_runtime, client=MagicMock())
 
         # Very small text length should add warning
-        assert any(
-            "text" in w.lower() and "small" in w.lower() for w in result.warnings
-        )
+        assert any("text" in w.lower() and "small" in w.lower() for w in result.warnings)
 
     @pytest.mark.anyio
     async def test_text_length_warning_large(self, mock_settings):
@@ -411,11 +430,11 @@ class TestRunStartupSelfChecks:
         mock_runtime = MagicMock()
         mock_runtime.settings = mock_settings
         mock_runtime.remote_server_client = MagicMock()
-        mock_runtime.remote_server_client.get_readiness = AsyncMock(return_value=MagicMock(status="ok"))
+        mock_runtime.remote_server_client.get_readiness = AsyncMock(
+            return_value=MagicMock(status="ok")
+        )
 
         result = await run_startup_self_checks(mock_runtime, client=MagicMock())
 
         # Very large text length should add warning
-        assert any(
-            "text" in w.lower() and "large" in w.lower() for w in result.warnings
-        )
+        assert any("text" in w.lower() and "large" in w.lower() for w in result.warnings)

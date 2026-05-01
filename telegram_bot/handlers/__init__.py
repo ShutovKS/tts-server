@@ -28,11 +28,11 @@ for the Telegram bot transport layer.
 
 from telegram_bot.handlers.commands import (
     CommandType,
-    ParsedCommand,
     CommandValidationResult,
+    ParsedCommand,
+    is_private_chat,
     parse_command,
     validate_tts_command,
-    is_private_chat,
 )
 from telegram_bot.handlers.dispatcher import CommandDispatcher
 from telegram_bot.handlers.tts_handler import TTSSynthesizer

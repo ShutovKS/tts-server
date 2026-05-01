@@ -58,10 +58,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 from core.models.catalog import SPEAKER_MAP
-
 
 # Speed constraints for Telegram TTS
 MIN_SPEED = 0.5
@@ -153,7 +151,7 @@ class CommandValidationResult:
     """Result of command validation."""
 
     is_valid: bool
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 # Pattern for /tts command with extended syntax:
@@ -353,7 +351,7 @@ def validate_tts_args(parsed_args: ParsedTTSArgs) -> CommandValidationResult:
         return CommandValidationResult(
             is_valid=False,
             error_message="Please provide text after /tts. "
-            f"Usage: /tts [-- speaker=<speaker>] [-- speed=<speed>] -- <text>",
+            "Usage: /tts [-- speaker=<speaker>] [-- speed=<speed>] -- <text>",
         )
 
     if not parsed_args.language:
@@ -393,7 +391,7 @@ def validate_tts_command(
         return CommandValidationResult(
             is_valid=False,
             error_message="Please provide text after /tts. "
-            f"Usage: /tts [-- speaker=<speaker>] [-- speed=<speed>] -- <text>",
+            "Usage: /tts [-- speaker=<speaker>] [-- speed=<speed>] -- <text>",
         )
 
     # Try to parse extended syntax
@@ -563,7 +561,7 @@ def validate_design_args(parsed_args: ParsedDesignArgs) -> CommandValidationResu
         return CommandValidationResult(
             is_valid=False,
             error_message="Voice description cannot be empty. "
-            f"Usage: /design <voice_description> -- <text>",
+            "Usage: /design <voice_description> -- <text>",
         )
 
     # Validate voice_description length
@@ -587,8 +585,7 @@ def validate_design_args(parsed_args: ParsedDesignArgs) -> CommandValidationResu
     if not parsed_args.text:
         return CommandValidationResult(
             is_valid=False,
-            error_message="Text cannot be empty. "
-            f"Usage: /design <voice_description> -- <text>",
+            error_message="Text cannot be empty. Usage: /design <voice_description> -- <text>",
         )
 
     # Validate text length
@@ -647,7 +644,7 @@ def validate_design_command(
         return CommandValidationResult(
             is_valid=False,
             error_message="Please provide voice description and text. "
-            f"Usage: /design <voice_description> -- <text>",
+            "Usage: /design <voice_description> -- <text>",
         )
 
     # Try to parse design syntax
@@ -822,8 +819,7 @@ def validate_clone_args(parsed_args: ParsedCloneArgs) -> CommandValidationResult
     if not parsed_args.text:
         return CommandValidationResult(
             is_valid=False,
-            error_message="Text cannot be empty. "
-            f"Usage: /clone [-- ref=<transcript>] -- <text>",
+            error_message="Text cannot be empty. Usage: /clone [-- ref=<transcript>] -- <text>",
         )
 
     # Validate text length
@@ -882,7 +878,7 @@ def validate_clone_command(
         return CommandValidationResult(
             is_valid=False,
             error_message="Please provide text after /clone. "
-            f"Usage: /clone [-- ref=<transcript>] -- <text>",
+            "Usage: /clone [-- ref=<transcript>] -- <text>",
         )
 
     # Check for unsupported parameters (speaker, speed, model are not supported for clone)
@@ -910,6 +906,7 @@ def validate_clone_command(
         return validation
 
     return CommandValidationResult(is_valid=True)
+
 
 __all__ = [
     "MIN_SPEED",

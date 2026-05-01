@@ -20,8 +20,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from core.backends.base import TTSBackend
 from core.planning.host_probe import HostSnapshot
@@ -73,9 +73,7 @@ class CapabilityResolver:
 
             if accepted:
                 reason = "host_and_runtime_compatible"
-            elif isinstance(diagnostics.get("reason"), str) and diagnostics.get(
-                "reason"
-            ):
+            elif isinstance(diagnostics.get("reason"), str) and diagnostics.get("reason"):
                 reason = str(diagnostics["reason"])
             elif platform_supported:
                 reason = "runtime_dependency_missing"

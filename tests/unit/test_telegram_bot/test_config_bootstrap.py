@@ -35,7 +35,7 @@ from unittest.mock import patch
 
 import pytest
 
-from telegram_bot.bootstrap import build_telegram_runtime, TelegramRuntime
+from telegram_bot.bootstrap import TelegramRuntime, build_telegram_runtime
 from telegram_bot.config import TelegramSettings
 from telegram_bot.remote_client import RemoteServerClient
 
@@ -289,9 +289,7 @@ class TestTelegramRuntimeBootstrap:
 
     def test_build_telegram_runtime_wires_remote_server_client_when_configured(self):
         """Configured remote server URL should build a reusable runtime client."""
-        env = _make_env(
-            {"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"}
-        )
+        env = _make_env({"TTS_TELEGRAM_SERVER_BASE_URL": "http://server.internal:8000"})
         settings = TelegramSettings.from_env(env)
 
         runtime = build_telegram_runtime(settings)

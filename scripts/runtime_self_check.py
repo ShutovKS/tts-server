@@ -30,14 +30,14 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import io
 import json
 import os
-from pathlib import Path
 import sys
-from typing import Any, Mapping
-
+from collections.abc import Mapping
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from pathlib import Path
+from typing import Any
 
 # START_BLOCK_BOOTSTRAP_IMPORT_PATH
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -48,7 +48,6 @@ if str(PROJECT_ROOT) not in sys.path:
 from core.bootstrap import build_runtime  # noqa: E402
 from core.config import CoreSettings, parse_core_settings_from_env  # noqa: E402
 from profiles import ProfileResolver  # noqa: E402
-
 
 REPRESENTATIVE_MODEL_TARGETS: tuple[dict[str, str], ...] = (
     {
@@ -78,6 +77,7 @@ REPRESENTATIVE_MODEL_TARGETS: tuple[dict[str, str], ...] = (
 #   SIDE_EFFECTS: Mutates os.environ for the lifetime of the context
 #   LINKS: M-BOOTSTRAP, M-CONFIG
 # END_CONTRACT: _overlaid_environment
+
 
 @contextmanager
 def _overlaid_environment(environ: Mapping[str, str] | None):
@@ -153,9 +153,7 @@ def build_asset_report(readiness_report: dict[str, Any]) -> dict[str, Any]:
         for item in items
     ]
     missing_assets = [
-        item
-        for item in configured
-        if item["missing_artifacts"] or not item["available"]
+        item for item in configured if item["missing_artifacts"] or not item["available"]
     ]
     return {
         "configured_models": configured,
@@ -435,10 +433,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.strict:
         return 0
-    if (
-        payload["readiness"]["registry_ready"]
-        and not payload["assets"]["models_missing_assets"]
-    ):
+    if payload["readiness"]["registry_ready"] and not payload["assets"]["models_missing_assets"]:
         return 0
     return 1
 

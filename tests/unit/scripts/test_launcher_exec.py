@@ -23,8 +23,8 @@
 
 from __future__ import annotations
 
-import json
 import importlib
+import json
 import platform
 import shutil
 import subprocess
@@ -223,9 +223,10 @@ def test_launcher_exec_reports_missing_python_when_env_absent():
         payload = json.loads(completed.stdout)
         assert payload["exec"]["family"] == "omnivoice"
         assert payload["exec"]["module"] == "telegram"
-        assert Path(payload["exec"]["command"][0]).resolve() == Path(
-            _expected_python_path("omnivoice", isolated_root)
-        ).resolve()
+        assert (
+            Path(payload["exec"]["command"][0]).resolve()
+            == Path(_expected_python_path("omnivoice", isolated_root)).resolve()
+        )
         assert payload["exec"]["command"][1:] == ["-m", "telegram_bot"]
         assert payload["exec"]["dry_run"] is False
         assert payload["exec"]["python_exists"] is False
@@ -237,9 +238,21 @@ def test_launcher_exec_reports_missing_python_when_env_absent():
                 "clone_model": "OmniVoice-Clone",
             },
             "capability_status": {
-                "custom": {"bound": True, "model": "OmniVoice-Custom", "env_var": "TTS_DEFAULT_CUSTOM_MODEL"},
-                "design": {"bound": True, "model": "OmniVoice-Design", "env_var": "TTS_DEFAULT_DESIGN_MODEL"},
-                "clone": {"bound": True, "model": "OmniVoice-Clone", "env_var": "TTS_DEFAULT_CLONE_MODEL"},
+                "custom": {
+                    "bound": True,
+                    "model": "OmniVoice-Custom",
+                    "env_var": "TTS_DEFAULT_CUSTOM_MODEL",
+                },
+                "design": {
+                    "bound": True,
+                    "model": "OmniVoice-Design",
+                    "env_var": "TTS_DEFAULT_DESIGN_MODEL",
+                },
+                "clone": {
+                    "bound": True,
+                    "model": "OmniVoice-Clone",
+                    "env_var": "TTS_DEFAULT_CLONE_MODEL",
+                },
             },
         }
         assert payload["exec"]["error"] == "expected_python_missing"

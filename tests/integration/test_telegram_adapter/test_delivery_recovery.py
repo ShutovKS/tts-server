@@ -35,13 +35,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from core.contracts.jobs import JobStatus
 from telegram_bot.job_orchestrator import (
     DeliveryMetadataStore,
-    TelegramJobOrchestrator,
     JobCompletionResult,
+    TelegramJobOrchestrator,
 )
-from core.contracts.jobs import JobStatus
-
 
 pytestmark = pytest.mark.integration
 
@@ -249,12 +248,13 @@ class TestTelegramJobPollerRecovery:
     @pytest.mark.anyio
     async def test_recovery_loads_pending_jobs(self, mock_orchestrator, mock_sender):
         """Test that recovery loads pending jobs from store."""
-        from telegram_bot.job_orchestrator import (
-            TelegramJobPoller,
-            DeliveryMetadataStore,
-        )
-        from telegram_bot.config import TelegramSettings
         import tempfile
+
+        from telegram_bot.config import TelegramSettings
+        from telegram_bot.job_orchestrator import (
+            DeliveryMetadataStore,
+            TelegramJobPoller,
+        )
 
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = Path(f.name)
@@ -293,16 +293,15 @@ class TestTelegramJobPollerRecovery:
         path.unlink()
 
     @pytest.mark.anyio
-    async def test_recovery_skips_already_delivered(
-        self, mock_orchestrator, mock_sender
-    ):
+    async def test_recovery_skips_already_delivered(self, mock_orchestrator, mock_sender):
         """Test that recovery skips already delivered jobs."""
-        from telegram_bot.job_orchestrator import (
-            TelegramJobPoller,
-            DeliveryMetadataStore,
-        )
-        from telegram_bot.config import TelegramSettings
         import tempfile
+
+        from telegram_bot.config import TelegramSettings
+        from telegram_bot.job_orchestrator import (
+            DeliveryMetadataStore,
+            TelegramJobPoller,
+        )
 
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = Path(f.name)

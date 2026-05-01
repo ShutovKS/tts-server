@@ -28,11 +28,11 @@ import re
 import shutil
 import subprocess
 import wave
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Iterator
 
 from core.config import CoreSettings
 from core.contracts.results import AudioResult
@@ -79,16 +79,12 @@ def is_wav_reference_compatible(input_path: Path, settings: CoreSettings) -> boo
 #   SIDE_EFFECTS: May invoke ffmpeg and create a converted WAV file on disk
 #   LINKS: M-INFRASTRUCTURE
 # END_CONTRACT: convert_audio_to_wav_if_needed
-def convert_audio_to_wav_if_needed(
-    input_path: Path, settings: CoreSettings
-) -> tuple[Path, bool]:
+def convert_audio_to_wav_if_needed(input_path: Path, settings: CoreSettings) -> tuple[Path, bool]:
     # START_BLOCK_CHECK_FORMAT
     if not input_path.exists():
         raise AudioConversionError(f"Reference audio file does not exist: {input_path}")
 
-    if input_path.suffix.lower() == ".wav" and is_wav_reference_compatible(
-        input_path, settings
-    ):
+    if input_path.suffix.lower() == ".wav" and is_wav_reference_compatible(input_path, settings):
         return input_path, False
     # END_BLOCK_CHECK_FORMAT
 
@@ -111,13 +107,9 @@ def convert_audio_to_wav_if_needed(
 
     # START_BLOCK_RUN_FFMPEG
     try:
-        subprocess.run(
-            command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
-        )
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     except FileNotFoundError as exc:
-        raise AudioConversionError(
-            "ffmpeg is not installed or not available in PATH"
-        ) from exc
+        raise AudioConversionError("ffmpeg is not installed or not available in PATH") from exc
     except subprocess.CalledProcessError as exc:
         raise AudioConversionError(
             exc.stderr.decode("utf-8", errors="ignore") or "ffmpeg conversion failed"
@@ -139,9 +131,7 @@ def convert_audio_to_wav_if_needed(
 def read_generated_wav(output_dir: Path) -> AudioResult:
     wav_files = sorted(output_dir.glob("audio_*.wav"))
     if not wav_files:
-        raise AudioArtifactNotFoundError(
-            f"Generated audio file not found in {output_dir}"
-        )
+        raise AudioArtifactNotFoundError(f"Generated audio file not found in {output_dir}")
 
     path = wav_files[0]
     return AudioResult(path=path, bytes_data=path.read_bytes())
@@ -165,9 +155,7 @@ def persist_output(
 
     timestamp = datetime.now().strftime("%H-%M-%S")
     clean_text = (
-        re.sub(r"[^\w\s-]", "", text_snippet)[: settings.filename_max_len]
-        .strip()
-        .replace(" ", "_")
+        re.sub(r"[^\w\s-]", "", text_snippet)[: settings.filename_max_len].strip().replace(" ", "_")
         or "audio"
     )
     final_path = save_path / f"{timestamp}_{clean_text}.wav"

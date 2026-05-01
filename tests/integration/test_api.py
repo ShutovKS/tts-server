@@ -39,11 +39,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.application import TTSApplicationService
-from core.services.tts_service import TTSService
 from core.infrastructure.admission_control_local import (
     build_quota_guard,
     build_rate_limiter,
 )
+from core.services.tts_service import TTSService
 from server.app import create_app
 from server.bootstrap import ServerSettings
 from tests.support.api_fakes import (
@@ -51,14 +51,13 @@ from tests.support.api_fakes import (
     DummyRegistry,
     DummyTTSService,
     FailingTTSService,
-    MissingModeTTSService,
     MissingModelTTSService,
+    MissingModeTTSService,
     SlowTTSService,
     WorkerFailingTTSService,
     extract_json_logs,
     make_wav_bytes,
 )
-
 
 pytestmark = pytest.mark.integration
 
@@ -154,9 +153,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     def reset_admission_state() -> None:
         app.state.rate_limiter = build_rate_limiter(app.state.settings)
-        app.state.quota_guard = build_quota_guard(
-            app.state.settings, store=app.state.job_store
-        )
+        app.state.quota_guard = build_quota_guard(app.state.settings, store=app.state.job_store)
 
     app.state.reset_admission_state = reset_admission_state
 
@@ -221,7 +218,9 @@ def test_ready_endpoint_allows_default_https_frontend_demo_origin(client: TestCl
     assert response.headers["access-control-allow-origin"] == "https://split-tts.drive-vr.ru"
 
 
-def test_ready_endpoint_allows_configured_forwarded_frontend_origin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_ready_endpoint_allows_configured_forwarded_frontend_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     settings = ServerSettings(
         models_dir=tmp_path / ".models",
         outputs_dir=tmp_path / ".outputs",
@@ -543,9 +542,7 @@ def test_openai_speech_overlong_text_returns_unified_error(client: TestClient):
     payload = response.json()
     assert payload["code"] == "validation_error"
     assert payload["details"]["errors"][0]["loc"] == ["body", "input"]
-    assert (
-        payload["details"]["errors"][0]["msg"] == "input must be at most 32 characters"
-    )
+    assert payload["details"]["errors"][0]["msg"] == "input must be at most 32 characters"
 
 
 def test_custom_tts_overlong_text_returns_unified_error(client: TestClient):
@@ -560,9 +557,7 @@ def test_custom_tts_overlong_text_returns_unified_error(client: TestClient):
     payload = response.json()
     assert payload["code"] == "validation_error"
     assert payload["details"]["errors"][0]["loc"] == ["body", "text"]
-    assert (
-        payload["details"]["errors"][0]["msg"] == "text must be at most 32 characters"
-    )
+    assert payload["details"]["errors"][0]["msg"] == "text must be at most 32 characters"
 
 
 def test_clone_tts_overlong_text_returns_unified_error(client: TestClient):
@@ -573,9 +568,7 @@ def test_clone_tts_overlong_text_returns_unified_error(client: TestClient):
     payload = response.json()
     assert payload["code"] == "validation_error"
     assert payload["details"]["errors"][0]["loc"] == ["body", "text"]
-    assert (
-        payload["details"]["errors"][0]["msg"] == "text must be at most 32 characters"
-    )
+    assert payload["details"]["errors"][0]["msg"] == "text must be at most 32 characters"
 
 
 def test_validation_error_uses_unified_error_format(client: TestClient):
@@ -589,9 +582,7 @@ def test_validation_error_uses_unified_error_format(client: TestClient):
     assert payload["request_id"]
 
 
-def test_model_load_error_uses_centralized_mapping(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_model_load_error_uses_centralized_mapping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     settings = ServerSettings(
         models_dir=tmp_path / ".models",
         outputs_dir=tmp_path / ".outputs",
@@ -667,10 +658,7 @@ def test_model_not_available_error_uses_centralized_mapping_for_unknown_identifi
     payload = response.json()
     assert payload["code"] == "model_not_available"
     assert payload["message"] == "Requested model is not available"
-    assert (
-        payload["details"]["reason"]
-        == "Requested model is not available: unknown-model"
-    )
+    assert payload["details"]["reason"] == "Requested model is not available: unknown-model"
     assert payload["details"]["model"] == "unknown-model"
     assert payload["details"]["backend"] == "mlx"
     assert sorted(payload.keys()) == ["code", "details", "message", "request_id"]
@@ -710,9 +698,7 @@ def test_model_not_available_error_uses_centralized_mapping_for_missing_mode_art
     payload = response.json()
     assert payload["code"] == "model_not_available"
     assert payload["message"] == "Requested model is not available"
-    assert (
-        payload["details"]["reason"] == "No local model is available for mode: design"
-    )
+    assert payload["details"]["reason"] == "No local model is available for mode: design"
     assert payload["details"]["mode"] == "design"
     assert payload["details"]["backend"] == "mlx"
 
@@ -821,9 +807,7 @@ def test_async_custom_job_submit_status_result_flow(client: TestClient):
     assert submit.headers["x-job-id"] == submit_payload["job_id"]
     assert submit.headers["x-submit-request-id"] == submit_payload["submit_request_id"]
     assert submit_payload["created_at"]
-    assert submit_payload["status_url"].endswith(
-        f"/api/v1/tts/jobs/{submit_payload['job_id']}"
-    )
+    assert submit_payload["status_url"].endswith(f"/api/v1/tts/jobs/{submit_payload['job_id']}")
     assert submit_payload["result_url"].endswith(
         f"/api/v1/tts/jobs/{submit_payload['job_id']}/result"
     )
@@ -963,9 +947,7 @@ def test_async_job_submit_idempotency_is_principal_scoped(client: TestClient):
         "static_bearer",
     )
     object.__setattr__(_state(client).settings, "auth_static_bearer_token", "token-a")
-    object.__setattr__(
-        _state(client).settings, "auth_static_bearer_principal_id", "principal-a"
-    )
+    object.__setattr__(_state(client).settings, "auth_static_bearer_principal_id", "principal-a")
 
     first = client.post(
         "/api/v1/tts/custom/jobs",
@@ -979,9 +961,7 @@ def test_async_job_submit_idempotency_is_principal_scoped(client: TestClient):
     )
 
     object.__setattr__(_state(client).settings, "auth_static_bearer_token", "token-b")
-    object.__setattr__(
-        _state(client).settings, "auth_static_bearer_principal_id", "principal-b"
-    )
+    object.__setattr__(_state(client).settings, "auth_static_bearer_principal_id", "principal-b")
     second_principal = client.post(
         "/api/v1/tts/custom/jobs",
         headers=headers_b,
@@ -999,12 +979,8 @@ def test_static_bearer_auth_requires_authorization_for_protected_routes(
     client: TestClient,
 ):
     object.__setattr__(_state(client).settings, "auth_mode", "static_bearer")
-    object.__setattr__(
-        _state(client).settings, "auth_static_bearer_token", "secret-token"
-    )
-    object.__setattr__(
-        _state(client).settings, "auth_static_bearer_principal_id", "principal-auth"
-    )
+    object.__setattr__(_state(client).settings, "auth_static_bearer_token", "secret-token")
+    object.__setattr__(_state(client).settings, "auth_static_bearer_principal_id", "principal-auth")
 
     models = client.get("/api/v1/models")
     live = client.get("/health/live")
@@ -1017,9 +993,7 @@ def test_static_bearer_auth_requires_authorization_for_protected_routes(
 def test_static_bearer_job_access_is_owner_bound(client: TestClient):
     object.__setattr__(_state(client).settings, "auth_mode", "static_bearer")
     object.__setattr__(_state(client).settings, "auth_static_bearer_token", "token-a")
-    object.__setattr__(
-        _state(client).settings, "auth_static_bearer_principal_id", "principal-a"
-    )
+    object.__setattr__(_state(client).settings, "auth_static_bearer_principal_id", "principal-a")
 
     submit = client.post(
         "/api/v1/tts/custom/jobs",
@@ -1030,13 +1004,9 @@ def test_static_bearer_job_access_is_owner_bound(client: TestClient):
     job_id = submit.json()["job_id"]
 
     object.__setattr__(_state(client).settings, "auth_static_bearer_token", "token-b")
-    object.__setattr__(
-        _state(client).settings, "auth_static_bearer_principal_id", "principal-b"
-    )
+    object.__setattr__(_state(client).settings, "auth_static_bearer_principal_id", "principal-b")
 
-    status = client.get(
-        f"/api/v1/tts/jobs/{job_id}", headers={"Authorization": "Bearer token-b"}
-    )
+    status = client.get(f"/api/v1/tts/jobs/{job_id}", headers={"Authorization": "Bearer token-b"})
     result = client.get(
         f"/api/v1/tts/jobs/{job_id}/result", headers={"Authorization": "Bearer token-b"}
     )
@@ -1170,9 +1140,7 @@ def test_async_clone_job_submit_preserves_staged_input_until_completion(
     client: TestClient,
 ):
     files = {"ref_audio": ("reference.wav", make_wav_bytes(), "audio/wav")}
-    response = client.post(
-        "/api/v1/tts/clone/jobs", data={"text": "Clone async"}, files=files
-    )
+    response = client.post("/api/v1/tts/clone/jobs", data={"text": "Clone async"}, files=files)
     assert response.status_code == 202
     job_id = response.json()["job_id"]
 
@@ -1188,10 +1156,7 @@ def test_async_clone_job_submit_preserves_staged_input_until_completion(
 
     clone_request = _state(client).application.last_clone_request
     assert clone_request is not None
-    assert (
-        clone_request.ref_audio_path.parent
-        == _state(client).settings.upload_staging_dir
-    )
+    assert clone_request.ref_audio_path.parent == _state(client).settings.upload_staging_dir
     assert not clone_request.ref_audio_path.exists()
 
 
@@ -1265,9 +1230,7 @@ def test_async_submit_quota_exceeded_returns_controlled_error(
         "application_service",
         app.state.application,
     )
-    app.state.quota_guard = build_quota_guard(
-        app.state.settings, store=app.state.job_store
-    )
+    app.state.quota_guard = build_quota_guard(app.state.settings, store=app.state.job_store)
 
     with TestClient(app) as test_client:
         first = test_client.post(
@@ -1364,14 +1327,8 @@ def test_async_job_result_returns_not_succeeded_for_failed_job(
     assert status_payload["status"] == "failed"
     assert status_payload["terminal_error"]["code"] == "job_execution_failed"
     assert status_payload["terminal_error"]["message"] == "Job execution failed"
-    assert (
-        status_payload["terminal_error"]["details"]["reason"]
-        == "worker execution failed"
-    )
-    assert (
-        status_payload["terminal_error"]["details"]["error_type"]
-        == "TTSGenerationError"
-    )
+    assert status_payload["terminal_error"]["details"]["reason"] == "worker execution failed"
+    assert status_payload["terminal_error"]["details"]["error_type"] == "TTSGenerationError"
     assert status_payload["completed_at"] is not None
     assert result.status_code == 409
     payload = result.json()
@@ -1379,18 +1336,9 @@ def test_async_job_result_returns_not_succeeded_for_failed_job(
     assert payload["request_id"]
     assert payload["details"]["status"] == "failed"
     assert payload["details"]["terminal_error"]["code"] == "job_execution_failed"
-    assert (
-        payload["details"]["terminal_error"]["message"]
-        == "Job execution failed"
-    )
-    assert (
-        payload["details"]["terminal_error"]["details"]["reason"]
-        == "worker execution failed"
-    )
-    assert (
-        payload["details"]["terminal_error"]["details"]["error_type"]
-        == "TTSGenerationError"
-    )
+    assert payload["details"]["terminal_error"]["message"] == "Job execution failed"
+    assert payload["details"]["terminal_error"]["details"]["reason"] == "worker execution failed"
+    assert payload["details"]["terminal_error"]["details"]["error_type"] == "TTSGenerationError"
 
 
 def test_async_job_cancel_queued_job_returns_cancelled_snapshot(
@@ -1423,9 +1371,7 @@ def test_async_job_cancel_queued_job_returns_cancelled_snapshot(
         second = test_client.post(
             "/api/v1/tts/custom/jobs", json={"text": "second", "speaker": "Vivian"}
         )
-        cancelled = test_client.post(
-            f"/api/v1/tts/jobs/{second.json()['job_id']}/cancel"
-        )
+        cancelled = test_client.post(f"/api/v1/tts/jobs/{second.json()['job_id']}/cancel")
         status = test_client.get(f"/api/v1/tts/jobs/{second.json()['job_id']}")
 
     assert first.status_code == 202
@@ -1440,18 +1386,13 @@ def test_async_job_cancel_queued_job_returns_cancelled_snapshot(
     assert payload["status"] in {"queued", "running", "succeeded", "failed", "cancelled"}
     assert payload["completed_at"] is not None
     assert payload["terminal_error"]["code"] == "job_cancelled"
-    assert (
-        payload["terminal_error"]["message"]
-        == "Job was cancelled before execution started"
-    )
+    assert payload["terminal_error"]["message"] == "Job was cancelled before execution started"
     assert payload["terminal_error"]["details"] is None
     assert status.json()["status"] == "cancelled"
 
 
 def test_async_job_cancel_rejects_running_or_terminal_job(client: TestClient):
-    submit = client.post(
-        "/api/v1/tts/custom/jobs", json={"text": "done", "speaker": "Vivian"}
-    )
+    submit = client.post("/api/v1/tts/custom/jobs", json={"text": "done", "speaker": "Vivian"})
     job_id = submit.json()["job_id"]
     for _ in range(50):
         status = client.get(f"/api/v1/tts/jobs/{job_id}")
@@ -1591,9 +1532,7 @@ def test_async_job_endpoints_handle_concurrent_reads_and_cancel_deterministicall
     monkeypatch.setattr("server.api.routes_health.check_ffmpeg_available", lambda: True)
 
     app = create_app(settings)
-    contention_service = ContentionTTSService(
-        settings, release_after_calls=1, sleep_seconds=0.05
-    )
+    contention_service = ContentionTTSService(settings, release_after_calls=1, sleep_seconds=0.05)
     app.state.registry = DummyRegistry(settings)
     app.state.tts_service = contention_service
     app.state.application = contention_service
@@ -1640,9 +1579,7 @@ def test_async_job_endpoints_handle_concurrent_reads_and_cancel_deterministicall
 
         status_outcomes = [outcome for outcome in outcomes if outcome[0] == 200]
         result_not_ready_outcomes = [
-            outcome
-            for outcome in outcomes
-            if outcome[0] == 409 and outcome[1] == "job_not_ready"
+            outcome for outcome in outcomes if outcome[0] == 409 and outcome[1] == "job_not_ready"
         ]
         result_ready_outcomes = [
             outcome
@@ -1698,9 +1635,7 @@ def test_async_owner_isolation_remains_forbidden_under_parallel_contention(
     monkeypatch.setattr("server.api.routes_health.check_ffmpeg_available", lambda: True)
 
     app = create_app(settings)
-    contention_service = ContentionTTSService(
-        settings, release_after_calls=1, sleep_seconds=0.05
-    )
+    contention_service = ContentionTTSService(settings, release_after_calls=1, sleep_seconds=0.05)
     app.state.registry = DummyRegistry(settings)
     app.state.tts_service = contention_service
     app.state.application = contention_service
@@ -1722,9 +1657,7 @@ def test_async_owner_isolation_remains_forbidden_under_parallel_contention(
             "Expected worker to start before forbidden access checks"
         )
 
-        object.__setattr__(
-            _state(test_client).settings, "auth_static_bearer_token", "token-b"
-        )
+        object.__setattr__(_state(test_client).settings, "auth_static_bearer_token", "token-b")
         object.__setattr__(
             _state(test_client).settings,
             "auth_static_bearer_principal_id",
@@ -1767,9 +1700,7 @@ def test_async_owner_isolation_remains_forbidden_under_parallel_contention(
 
         contention_service.release.set()
         owner_result_deadline = time() + 2.0
-        object.__setattr__(
-            _state(test_client).settings, "auth_static_bearer_token", "token-a"
-        )
+        object.__setattr__(_state(test_client).settings, "auth_static_bearer_token", "token-a")
         object.__setattr__(
             _state(test_client).settings,
             "auth_static_bearer_principal_id",
@@ -1813,9 +1744,7 @@ def test_async_submit_quota_enforces_local_default_limit_under_parallel_contenti
         "application_service",
         app.state.application,
     )
-    app.state.quota_guard = build_quota_guard(
-        app.state.settings, store=app.state.job_store
-    )
+    app.state.quota_guard = build_quota_guard(app.state.settings, store=app.state.job_store)
 
     with TestClient(app) as test_client:
 
@@ -1830,8 +1759,7 @@ def test_async_submit_quota_enforces_local_default_limit_under_parallel_contenti
             first_future = executor.submit(submit_job, "local default first")
             deadline = time() + 1.0
             while (
-                app.state.job_store.count_active_jobs_for_principal("local-default")
-                == 0
+                app.state.job_store.count_active_jobs_for_principal("local-default") == 0
                 and time() < deadline
             ):
                 sleep(0.01)
@@ -1839,9 +1767,7 @@ def test_async_submit_quota_enforces_local_default_limit_under_parallel_contenti
             first = first_future.result(timeout=2.0)
             second = second_future.result(timeout=2.0)
 
-        assert first[0] == 202, (
-            f"Expected first local-default submit to pass, got: {first}"
-        )
+        assert first[0] == 202, f"Expected first local-default submit to pass, got: {first}"
         assert second[0] == 429, (
             f"Expected second local-default submit to be quota-limited, got: {second}"
         )
@@ -2055,16 +1981,14 @@ def test_request_logging_includes_request_id_and_endpoint_context(
         for item in started_logs
     )
     assert any(
-        item["request_id"] == "req-123" and item["status_code"] == 200
-        for item in completed_logs
+        item["request_id"] == "req-123" and item["status_code"] == 200 for item in completed_logs
     )
     assert any(
         item["request_id"] == "req-123" and item["endpoint"] == "/v1/audio/speech"
         for item in endpoint_logs
     )
     assert any(
-        item["request_id"] == "req-123"
-        and item["model"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+        item["request_id"] == "req-123" and item["model"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
         for item in audio_logs
     )
 
@@ -2077,10 +2001,7 @@ def test_clone_upload_uses_isolated_staging_dir_and_cleans_up(client: TestClient
     assert response.status_code == 200
     clone_request = _state(client).application.last_clone_request
     assert clone_request is not None
-    assert (
-        clone_request.ref_audio_path.parent
-        == _state(client).settings.upload_staging_dir
-    )
+    assert clone_request.ref_audio_path.parent == _state(client).settings.upload_staging_dir
     assert clone_request.ref_audio_path.parent != _state(client).settings.outputs_dir
     assert not clone_request.ref_audio_path.exists()
 

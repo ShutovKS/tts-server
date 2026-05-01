@@ -24,7 +24,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 # START_CONTRACT: GenerationCommand
@@ -37,7 +36,7 @@ from typing import Optional
 @dataclass(frozen=True)
 class GenerationCommand:
     text: str
-    model: Optional[str] = None
+    model: str | None = None
     save_output: bool = False
     language: str = "auto"
 
@@ -83,8 +82,8 @@ class VoiceDesignCommand(GenerationCommand):
 # END_CONTRACT: VoiceCloneCommand
 @dataclass(frozen=True)
 class VoiceCloneCommand(GenerationCommand):
-    ref_audio_path: Optional[Path] = None
-    ref_text: Optional[str] = None
+    ref_audio_path: Path | None = None
+    ref_text: str | None = None
 
 
 __all__ = [

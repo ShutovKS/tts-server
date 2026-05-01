@@ -19,12 +19,12 @@
 
 from __future__ import annotations
 
-import shutil
-from pathlib import Path
 import json
 import platform
-from collections import OrderedDict
+import shutil
 import subprocess
+from collections import OrderedDict
+from pathlib import Path
 
 from core.planning.host_probe import HostProbe
 from profiles.schema import (
@@ -65,9 +65,7 @@ class ProfileResolver:
     #   LINKS: M-PROFILE-RESOLVER, M-HOST-PROBE
     # END_CONTRACT: ProfileResolver.__init__
     def __init__(self, project_root: Path | None = None) -> None:
-        self.project_root = (
-            project_root or Path(__file__).resolve().parent.parent
-        ).resolve()
+        self.project_root = (project_root or Path(__file__).resolve().parent.parent).resolve()
         self._host_probe = HostProbe()
         self._profiles_dir = self.project_root / "profiles"
         self._family_profiles = self._load_family_profiles()
@@ -188,9 +186,7 @@ class ProfileResolver:
             reasons=tuple(reasons),
             selected_backend=backend,
             required_env_name=family_profile.isolated_env_name,
-            expected_python_path=self._expected_python_path(
-                family_profile.isolated_env_name
-            ),
+            expected_python_path=self._expected_python_path(family_profile.isolated_env_name),
             backend_candidates=family_profile.allowed_backends,
             metadata={
                 "pack_refs": {key: list(values) for key, values in pack_refs.items()},
@@ -290,11 +286,7 @@ class ProfileResolver:
         if module.supported_families and family.key not in module.supported_families:
             reasons.append("module_family_unsupported")
 
-        if (
-            module.key == "telegram"
-            and not module.docker_supported
-            and host.docker_available
-        ):
+        if module.key == "telegram" and not module.docker_supported and host.docker_available:
             pass
 
         compatible = not reasons
@@ -377,9 +369,7 @@ class ProfileResolver:
     #   SIDE_EFFECTS: none
     #   LINKS: M-PROFILE-RESOLVER
     # END_CONTRACT: ProfileResolver._resolve_pack_files
-    def _resolve_pack_files(
-        self, pack_refs: dict[str, tuple[str, ...]]
-    ) -> tuple[Path, ...]:
+    def _resolve_pack_files(self, pack_refs: dict[str, tuple[str, ...]]) -> tuple[Path, ...]:
         pack_files: list[Path] = []
         for category in ("base", "platform", "module", "family"):
             for name in pack_refs.get(category, ()):

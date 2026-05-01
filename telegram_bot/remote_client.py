@@ -41,7 +41,6 @@ import httpx
 from core.observability import get_logger
 from telegram_bot.observability import log_telegram_event
 
-
 LOGGER = get_logger(__name__)
 
 
@@ -260,9 +259,7 @@ class RemoteServerClient:
         return f"{self._base_url}{path}"
 
     def _calculate_delay(self, retry_count: int) -> float:
-        delay = self._retry_config.initial_delay * (
-            self._retry_config.multiplier**retry_count
-        )
+        delay = self._retry_config.initial_delay * (self._retry_config.multiplier**retry_count)
         return min(delay, self._retry_config.max_delay)
 
     def _build_request_headers(
@@ -390,8 +387,7 @@ class RemoteServerClient:
                     request_id=(envelope.request_id if envelope is not None else None),
                     job_id=(
                         str(envelope.details.get("job_id"))
-                        if envelope is not None
-                        and isinstance(envelope.details.get("job_id"), str)
+                        if envelope is not None and isinstance(envelope.details.get("job_id"), str)
                         else None
                     ),
                     submit_request_id=(
@@ -416,7 +412,7 @@ class RemoteServerClient:
             # END_BLOCK_EXECUTE_REMOTE_REQUEST
         except RemoteServerRequestError:
             raise
-        except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
+        except (TimeoutError, httpx.TimeoutException) as exc:
             # START_BLOCK_HANDLE_REMOTE_TIMEOUT
             if retry_count < self._retry_config.max_attempts:
                 await asyncio.sleep(self._calculate_delay(retry_count))

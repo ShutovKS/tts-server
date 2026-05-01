@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -42,10 +41,11 @@ class AudioResult:
 @dataclass(frozen=True)
 class GenerationResult:
     audio: AudioResult
-    saved_path: Optional[Path]
+    saved_path: Path | None
     model: str
     mode: str
     backend: str
+
 
 __all__ = [
     "AudioResult",

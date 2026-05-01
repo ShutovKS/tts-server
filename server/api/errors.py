@@ -63,7 +63,6 @@ from server.api.contracts import ErrorDescriptor, ExceptionMapping
 from server.api.responses import build_error_response
 from server.bootstrap import ServerSettings
 
-
 _PATH_KEY_RE = re.compile(
     r"(^|_)(path|paths|dir|dirs|directory|directories|file|filename|filenames)$",
     re.IGNORECASE,
@@ -447,9 +446,7 @@ def sanitize_validation_errors(errors: list[dict]) -> list[dict]:
     for item in errors:
         normalized = dict(item)
         if "ctx" in normalized and isinstance(normalized["ctx"], dict):
-            normalized["ctx"] = {
-                key: str(value) for key, value in normalized["ctx"].items()
-            }
+            normalized["ctx"] = {key: str(value) for key, value in normalized["ctx"].items()}
         sanitized.append(normalized)
     return sanitized
 

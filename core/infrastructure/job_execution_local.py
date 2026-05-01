@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from queue import Queue
 from threading import BoundedSemaphore, Condition, Event, Lock, Thread
@@ -98,9 +98,7 @@ class LocalInMemoryJobStore(JobMetadataStore):
     def create(self, submission: JobSubmission) -> JobSnapshot:
         resolution = self.create_or_get(submission)
         if not resolution.created and submission.idempotency_key is None:
-            raise RuntimeError(
-                "Unexpected existing job resolution without idempotency key"
-            )
+            raise RuntimeError("Unexpected existing job resolution without idempotency key")
         return resolution.snapshot
 
     def create_or_get(self, submission: JobSubmission) -> JobCreateResolution:
@@ -116,9 +114,7 @@ class LocalInMemoryJobStore(JobMetadataStore):
                 )
                 if existing_job is not None:
                     self._ensure_idempotency_match(existing_job, submission)
-                    return JobCreateResolution(
-                        snapshot=existing_job.snapshot, created=False
-                    )
+                    return JobCreateResolution(snapshot=existing_job.snapshot, created=False)
             # END_BLOCK_REUSE_IDEMPOTENT_JOB
             # START_BLOCK_CREATE_NEW_JOB
             job = create_queued_job(submission=submission)
@@ -156,10 +152,8 @@ class LocalInMemoryJobStore(JobMetadataStore):
             self._purge_expired_locked()
             return self._get_by_idempotency_key_locked(idempotency_key, scope=scope)
 
-    def mark_running(
-        self, job_id: str, *, started_at: datetime | None = None
-    ) -> JobSnapshot:
-        changed_at = started_at or datetime.now(timezone.utc)
+    def mark_running(self, job_id: str, *, started_at: datetime | None = None) -> JobSnapshot:
+        changed_at = started_at or datetime.now(UTC)
         with self._lock:
             job = self._require_job_locked(job_id)
             updated = apply_job_transition(
@@ -180,7 +174,7 @@ class LocalInMemoryJobStore(JobMetadataStore):
         success: JobSuccessSnapshot,
         completed_at: datetime | None = None,
     ) -> JobSnapshot:
-        changed_at = completed_at or datetime.now(timezone.utc)
+        changed_at = completed_at or datetime.now(UTC)
         with self._lock:
             job = self._require_job_locked(job_id)
             updated = apply_job_transition(
@@ -209,7 +203,7 @@ class LocalInMemoryJobStore(JobMetadataStore):
     ) -> JobSnapshot:
         if status not in {JobStatus.FAILED, JobStatus.TIMEOUT, JobStatus.CANCELLED}:
             raise ValueError(f"Unsupported terminal failure status: {status.value}")
-        changed_at = completed_at or datetime.now(timezone.utc)
+        changed_at = completed_at or datetime.now(UTC)
         with self._lock:
             job = self._require_job_locked(job_id)
             updated = apply_job_transition(
@@ -226,10 +220,8 @@ class LocalInMemoryJobStore(JobMetadataStore):
             self.artifact_store.cleanup_submission_artifacts(updated.submission)
             return updated.snapshot
 
-    def cancel(
-        self, job_id: str, *, completed_at: datetime | None = None
-    ) -> JobSnapshot:
-        changed_at = completed_at or datetime.now(timezone.utc)
+    def cancel(self, job_id: str, *, completed_at: datetime | None = None) -> JobSnapshot:
+        changed_at = completed_at or datetime.now(UTC)
         with self._lock:
             job = self._require_job_locked(job_id)
             if job.snapshot.status is JobStatus.CANCELLED:
@@ -268,7 +260,7 @@ class LocalInMemoryJobStore(JobMetadataStore):
 
     def _purge_expired_locked(self) -> None:
         # START_BLOCK_COLLECT_EXPIRED_JOBS
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired_ids = [
             job_id
             for job_id, job in self._jobs.items()
@@ -306,9 +298,7 @@ class LocalInMemoryJobStore(JobMetadataStore):
         return self._jobs.get(job_id)
 
     @staticmethod
-    def _ensure_idempotency_match(
-        existing_job: StoredJob, submission: JobSubmission
-    ) -> None:
+    def _ensure_idempotency_match(existing_job: StoredJob, submission: JobSubmission) -> None:
         existing_fingerprint = existing_job.submission.idempotency_fingerprint
         requested_fingerprint = submission.idempotency_fingerprint
         if existing_fingerprint != requested_fingerprint:
@@ -367,9 +357,7 @@ class LocalBoundedExecutionManager(JobExecutionBackend):
             # END_BLOCK_GUARD_MANAGER_STARTUP
             # START_BLOCK_SPAWN_WORKERS
             self._workers = [
-                Thread(
-                    target=self._worker_loop, name=f"job-worker-{index}", daemon=True
-                )
+                Thread(target=self._worker_loop, name=f"job-worker-{index}", daemon=True)
                 for index in range(self.worker_count)
             ]
             for worker in self._workers:
@@ -512,9 +500,7 @@ class LocalBoundedExecutionManager(JobExecutionBackend):
         def run_job() -> None:
             try:
                 result = self.executor.execute(job.submission)
-            except (
-                Exception
-            ) as exc:  # pragma: no cover - exercised via queue outcome assertion
+            except Exception as exc:  # pragma: no cover - exercised via queue outcome assertion
                 result_queue.put(("error", exc))
                 return
             result_queue.put(("success", result))
@@ -535,9 +521,7 @@ class LocalBoundedExecutionManager(JobExecutionBackend):
                 failure=JobFailureSnapshot(
                     code="job_execution_timeout",
                     message="Job execution exceeded configured timeout",
-                    details={
-                        "timeout_seconds": job.submission.execution_timeout_seconds
-                    },
+                    details={"timeout_seconds": job.submission.execution_timeout_seconds},
                 ),
             )
             self.metrics.collector.increment("jobs.timeout")

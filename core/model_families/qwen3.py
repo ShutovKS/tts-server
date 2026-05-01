@@ -44,10 +44,7 @@ class Qwen3FamilyAdapter(ModelFamilyAdapter):
         )
 
     def supports_plan(self, plan: ExecutionPlan) -> bool:
-        return (
-            plan.family_key == self.key
-            and plan.request.capability in self.capabilities()
-        )
+        return plan.family_key == self.key and plan.request.capability in self.capabilities()
 
     def prepare_execution(self, plan: ExecutionPlan) -> FamilyPreparedExecution:
         if not self.supports_plan(plan):

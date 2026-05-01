@@ -33,24 +33,25 @@ These tests verify:
 # END_CHANGE_SUMMARY
 
 import logging
-import pytest
-from unittest.mock import MagicMock, patch
 import uuid
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from telegram_bot.observability import (
-    TelegramCorrelationContext,
+    METRICS,
+    ClassifiedError,
     ErrorClass,
     ErrorSeverity,
-    ClassifiedError,
-    TelegramMetrics,
-    PollingState,
     PollingHealth,
-    log_telegram_event,
+    PollingState,
+    TelegramCorrelationContext,
+    TelegramMetrics,
     classify_telegram_error,
-    get_correlation_context,
-    set_correlation_context,
     clear_correlation_context,
-    METRICS,
+    get_correlation_context,
+    log_telegram_event,
+    set_correlation_context,
 )
 
 
@@ -217,7 +218,7 @@ class TestClassifyTelegramError:
         """Timeout is retryable network error."""
         import asyncio
 
-        exc = asyncio.TimeoutError("Request timeout")
+        exc = TimeoutError("Request timeout")
         classified = classify_telegram_error(exc)
 
         assert classified.is_retryable

@@ -30,7 +30,6 @@ import pytest
 from core.backends.onnx_backend import ONNXBackend
 from core.models.catalog import MODEL_SPECS
 
-
 pytestmark = pytest.mark.unit
 
 

@@ -20,8 +20,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from core.backends.base import TTSBackend
 from core.errors import (
@@ -126,9 +126,7 @@ class BackendRegistry:
     #   SIDE_EFFECTS: none
     #   LINKS: M-BACKENDS
     # END_CONTRACT: get_model_spec
-    def get_model_spec(
-        self, model_name: str | None = None, mode: str | None = None
-    ) -> ModelSpec:
+    def get_model_spec(self, model_name: str | None = None, mode: str | None = None) -> ModelSpec:
         # START_BLOCK_RESOLVE_MODEL_BY_NAME
         if model_name:
             for spec in self.model_specs:
@@ -157,9 +155,7 @@ class BackendRegistry:
             matching_specs = [
                 spec for spec in self.model_specs if spec.mode == mode and spec.enabled
             ]
-            matching_specs.sort(
-                key=lambda spec: spec.rollout.default_preference, reverse=True
-            )
+            matching_specs.sort(key=lambda spec: spec.rollout.default_preference, reverse=True)
             for spec in matching_specs:
                 try:
                     backend = self.resolve_backend_for_spec(spec)
@@ -255,9 +251,7 @@ class BackendRegistry:
             elif not platform_supported:
                 route_reason = str(diagnostics.get("reason") or "platform_unsupported")
             elif not available:
-                route_reason = str(
-                    diagnostics.get("reason") or "runtime_dependency_missing"
-                )
+                route_reason = str(diagnostics.get("reason") or "runtime_dependency_missing")
             elif not ready:
                 route_reason = str(diagnostics.get("reason") or "runtime_not_ready")
             else:
@@ -282,14 +276,11 @@ class BackendRegistry:
             )
 
         selected_backend_compatible = selected_backend in compatible
-        selected_backend_diagnostics = (
-            selected_backend.readiness_diagnostics().to_dict()
-        )
+        selected_backend_diagnostics = selected_backend.readiness_diagnostics().to_dict()
         selected_backend_ready = selected_backend_compatible and bool(
             selected_backend_diagnostics.get(
                 "ready",
-                selected_backend.supports_platform()
-                and selected_backend.is_available(),
+                selected_backend.supports_platform() and selected_backend.is_available(),
             )
         )
         execution_backend: TTSBackend | None = None
@@ -325,9 +316,7 @@ class BackendRegistry:
             "selected_backend_label": selected_backend.label,
             "selected_backend_compatible_with_model": selected_backend_compatible,
             "selected_backend_ready_for_model": selected_backend_ready,
-            "execution_backend": None
-            if execution_backend is None
-            else execution_backend.key,
+            "execution_backend": None if execution_backend is None else execution_backend.key,
             "execution_backend_label": None
             if execution_backend is None
             else execution_backend.label,
@@ -350,9 +339,7 @@ class BackendRegistry:
                 )
             diagnostics = backend.readiness_diagnostics().to_dict()
             ready = bool(
-                diagnostics.get(
-                    "ready", backend.supports_platform() and backend.is_available()
-                )
+                diagnostics.get("ready", backend.supports_platform() and backend.is_available())
             )
             if not ready:
                 raise BackendNotAvailableError(

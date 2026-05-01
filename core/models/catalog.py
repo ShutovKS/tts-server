@@ -35,7 +35,6 @@ from core.models.manifest import (
     load_model_manifest,
 )
 
-
 SPEAKER_MAP = {
     "English": ["Ryan", "Aiden", "Ethan", "Chelsie", "Serena", "Vivian"],
     "Chinese": ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric"],

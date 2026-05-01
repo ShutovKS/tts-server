@@ -33,7 +33,6 @@ from pathlib import Path
 
 import pytest
 
-
 launcher_main = importlib.import_module("launcher.main")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -72,7 +71,9 @@ def test_launcher_launch_delegates_to_platform_wrapper(
 ):
     recorded: dict[str, object] = {}
 
-    def fake_run(command: list[str], *, cwd: str, env: dict[str, str], check: bool) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        command: list[str], *, cwd: str, env: dict[str, str], check: bool
+    ) -> subprocess.CompletedProcess[str]:
         recorded["command"] = command
         recorded["cwd"] = cwd
         recorded["env"] = env

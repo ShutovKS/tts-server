@@ -27,7 +27,6 @@ from __future__ import annotations
 import io
 import wave
 from pathlib import Path
-from typing import Optional
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -46,7 +45,7 @@ from server.schemas.errors import ErrorResponse
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER
 # END_CONTRACT: resolve_save_output
-def resolve_save_output(save_output: Optional[bool], default_save_output: bool) -> bool:
+def resolve_save_output(save_output: bool | None, default_save_output: bool) -> bool:
     return default_save_output if save_output is None else save_output
 
 
@@ -57,18 +56,14 @@ def resolve_save_output(save_output: Optional[bool], default_save_output: bool) 
 #   SIDE_EFFECTS: Reads request state and sets HTTP response headers from descriptor metadata
 #   LINKS: M-SERVER, M-ERRORS
 # END_CONTRACT: build_error_response
-def build_error_response(
-    *, request: Request, descriptor: ErrorDescriptor
-) -> JSONResponse:
+def build_error_response(*, request: Request, descriptor: ErrorDescriptor) -> JSONResponse:
     payload = ErrorResponse(
         code=descriptor.code,
         message=descriptor.message,
         details=descriptor.details,
         request_id=getattr(request.state, "request_id", "unknown"),
     )
-    response = JSONResponse(
-        status_code=descriptor.status_code, content=payload.model_dump()
-    )
+    response = JSONResponse(status_code=descriptor.status_code, content=payload.model_dump())
     for header_name, header_value in (descriptor.headers or {}).items():
         response.headers[header_name] = header_value
     return response
@@ -151,6 +146,7 @@ def public_artifact_name(path: str | Path) -> str:
 def wav_to_pcm_bytes(wav_bytes: bytes) -> bytes:
     with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
         return wav_file.readframes(wav_file.getnframes())
+
 
 __all__ = [
     "resolve_save_output",

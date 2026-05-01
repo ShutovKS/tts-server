@@ -32,12 +32,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from core.observability import get_logger, log_event
 from telegram_bot.config import TelegramSettings
-from telegram_bot.remote_client import RemoteServerClient
 from telegram_bot.rate_limiter import TelegramRateLimiter, create_telegram_rate_limiter
+from telegram_bot.remote_client import RemoteServerClient
 
 if TYPE_CHECKING:
     from telegram_bot.rate_limiter import RateLimitDecision
@@ -68,7 +68,7 @@ class TelegramRuntime:
     #   SIDE_EFFECTS: Consumes a rate-limit slot when a limiter is configured.
     #   LINKS: M-TELEGRAM
     # END_CONTRACT: check_rate_limit
-    def check_rate_limit(self, user_id: int | str) -> "RateLimitDecision":
+    def check_rate_limit(self, user_id: int | str) -> RateLimitDecision:
         """Check rate limit for user."""
         if self.rate_limiter is None:
             # Return allowed if no rate limiter configured
@@ -115,7 +115,7 @@ def _validate_telegram_settings(settings: TelegramSettings) -> list[str]:
         )
 
     # Check default speaker
-    from telegram_bot.handlers.commands import get_valid_speakers, VALID_SPEAKERS
+    from telegram_bot.handlers.commands import VALID_SPEAKERS
 
     if settings.telegram_default_speaker not in VALID_SPEAKERS:
         warnings.append(
@@ -141,7 +141,7 @@ def _validate_telegram_settings(settings: TelegramSettings) -> list[str]:
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: build_telegram_runtime
 def build_telegram_runtime(
-    settings: Optional[TelegramSettings] = None,
+    settings: TelegramSettings | None = None,
 ) -> TelegramRuntime:
     """
     Build Telegram runtime by composing remote server access with Telegram settings.
@@ -231,6 +231,7 @@ def build_telegram_runtime(
         remote_server_client=remote_server_client,
         rate_limiter=rate_limiter,
     )
+
 
 __all__ = [
     "LOGGER",

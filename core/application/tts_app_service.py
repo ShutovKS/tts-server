@@ -50,6 +50,7 @@ class TTSApplicationService:
     def synthesize_clone(self, command: VoiceCloneCommand) -> GenerationResult:
         return self.tts_service.synthesize_clone(command)
 
+
 __all__ = [
     "TTSApplicationService",
 ]

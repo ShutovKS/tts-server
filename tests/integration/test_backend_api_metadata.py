@@ -25,8 +25,8 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,7 +34,6 @@ from fastapi.testclient import TestClient
 from server.app import create_app
 from server.bootstrap import ServerSettings
 from tests.support.api_fakes import DummyRegistry, DummyTTSService
-
 
 pytestmark = pytest.mark.integration
 
@@ -138,19 +137,20 @@ def test_readiness_report_exposes_backend_configuration(client: TestClient):
         "runtime_ready_models": 3,
     }
     assert payload["checks"]["models"]["cache_diagnostics"]["cached_model_count"] == 1
-    assert (
-        payload["checks"]["models"]["preload"]["loaded_model_ids"]
-        == ["Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"]
-    )
+    assert payload["checks"]["models"]["preload"]["loaded_model_ids"] == [
+        "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    ]
     assert payload["checks"]["models"]["host"]["platform_system"] == "darwin"
     assert payload["checks"]["models"]["available_backends"][0]["key"] == "mlx"
     assert payload["checks"]["models"]["available_backends"][0]["selected"] is True
     assert payload["checks"]["capabilities"]["capability_status"]["custom"]["bound"] is True
-    assert payload["checks"]["capabilities"]["capability_status"]["custom"]["bound_model"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    assert (
+        payload["checks"]["capabilities"]["capability_status"]["custom"]["bound_model"]
+        == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
+    )
     assert payload["checks"]["capabilities"]["capability_status"]["clone"]["runtime_ready"] is True
     assert any(
-        item["key"] == "qwen_fast"
-        and item["diagnostics"]["reason"] == "platform_unsupported"
+        item["key"] == "qwen_fast" and item["diagnostics"]["reason"] == "platform_unsupported"
         for item in payload["checks"]["models"]["available_backends"]
     )
     assert any(
@@ -170,9 +170,7 @@ def test_models_endpoint_exposes_backend_and_capabilities(client: TestClient):
     qwen_model = next(
         item for item in payload if item["id"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     )
-    piper_model = next(
-        item for item in payload if item["id"] == "Piper-en_US-lessac-medium"
-    )
+    piper_model = next(item for item in payload if item["id"] == "Piper-en_US-lessac-medium")
 
     assert qwen_model["backend"] == "mlx"
     assert qwen_model["backend_support"] == ["mlx", "qwen_fast", "torch"]
@@ -184,9 +182,7 @@ def test_models_endpoint_exposes_backend_and_capabilities(client: TestClient):
     assert qwen_model["runtime_ready"] is True
     assert qwen_model["missing_artifacts"] == []
     assert qwen_model["route"]["candidates"][0]["key"] == "qwen_fast"
-    assert (
-        qwen_model["route"]["candidates"][0]["route_reason"] == "platform_unsupported"
-    )
+    assert qwen_model["route"]["candidates"][0]["route_reason"] == "platform_unsupported"
     assert qwen_model["route"]["candidates"][0]["diagnostics"]["backend"] == "qwen_fast"
     assert qwen_model["route"]["candidates"][0]["diagnostics"]["details"]["enabled"] is True
     assert piper_model["backend"] == "onnx"
@@ -200,10 +196,7 @@ def test_models_endpoint_exposes_backend_and_capabilities(client: TestClient):
     assert piper_model["capabilities"]["supports_voice_description_tts"] is False
     assert piper_model["runtime_ready"] is False
     assert piper_model["missing_artifacts"] == ["model.onnx", "model.onnx.json"]
-    assert (
-        piper_model["route"]["route_reason"]
-        == "selected_backend_incompatible_with_model"
-    )
+    assert piper_model["route"]["route_reason"] == "selected_backend_incompatible_with_model"
     assert piper_model["route"]["routing_mode"] == "per_model_backend_override"
     assert piper_model["route"]["selected_backend_ready_for_model"] is False
 
@@ -213,9 +206,7 @@ def test_models_endpoint_exposes_route_candidates_for_clone_mode(client: TestCli
 
     assert response.status_code == 200
     payload = response.json()["data"]
-    clone_model = next(
-        item for item in payload if item["id"] == "Qwen3-TTS-12Hz-1.7B-Base-8bit"
-    )
+    clone_model = next(item for item in payload if item["id"] == "Qwen3-TTS-12Hz-1.7B-Base-8bit")
 
     assert clone_model["mode"] == "clone"
     assert clone_model["selected_backend"] == "mlx"
@@ -270,7 +261,6 @@ def test_clone_readiness_prefers_selected_backend_route(client: TestClient):
     assert clone_model["route"]["candidates"][0]["route_reason"] == "unsupported_platform"
     assert clone_model["route"]["candidates"][0]["diagnostics"]["backend"] == "qwen_fast"
     assert any(
-        backend["key"] == "qwen_fast"
-        and backend["diagnostics"]["reason"] == "platform_unsupported"
+        backend["key"] == "qwen_fast" and backend["diagnostics"]["reason"] == "platform_unsupported"
         for backend in payload["checks"]["models"]["available_backends"]
     )

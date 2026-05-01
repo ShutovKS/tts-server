@@ -43,26 +43,26 @@ import hashlib
 import json
 import logging
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional, TypeVar
-
-from starlette.datastructures import UploadFile as StarletteUploadFile
+from typing import TypeVar
 
 from fastapi import FastAPI, File, Form, Header, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from core.contracts.commands import (
     CustomVoiceCommand,
     VoiceCloneCommand,
     VoiceDesignCommand,
 )
-from core.contracts.synthesis import execution_mode_to_capability
 from core.contracts.jobs import (
     JobOperation,
     JobSnapshot,
     JobStatus,
     create_job_submission,
 )
+from core.contracts.synthesis import execution_mode_to_capability
 from core.errors import (
     JobNotCancellableError,
     JobNotFoundError,
@@ -71,6 +71,7 @@ from core.errors import (
     ModelCapabilityError,
     RequestTimeoutError,
 )
+from core.infrastructure.audio_io import convert_audio_to_wav_if_needed
 from core.observability import Timer, log_event, operation_scope
 from server.api.auth import ensure_job_owner_access
 from server.api.contracts import ErrorDescriptor
@@ -87,7 +88,6 @@ from server.api.responses import (
     public_artifact_name,
     resolve_save_output,
 )
-from core.infrastructure.audio_io import convert_audio_to_wav_if_needed
 from server.schemas.audio import (
     CustomTTSRequest,
     DesignTTSRequest,
@@ -98,7 +98,6 @@ from server.schemas.audio import (
     validate_text_length,
 )
 from server.schemas.errors import ErrorResponse
-
 
 T = TypeVar("T")
 
@@ -133,9 +132,7 @@ _ALLOWED_CLONE_UPLOAD_SUFFIXES = frozenset(
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER, M-ERRORS
 # END_CONTRACT: build_text_length_error
-def build_text_length_error(
-    *, request: Request, field_name: str, message: str
-) -> JSONResponse:
+def build_text_length_error(*, request: Request, field_name: str, message: str) -> JSONResponse:
     return build_error_response(
         request=request,
         descriptor=ErrorDescriptor(
@@ -143,9 +140,7 @@ def build_text_length_error(
             code="validation_error",
             message="Request validation failed",
             details={
-                "errors": [
-                    {"loc": ["body", field_name], "msg": message, "type": "value_error"}
-                ]
+                "errors": [{"loc": ["body", field_name], "msg": message, "type": "value_error"}]
             },
         ),
     )
@@ -213,7 +208,7 @@ def resolve_idempotency_scope(request: Request) -> str:
 #   LINKS: M-SERVER, M-MODEL-REGISTRY, M-ERRORS
 # END_CONTRACT: ensure_requested_model_capability
 def ensure_requested_model_capability(
-    request: Request, model_name: Optional[str], *, execution_mode: str
+    request: Request, model_name: str | None, *, execution_mode: str
 ) -> None:
     if not model_name:
         return
@@ -267,9 +262,7 @@ def public_job_status(status: JobStatus) -> str:
     return status.value
 
 
-def build_job_snapshot_payload(
-    request: Request, snapshot: JobSnapshot
-) -> JobSnapshotPayload:
+def build_job_snapshot_payload(request: Request, snapshot: JobSnapshot) -> JobSnapshotPayload:
     status_url, result_url, cancel_url = build_job_urls(request, snapshot.job_id)
     terminal_error = snapshot.terminal_error
     return JobSnapshotPayload(
@@ -327,9 +320,7 @@ def get_job_snapshot_or_raise(request: Request, job_id: str) -> JobSnapshot:
 #   SIDE_EFFECTS: none
 #   LINKS: M-SERVER
 # END_CONTRACT: build_idempotency_fingerprint
-def build_idempotency_fingerprint(
-    *, operation: JobOperation, payload: dict[str, object]
-) -> str:
+def build_idempotency_fingerprint(*, operation: JobOperation, payload: dict[str, object]) -> str:
     normalized_payload = json.dumps(
         {
             "operation": operation.value,
@@ -353,7 +344,7 @@ def create_custom_job_submission_from_openai(
     request: Request,
     payload: OpenAISpeechRequest,
     *,
-    idempotency_key: Optional[str] = None,
+    idempotency_key: str | None = None,
 ):
     ensure_requested_model_capability(request, payload.model, execution_mode="custom")
     input_text = enforce_text_length(
@@ -412,7 +403,7 @@ def create_custom_job_submission_from_custom(
     request: Request,
     payload: CustomTTSRequest,
     *,
-    idempotency_key: Optional[str] = None,
+    idempotency_key: str | None = None,
 ):
     ensure_requested_model_capability(request, payload.model, execution_mode="custom")
     text = enforce_text_length(
@@ -476,7 +467,7 @@ def create_design_job_submission(
     request: Request,
     payload: DesignTTSRequest,
     *,
-    idempotency_key: Optional[str] = None,
+    idempotency_key: str | None = None,
 ):
     ensure_requested_model_capability(request, payload.model, execution_mode="design")
     text = enforce_text_length(
@@ -547,9 +538,7 @@ def validate_clone_upload(
             request=request,
             code="upload_too_large",
             message="Uploaded file exceeds configured size limit",
-            details={
-                "max_upload_size_bytes": request.app.state.settings.max_upload_size_bytes
-            },
+            details={"max_upload_size_bytes": request.app.state.settings.max_upload_size_bytes},
         )
 
     filename = ref_audio.filename or "reference.wav"
@@ -594,10 +583,7 @@ def build_clone_staged_path(
     request: Request, ref_audio: StarletteUploadFile, *, prefix: str
 ) -> Path:
     suffix = Path(ref_audio.filename or "reference.wav").suffix.lower() or ".wav"
-    return (
-        request.app.state.settings.upload_staging_dir
-        / f"{prefix}_{uuid.uuid4().hex}{suffix}"
-    )
+    return request.app.state.settings.upload_staging_dir / f"{prefix}_{uuid.uuid4().hex}{suffix}"
 
 
 # START_CONTRACT: stage_clone_job_submission
@@ -612,11 +598,11 @@ async def stage_clone_job_submission(
     *,
     text: str,
     ref_audio: UploadFile,
-    ref_text: Optional[str],
+    ref_text: str | None,
     language: str,
-    model: Optional[str],
-    save_output: Optional[bool],
-    idempotency_key: Optional[str] = None,
+    model: str | None,
+    save_output: bool | None,
+    idempotency_key: str | None = None,
 ):
     # START_BLOCK_VALIDATE_CLONE_JOB_TEXT
     stripped_text = text.strip()
@@ -631,9 +617,7 @@ async def stage_clone_job_submission(
             max_chars=request.app.state.settings.max_input_text_chars,
         )
     except ValueError as exc:
-        return None, build_text_length_error(
-            request=request, field_name="text", message=str(exc)
-        )
+        return None, build_text_length_error(request=request, field_name="text", message=str(exc))
     # END_BLOCK_VALIDATE_CLONE_JOB_TEXT
 
     # START_BLOCK_VALIDATE_CLONE_UPLOAD
@@ -742,11 +726,9 @@ async def run_inference_with_timeout(
 
         try:
             # START_BLOCK_AWAIT_WORKER_RESULT
-            result = await asyncio.wait_for(
-                asyncio.to_thread(worker_call), timeout=timeout_seconds
-            )
+            result = await asyncio.wait_for(asyncio.to_thread(worker_call), timeout=timeout_seconds)
             # END_BLOCK_AWAIT_WORKER_RESULT
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             # START_BLOCK_HANDLE_INFERENCE_TIMEOUT
             log_event(
                 logger,
@@ -855,9 +837,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                 return build_text_length_error(
                     request=request, field_name="input", message=str(exc)
                 )
-            ensure_requested_model_capability(
-                request, payload.model, execution_mode="custom"
-            )
+            ensure_requested_model_capability(request, payload.model, execution_mode="custom")
             # END_BLOCK_VALIDATE_OPENAI_REQUEST
             # START_BLOCK_EXECUTE_OPENAI_SYNTHESIS
             result = await run_inference_with_timeout(
@@ -877,9 +857,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
             )
             # END_BLOCK_EXECUTE_OPENAI_SYNTHESIS
             # START_BLOCK_BUILD_OPENAI_RESPONSE
-            return build_audio_response(
-                request, result, payload.response_format, logger
-            )
+            return build_audio_response(request, result, payload.response_format, logger)
             # END_BLOCK_BUILD_OPENAI_RESPONSE
 
     @app.post(
@@ -927,12 +905,8 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                     max_chars=request.app.state.settings.max_input_text_chars,
                 )
             except ValueError as exc:
-                return build_text_length_error(
-                    request=request, field_name="text", message=str(exc)
-                )
-            ensure_requested_model_capability(
-                request, payload.model, execution_mode="custom"
-            )
+                return build_text_length_error(request=request, field_name="text", message=str(exc))
+            ensure_requested_model_capability(request, payload.model, execution_mode="custom")
             # END_BLOCK_VALIDATE_CUSTOM_REQUEST
             # START_BLOCK_EXECUTE_CUSTOM_SYNTHESIS
             result = await run_inference_with_timeout(
@@ -997,12 +971,8 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                     max_chars=request.app.state.settings.max_input_text_chars,
                 )
             except ValueError as exc:
-                return build_text_length_error(
-                    request=request, field_name="text", message=str(exc)
-                )
-            ensure_requested_model_capability(
-                request, payload.model, execution_mode="design"
-            )
+                return build_text_length_error(request=request, field_name="text", message=str(exc))
+            ensure_requested_model_capability(request, payload.model, execution_mode="design")
             # END_BLOCK_VALIDATE_DESIGN_REQUEST
             # START_BLOCK_EXECUTE_DESIGN_SYNTHESIS
             result = await run_inference_with_timeout(
@@ -1045,10 +1015,10 @@ def register_tts_routes(app: FastAPI, logger) -> None:
         request: Request,
         text: str = Form(...),
         ref_audio: UploadFile = File(...),
-        ref_text: Optional[str] = Form(default=None),
-        language: Optional[str] = Form(default="auto"),
-        model: Optional[str] = Form(default=None),
-        save_output: Optional[bool] = Form(default=None),
+        ref_text: str | None = Form(default=None),
+        language: str | None = Form(default="auto"),
+        model: str | None = Form(default=None),
+        save_output: bool | None = Form(default=None),
     ) -> Response:
         with operation_scope("server.tts_clone"):
             # START_BLOCK_VALIDATE_CLONE_REQUEST
@@ -1069,9 +1039,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
                     max_chars=request.app.state.settings.max_input_text_chars,
                 )
             except ValueError as exc:
-                return build_text_length_error(
-                    request=request, field_name="text", message=str(exc)
-                )
+                return build_text_length_error(request=request, field_name="text", message=str(exc))
             ensure_requested_model_capability(request, model, execution_mode="clone")
             # END_BLOCK_VALIDATE_CLONE_REQUEST
             # START_BLOCK_LOG_CLONE_REQUEST
@@ -1151,7 +1119,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
     async def openai_speech_job_submit(
         request: Request,
         payload: OpenAISpeechRequest,
-        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> JobSnapshotPayload:
         # START_BLOCK_CHECK_IDEMPOTENCY
         await enforce_async_submit_admission(request)
@@ -1208,7 +1176,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
     async def tts_custom_job_submit(
         request: Request,
         payload: CustomTTSRequest,
-        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> JobSnapshotPayload:
         # START_BLOCK_CHECK_IDEMPOTENCY_CUSTOM_JOB
         await enforce_async_submit_admission(request)
@@ -1265,16 +1233,14 @@ def register_tts_routes(app: FastAPI, logger) -> None:
     async def tts_design_job_submit(
         request: Request,
         payload: DesignTTSRequest,
-        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> JobSnapshotPayload:
         # START_BLOCK_CHECK_IDEMPOTENCY_DESIGN_JOB
         await enforce_async_submit_admission(request)
         # END_BLOCK_CHECK_IDEMPOTENCY_DESIGN_JOB
         # START_BLOCK_SUBMIT_DESIGN_JOB
         resolution = request.app.state.job_execution.submit_idempotent(
-            create_design_job_submission(
-                request, payload, idempotency_key=idempotency_key
-            )
+            create_design_job_submission(request, payload, idempotency_key=idempotency_key)
         )
         # END_BLOCK_SUBMIT_DESIGN_JOB
         log_event(
@@ -1324,11 +1290,11 @@ def register_tts_routes(app: FastAPI, logger) -> None:
         request: Request,
         text: str = Form(...),
         ref_audio: UploadFile = File(...),
-        ref_text: Optional[str] = Form(default=None),
-        language: Optional[str] = Form(default="auto"),
-        model: Optional[str] = Form(default=None),
-        save_output: Optional[bool] = Form(default=None),
-        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+        ref_text: str | None = Form(default=None),
+        language: str | None = Form(default="auto"),
+        model: str | None = Form(default=None),
+        save_output: bool | None = Form(default=None),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> Response:
         # START_BLOCK_CHECK_IDEMPOTENCY_CLONE_JOB
         await enforce_async_submit_admission(request)
@@ -1539,9 +1505,7 @@ def register_tts_routes(app: FastAPI, logger) -> None:
         status_code = 200 if snapshot.status is JobStatus.CANCELLED else 202
         response = JSONResponse(
             status_code=status_code,
-            content=build_job_snapshot_payload(request, cancelled).model_dump(
-                mode="json"
-            ),
+            content=build_job_snapshot_payload(request, cancelled).model_dump(mode="json"),
         )
         return apply_async_job_headers(response, cancelled)
         # END_BLOCK_BUILD_CANCEL_RESPONSE

@@ -37,7 +37,6 @@ from tests.unit.core.test_job_execution import (
     _wait_for_status,
 )
 
-
 pytestmark = pytest.mark.unit
 
 

@@ -34,7 +34,6 @@ from pathlib import Path
 
 import pytest
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 pytestmark = pytest.mark.unit
@@ -92,7 +91,8 @@ def _assert_compiled_requirements(compiled: dict[str, object], *, family: str, m
     assert preview_lines[3].startswith("# platform: ")
     assert preview_lines[4] == ""
     assert any(
-        line.startswith("-r ") and _normalized_path(line[3:]).endswith(f"/profiles/packs/family/{family}.txt")
+        line.startswith("-r ")
+        and _normalized_path(line[3:]).endswith(f"/profiles/packs/family/{family}.txt")
         for line in preview_lines
     )
 
@@ -125,8 +125,12 @@ def _assert_doctor_payload(payload: dict[str, object], *, family: str, module: s
     assert doctor["module"] == module
     assert doctor["missing_pack_files"] == []
     assert doctor["compiled_requirements"]["pack_files"] == doctor["pack_files"]
-    assert _normalized_path(doctor["expected_env_root"]).endswith(f"/{_expected_env_root_suffix(family)}")
-    assert _normalized_path(doctor["expected_python_path"]).endswith(f"/{_expected_python_suffix(family)}")
+    assert _normalized_path(doctor["expected_env_root"]).endswith(
+        f"/{_expected_env_root_suffix(family)}"
+    )
+    assert _normalized_path(doctor["expected_python_path"]).endswith(
+        f"/{_expected_python_suffix(family)}"
+    )
 
     checks = doctor["checks"]
     assert set(checks) == {
@@ -142,7 +146,9 @@ def _assert_doctor_payload(payload: dict[str, object], *, family: str, module: s
     if not checks["expected_env_root_exists"]:
         assert doctor["missing_steps"] == [f"create_env:{doctor['expected_env_root']}"]
     elif not checks["expected_python_exists"]:
-        assert doctor["missing_steps"] == [f"python_missing_in_env:{doctor['expected_python_path']}"]
+        assert doctor["missing_steps"] == [
+            f"python_missing_in_env:{doctor['expected_python_path']}"
+        ]
     else:
         assert doctor["missing_steps"] == []
 

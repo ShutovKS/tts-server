@@ -35,7 +35,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.architecture
 
 
@@ -71,19 +70,14 @@ def _collect_import_targets(base_dir: str) -> dict[Path, set[str]]:
 
 
 def _matches_prefix(module_name: str, prefixes: tuple[str, ...]) -> bool:
-    return any(
-        module_name == prefix or module_name.startswith(f"{prefix}.")
-        for prefix in prefixes
-    )
+    return any(module_name == prefix or module_name.startswith(f"{prefix}.") for prefix in prefixes)
 
 
 def test_cli_has_no_other_adapter_imports():
     imports_by_file = _collect_import_targets("cli")
     forbidden = {
         str(path): sorted(
-            name
-            for name in imports
-            if _matches_prefix(name, ("server", "telegram_bot"))
+            name for name in imports if _matches_prefix(name, ("server", "telegram_bot"))
         )
         for path, imports in imports_by_file.items()
         if any(_matches_prefix(name, ("server", "telegram_bot")) for name in imports)
@@ -108,9 +102,7 @@ def test_runtime_code_has_no_legacy_server_compatibility_imports():
     forbidden: dict[str, list[str]] = {}
     for base_dir in runtime_dirs:
         for path, imports in _collect_import_targets(base_dir).items():
-            disallowed = sorted(
-                name for name in imports if name in LEGACY_SERVER_MODULES
-            )
+            disallowed = sorted(name for name in imports if name in LEGACY_SERVER_MODULES)
             if disallowed:
                 forbidden[str(path)] = disallowed
     assert forbidden == {}
@@ -131,9 +123,7 @@ def test_server_adapter_depends_only_on_server_and_core_modules():
 def test_telegram_adapter_depends_only_on_telegram_and_core_modules():
     imports_by_file = _collect_import_targets("telegram_bot")
     forbidden = {
-        str(path): sorted(
-            name for name in imports if _matches_prefix(name, ("server", "cli"))
-        )
+        str(path): sorted(name for name in imports if _matches_prefix(name, ("server", "cli")))
         for path, imports in imports_by_file.items()
         if any(_matches_prefix(name, ("server", "cli")) for name in imports)
     }
@@ -166,21 +156,15 @@ def test_job_execution_module_has_no_adapter_imports():
 
 
 def test_job_execution_module_has_no_local_infra_implementation_imports():
-    imports = _collect_import_targets("core/application")[
-        Path("core/application/job_execution.py")
-    ]
+    imports = _collect_import_targets("core/application")[Path("core/application/job_execution.py")]
     forbidden = sorted(
-        name
-        for name in imports
-        if _matches_prefix(name, FORBIDDEN_JOB_EXECUTION_IMPORT_TOKENS)
+        name for name in imports if _matches_prefix(name, FORBIDDEN_JOB_EXECUTION_IMPORT_TOKENS)
     )
     assert forbidden == []
 
 
 def test_local_job_execution_adapters_live_in_infrastructure_layer():
-    content = Path("core/infrastructure/job_execution_local.py").read_text(
-        encoding="utf-8"
-    )
+    content = Path("core/infrastructure/job_execution_local.py").read_text(encoding="utf-8")
     assert "class LocalInMemoryJobStore" in content
     assert "class LocalBoundedExecutionManager" in content
     assert "class LocalJobArtifactStore" in content

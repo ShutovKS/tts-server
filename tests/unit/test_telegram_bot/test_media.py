@@ -35,22 +35,22 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from telegram_bot.media import (
-    MediaType,
-    MediaValidationResult,
-    StagedMedia,
-    validate_telegram_media,
-    get_telegram_media_type,
-    get_telegram_content_type,
-    get_telegram_file_id,
-    get_telegram_file_size,
-    get_telegram_file_name,
-    DownloadError,
-    MediaValidationError,
-    convert_audio_to_wav_if_needed,
-    stage_clone_media,
-    download_telegram_media,
     _ALLOWED_CLONE_UPLOAD_CONTENT_TYPES,
     _ALLOWED_CLONE_UPLOAD_SUFFIXES,
+    DownloadError,
+    MediaType,
+    MediaValidationError,
+    MediaValidationResult,
+    StagedMedia,
+    convert_audio_to_wav_if_needed,
+    download_telegram_media,
+    get_telegram_content_type,
+    get_telegram_file_id,
+    get_telegram_file_name,
+    get_telegram_file_size,
+    get_telegram_media_type,
+    stage_clone_media,
+    validate_telegram_media,
 )
 
 
@@ -521,8 +521,8 @@ class TestConversionToWav:
 
     def _create_valid_wav(self, path: Path, duration_frames: int = 1000):
         """Helper to create a valid WAV file for testing."""
-        import wave
         import struct
+        import wave
 
         with wave.open(str(path), "wb") as wav:
             wav.setnchannels(1)
@@ -541,9 +541,7 @@ class TestConversionToWav:
         mock_settings.output_format = "wav"
         mock_settings.sample_rate = 24000
 
-        result_path, was_converted = convert_audio_to_wav_if_needed(
-            wav_file, mock_settings
-        )
+        result_path, was_converted = convert_audio_to_wav_if_needed(wav_file, mock_settings)
 
         # When output_format is wav and file is valid WAV, should not convert
         assert result_path == wav_file
@@ -562,17 +560,13 @@ class TestConversionToWav:
         # The conversion should attempt to convert .mp3 to .wav
         # Result depends on ffmpeg availability
         try:
-            result_path, was_converted = convert_audio_to_wav_if_needed(
-                mp3_file, mock_settings
-            )
+            result_path, was_converted = convert_audio_to_wav_if_needed(mp3_file, mock_settings)
             # If ffmpeg is available, converts to wav
             assert result_path.suffix == ".wav"
             assert was_converted is True
         except Exception as exc:
             # If ffmpeg is not available or fails, error is acceptable in test
-            assert (
-                "ffmpeg" in str(exc).lower() or "conversion failed" in str(exc).lower()
-            )
+            assert "ffmpeg" in str(exc).lower() or "conversion failed" in str(exc).lower()
 
     def test_convert_to_wav_nonexistent_file(self, tmp_path):
         """Test conversion handles nonexistent file gracefully."""
@@ -583,9 +577,7 @@ class TestConversionToWav:
         mock_settings.sample_rate = 24000
 
         # Should handle gracefully - raise AudioConversionError
-        with pytest.raises(
-            Exception
-        ):  # Could be FileNotFoundError or AudioConversionError
+        with pytest.raises(Exception):  # Could be FileNotFoundError or AudioConversionError
             convert_audio_to_wav_if_needed(nonexistent, mock_settings)
 
 

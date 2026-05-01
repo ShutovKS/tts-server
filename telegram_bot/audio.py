@@ -29,10 +29,7 @@ This module provides conversion from WAV to Telegram-compatible OGG.
 
 from __future__ import annotations
 
-import io
 import subprocess
-from pathlib import Path
-from typing import Tuple
 
 from core.config import CoreSettings
 from core.errors import AudioConversionError
@@ -48,7 +45,7 @@ from core.errors import AudioConversionError
 def convert_wav_to_telegram_ogg(
     wav_bytes: bytes,
     settings: CoreSettings,
-) -> Tuple[bytes, bool]:
+) -> tuple[bytes, bool]:
     """
     Convert WAV audio to Telegram-compatible OGG format.
 
@@ -108,9 +105,7 @@ def convert_wav_to_telegram_ogg(
         ogg_bytes, stderr = process.communicate(input=wav_bytes, timeout=60)
 
         if process.returncode != 0:
-            error_msg = (
-                stderr.decode("utf-8", errors="ignore") if stderr else "Unknown error"
-            )
+            error_msg = stderr.decode("utf-8", errors="ignore") if stderr else "Unknown error"
             raise AudioConversionError(
                 f"ffmpeg conversion failed: {error_msg}",
                 details={"ffmpeg_stderr": error_msg, "return_code": process.returncode},
@@ -149,6 +144,7 @@ def _check_ffmpeg_available() -> bool:
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
+
 
 __all__ = [
     "convert_wav_to_telegram_ogg",

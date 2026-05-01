@@ -35,22 +35,28 @@
 from __future__ import annotations
 
 import argparse
-import tempfile
 import json
 import os
 import platform
-from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Mapping
+import tempfile
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 from profiles import ProfileResolver
 
-
 FAMILY_IMPORT_CHECKS = {
-    "qwen": ("import importlib.util; import json; print(json.dumps({'torch': importlib.util.find_spec('torch') is not None, 'qwen_tts': importlib.util.find_spec('qwen_tts') is not None}))",),
-    "piper": ("import importlib.util; import json; print(json.dumps({'onnxruntime': importlib.util.find_spec('onnxruntime') is not None, 'piper': importlib.util.find_spec('piper') is not None or importlib.util.find_spec('piper_tts') is not None}))",),
-    "omnivoice": ("import importlib.util; import json; print(json.dumps({'torch': importlib.util.find_spec('torch') is not None, 'omnivoice': importlib.util.find_spec('omnivoice') is not None}))",),
+    "qwen": (
+        "import importlib.util; import json; print(json.dumps({'torch': importlib.util.find_spec('torch') is not None, 'qwen_tts': importlib.util.find_spec('qwen_tts') is not None}))",
+    ),
+    "piper": (
+        "import importlib.util; import json; print(json.dumps({'onnxruntime': importlib.util.find_spec('onnxruntime') is not None, 'piper': importlib.util.find_spec('piper') is not None or importlib.util.find_spec('piper_tts') is not None}))",
+    ),
+    "omnivoice": (
+        "import importlib.util; import json; print(json.dumps({'torch': importlib.util.find_spec('torch') is not None, 'omnivoice': importlib.util.find_spec('omnivoice') is not None}))",
+    ),
 }
 
 RUNTIME_BINDING_ENV_BY_MODE = {
@@ -179,7 +185,7 @@ def _build_runtime_bootstrap_steps(resolved: object, python_path: str) -> list[l
             "install",
             "-r",
             str(_qwen_fast_addon_path(resolved)),
-        ]
+        ],
     ]
 
 
@@ -260,7 +266,9 @@ def _write_compiled_requirements_file(resolved: object) -> str:
 #   SIDE_EFFECTS: none
 #   LINKS: M-LAUNCHER, M-WINDOWS-LAUNCHER, M-WINDOWS-LAUNCHER-CMD, M-MACOS-LAUNCHER, M-LINUX-LAUNCHER
 # END_CONTRACT: _interactive_launcher_command
-def _interactive_launcher_command(project_root: Path, platform_system: str | None = None) -> list[str]:
+def _interactive_launcher_command(
+    project_root: Path, platform_system: str | None = None
+) -> list[str]:
     detected_platform = (platform_system or platform.system()).lower()
     scripts_root = project_root / "scripts"
 
@@ -304,7 +312,11 @@ def _runtime_bindings_payload(resolved: object) -> dict[str, object]:
     default_bindings_by_family = {
         "piper": {
             "custom_model": next(
-                (spec.model_id for spec in model_specs.values() if spec.family == "Piper" and spec.mode == "custom"),
+                (
+                    spec.model_id
+                    for spec in model_specs.values()
+                    if spec.family == "Piper" and spec.mode == "custom"
+                ),
                 None,
             ),
             "design_model": None,
@@ -312,15 +324,27 @@ def _runtime_bindings_payload(resolved: object) -> dict[str, object]:
         },
         "omnivoice": {
             "custom_model": next(
-                (spec.model_id for spec in model_specs.values() if spec.family == "OmniVoice" and spec.mode == "custom"),
+                (
+                    spec.model_id
+                    for spec in model_specs.values()
+                    if spec.family == "OmniVoice" and spec.mode == "custom"
+                ),
                 None,
             ),
             "design_model": next(
-                (spec.model_id for spec in model_specs.values() if spec.family == "OmniVoice" and spec.mode == "design"),
+                (
+                    spec.model_id
+                    for spec in model_specs.values()
+                    if spec.family == "OmniVoice" and spec.mode == "design"
+                ),
                 None,
             ),
             "clone_model": next(
-                (spec.model_id for spec in model_specs.values() if spec.family == "OmniVoice" and spec.mode == "clone"),
+                (
+                    spec.model_id
+                    for spec in model_specs.values()
+                    if spec.family == "OmniVoice" and spec.mode == "clone"
+                ),
                 None,
             ),
         },
@@ -328,9 +352,12 @@ def _runtime_bindings_payload(resolved: object) -> dict[str, object]:
 
     bindings = {
         "family": os.environ.get("TTS_ACTIVE_FAMILY") or resolved.family.key,
-        "custom_model": os.environ.get("TTS_DEFAULT_CUSTOM_MODEL") or default_bindings_by_family.get("custom_model"),
-        "design_model": os.environ.get("TTS_DEFAULT_DESIGN_MODEL") or default_bindings_by_family.get("design_model"),
-        "clone_model": os.environ.get("TTS_DEFAULT_CLONE_MODEL") or default_bindings_by_family.get("clone_model"),
+        "custom_model": os.environ.get("TTS_DEFAULT_CUSTOM_MODEL")
+        or default_bindings_by_family.get("custom_model"),
+        "design_model": os.environ.get("TTS_DEFAULT_DESIGN_MODEL")
+        or default_bindings_by_family.get("design_model"),
+        "clone_model": os.environ.get("TTS_DEFAULT_CLONE_MODEL")
+        or default_bindings_by_family.get("clone_model"),
     }
     capability_status = {}
     for mode, env_name in RUNTIME_BINDING_ENV_BY_MODE.items():
@@ -438,7 +465,9 @@ def main() -> int:
 
     # START_BLOCK_DISPATCH_COMMAND
     if args.command == "launch":
-        project_root = Path(args.project_root).resolve() if args.project_root else Path.cwd().resolve()
+        project_root = (
+            Path(args.project_root).resolve() if args.project_root else Path.cwd().resolve()
+        )
         try:
             command = _interactive_launcher_command(project_root)
         except ValueError as exc:
@@ -493,7 +522,11 @@ def main() -> int:
         resolved = resolver.resolve(family=args.family, module=args.module)
         pack_files = [Path(item) for item in resolved.metadata.get("pack_files", [])]
         expected_python = Path(resolved.expected_python_path or "")
-        env_root = expected_python.parent.parent if expected_python.name.lower() == "python.exe" else expected_python.parent.parent
+        env_root = (
+            expected_python.parent.parent
+            if expected_python.name.lower() == "python.exe"
+            else expected_python.parent.parent
+        )
         checks = {
             "pack_files_exist": all(pack_file.exists() for pack_file in pack_files),
             "expected_env_root_exists": env_root.exists(),
@@ -525,7 +558,9 @@ def main() -> int:
     if args.command == "bootstrap-env":
         resolved = resolver.resolve(family=args.family, module=args.module)
         env_root = Path(resolved.expected_python_path).parent.parent
-        runtime_bootstrap_steps = _build_runtime_bootstrap_steps(resolved, resolved.expected_python_path)
+        runtime_bootstrap_steps = _build_runtime_bootstrap_steps(
+            resolved, resolved.expected_python_path
+        )
         create_env_command = _venv_creation_command(env_root)
         bootstrap = {
             "family": resolved.family.key,
@@ -537,7 +572,9 @@ def main() -> int:
             "suggested_backend_env": resolved.selected_backend,
             "commands": {
                 "create_env": " ".join(create_env_command),
-                "set_backend": f"set TTS_BACKEND={resolved.selected_backend}" if resolved.selected_backend else None,
+                "set_backend": f"set TTS_BACKEND={resolved.selected_backend}"
+                if resolved.selected_backend
+                else None,
                 "upgrade_pip": f"{resolved.expected_python_path} -m pip install --upgrade pip",
                 "runtime_bootstrap": [" ".join(step) for step in runtime_bootstrap_steps],
                 "install_compiled_requirements": f"{resolved.expected_python_path} -m pip install -r <temp compiled requirements file>",
@@ -635,11 +672,19 @@ def main() -> int:
         if not args.apply:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
-        _, upgrade_pip_command, install_compiled_requirements_command = payload["create_env"]["steps"]
+        _, upgrade_pip_command, install_compiled_requirements_command = payload["create_env"][
+            "steps"
+        ]
         try:
             if not expected_python.exists():
                 subprocess.run(create_env_command, check=True)
-            subprocess.run(upgrade_pip_command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            subprocess.run(
+                upgrade_pip_command,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             for bootstrap_command in runtime_bootstrap_steps:
                 subprocess.run(
                     bootstrap_command,

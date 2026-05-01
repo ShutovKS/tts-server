@@ -38,7 +38,6 @@ from core.backends.mlx_backend import MLXBackend
 from core.errors import ModelLoadError
 from core.models.catalog import MODEL_SPECS
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -89,14 +88,9 @@ def test_qwen3_nested_config_is_normalized_into_temp_runtime_dir(tmp_path: Path)
     runtime_dir = backend._prepare_runtime_model_path(spec=spec, model_path=model_dir)
 
     assert runtime_dir != model_dir
-    normalized_config = json.loads(
-        (runtime_dir / "config.json").read_text(encoding="utf-8")
-    )
+    normalized_config = json.loads((runtime_dir / "config.json").read_text(encoding="utf-8"))
     assert normalized_config["model_type"] == "qwen3_tts"
-    assert (
-        normalized_config["hidden_size"]
-        == original_config["talker_config"]["hidden_size"]
-    )
+    assert normalized_config["hidden_size"] == original_config["talker_config"]["hidden_size"]
     assert (
         normalized_config["num_hidden_layers"]
         == original_config["talker_config"]["num_hidden_layers"]
@@ -232,10 +226,7 @@ def test_qwen3_runtime_load_fails_fast_when_tokenizer_not_initialized(
         backend.load_model(spec)
 
     details = exc_info.value.context.to_dict()
-    assert (
-        details["reason"]
-        == "Qwen3-TTS MLX runtime loaded but tokenizer initialization failed"
-    )
+    assert details["reason"] == "Qwen3-TTS MLX runtime loaded but tokenizer initialization failed"
     assert details["model"] == spec.api_name
     assert details["mode"] == spec.mode
     assert details["backend"] == "mlx"

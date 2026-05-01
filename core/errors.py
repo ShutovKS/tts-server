@@ -154,9 +154,7 @@ class ModelCapabilityError(CoreError):
         reason: str | None = None,
         details: dict[str, Any] | None = None,
     ):
-        resolved_reason = (
-            reason or f"Model '{model_id}' does not support capability '{capability}'"
-        )
+        resolved_reason = reason or f"Model '{model_id}' does not support capability '{capability}'"
         super().__init__(resolved_reason)
         payload: dict[str, Any] = {
             "model": model_id,
@@ -367,8 +365,7 @@ class JobNotSucceededError(CoreError):
         details: dict[str, Any] | None = None,
     ):
         resolved_reason = (
-            reason
-            or f"Job did not succeed and cannot produce audio while status is {status}"
+            reason or f"Job did not succeed and cannot produce audio while status is {status}"
         )
         super().__init__(resolved_reason)
         payload = {"job_id": job_id, "status": status}
@@ -417,9 +414,7 @@ class JobIdempotencyConflictError(CoreError):
         reason: str | None = None,
         details: dict[str, Any] | None = None,
     ):
-        resolved_reason = (
-            reason or "Idempotency key was already used with a different payload"
-        )
+        resolved_reason = reason or "Idempotency key was already used with a different payload"
         super().__init__(resolved_reason)
         payload = {
             "idempotency_key": idempotency_key,

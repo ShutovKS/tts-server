@@ -34,10 +34,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 from uuid import uuid4
 
 from core.contracts.commands import (
@@ -116,16 +115,16 @@ class JobSubmission:
     command: GenerationCommand
     submit_request_id: str
     owner_principal_id: str
-    response_format: Optional[str]
+    response_format: str | None
     save_output: bool
     execution_timeout_seconds: float
     staged_input_paths: tuple[Path, ...] = ()
-    idempotency_key: Optional[str] = None
-    idempotency_scope: Optional[str] = None
-    idempotency_fingerprint: Optional[str] = None
+    idempotency_key: str | None = None
+    idempotency_scope: str | None = None
+    idempotency_fingerprint: str | None = None
 
     @property
-    def requested_model(self) -> Optional[str]:
+    def requested_model(self) -> str | None:
         return self.command.model
 
     @property
@@ -148,18 +147,18 @@ class JobSnapshot:
     status: JobStatus
     operation: JobOperation
     mode: str
-    requested_model: Optional[str]
-    response_format: Optional[str]
+    requested_model: str | None
+    response_format: str | None
     save_output: bool
     execution_timeout_seconds: float
     created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    backend: Optional[str] = None
-    saved_path: Optional[Path] = None
-    terminal_error: Optional[JobFailureSnapshot] = None
-    retention_expires_at: Optional[datetime] = None
-    idempotency_key: Optional[str] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    backend: str | None = None
+    saved_path: Path | None = None
+    terminal_error: JobFailureSnapshot | None = None
+    retention_expires_at: datetime | None = None
+    idempotency_key: str | None = None
 
     @property
     def is_terminal(self) -> bool:
@@ -170,19 +169,19 @@ class JobSnapshot:
 class JobTerminalState:
     status: JobStatus
     completed_at: datetime
-    retention_expires_at: Optional[datetime] = None
-    backend: Optional[str] = None
-    saved_path: Optional[Path] = None
-    success: Optional[JobSuccessSnapshot] = None
-    failure: Optional[JobFailureSnapshot] = None
+    retention_expires_at: datetime | None = None
+    backend: str | None = None
+    saved_path: Path | None = None
+    success: JobSuccessSnapshot | None = None
+    failure: JobFailureSnapshot | None = None
 
 
 @dataclass(frozen=True)
 class StoredJob:
     snapshot: JobSnapshot
     submission: JobSubmission
-    success: Optional[JobSuccessSnapshot] = None
-    terminal_state: Optional[JobTerminalState] = None
+    success: JobSuccessSnapshot | None = None
+    terminal_state: JobTerminalState | None = None
 
 
 @dataclass(frozen=True)
@@ -195,7 +194,7 @@ class JobCreateResolution:
 class JobStatusTransition:
     from_status: JobStatus
     to_status: JobStatus
-    changed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    changed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def validate(self) -> None:
         allowed = _ALLOWED_TRANSITIONS[self.from_status]
@@ -208,8 +207,8 @@ class JobStatusTransition:
 @dataclass(frozen=True)
 class JobResultResolution:
     snapshot: JobSnapshot
-    success: Optional[JobSuccessSnapshot]
-    terminal_state: Optional[JobTerminalState] = None
+    success: JobSuccessSnapshot | None
+    terminal_state: JobTerminalState | None = None
 
 
 def create_job_submission(
@@ -218,25 +217,19 @@ def create_job_submission(
     command: GenerationCommand,
     submit_request_id: str,
     owner_principal_id: str,
-    response_format: Optional[str],
+    response_format: str | None,
     save_output: bool,
     execution_timeout_seconds: float,
     staged_input_paths: tuple[Path, ...] = (),
-    idempotency_key: Optional[str] = None,
-    idempotency_scope: Optional[str] = None,
-    idempotency_fingerprint: Optional[str] = None,
+    idempotency_key: str | None = None,
+    idempotency_scope: str | None = None,
+    idempotency_fingerprint: str | None = None,
 ) -> JobSubmission:
-    if operation is JobOperation.SYNTHESIZE_CUSTOM and not isinstance(
-        command, CustomVoiceCommand
-    ):
+    if operation is JobOperation.SYNTHESIZE_CUSTOM and not isinstance(command, CustomVoiceCommand):
         raise TypeError("synthesize_custom requires CustomVoiceCommand")
-    if operation is JobOperation.SYNTHESIZE_DESIGN and not isinstance(
-        command, VoiceDesignCommand
-    ):
+    if operation is JobOperation.SYNTHESIZE_DESIGN and not isinstance(command, VoiceDesignCommand):
         raise TypeError("synthesize_design requires VoiceDesignCommand")
-    if operation is JobOperation.SYNTHESIZE_CLONE and not isinstance(
-        command, VoiceCloneCommand
-    ):
+    if operation is JobOperation.SYNTHESIZE_CLONE and not isinstance(command, VoiceCloneCommand):
         raise TypeError("synthesize_clone requires VoiceCloneCommand")
     return JobSubmission(
         operation=operation,
@@ -256,10 +249,10 @@ def create_job_submission(
 def create_queued_job(
     *,
     submission: JobSubmission,
-    job_id: Optional[str] = None,
-    created_at: Optional[datetime] = None,
+    job_id: str | None = None,
+    created_at: datetime | None = None,
 ) -> StoredJob:
-    timestamp = created_at or datetime.now(timezone.utc)
+    timestamp = created_at or datetime.now(UTC)
     snapshot = JobSnapshot(
         job_id=job_id or str(uuid4()),
         submit_request_id=submission.submit_request_id,
@@ -281,11 +274,11 @@ def apply_job_transition(
     *,
     job: StoredJob,
     transition: JobStatusTransition,
-    backend: Optional[str] = None,
-    saved_path: Optional[Path] = None,
-    failure: Optional[JobFailureSnapshot] = None,
-    success: Optional[JobSuccessSnapshot] = None,
-    retention_expires_at: Optional[datetime] = None,
+    backend: str | None = None,
+    saved_path: Path | None = None,
+    failure: JobFailureSnapshot | None = None,
+    success: JobSuccessSnapshot | None = None,
+    retention_expires_at: datetime | None = None,
 ) -> StoredJob:
     transition.validate()
     if job.snapshot.status != transition.from_status:
@@ -301,9 +294,7 @@ def apply_job_transition(
         completed_at = transition.changed_at
 
     resolved_backend = backend if backend is not None else job.snapshot.backend
-    resolved_saved_path = (
-        saved_path if saved_path is not None else job.snapshot.saved_path
-    )
+    resolved_saved_path = saved_path if saved_path is not None else job.snapshot.saved_path
     updated_snapshot = replace(
         job.snapshot,
         status=transition.to_status,
@@ -331,6 +322,7 @@ def apply_job_transition(
         success=success,
         terminal_state=terminal_state,
     )
+
 
 __all__ = [
     "JobStatus",

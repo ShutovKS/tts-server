@@ -21,18 +21,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from core.backends import BackendRegistry
 from core.backends.base import LoadedModelHandle
-from core.errors import BackendCapabilityError
-from core.errors import ModelLoadError, ModelNotAvailableError
+from core.errors import BackendCapabilityError, ModelLoadError, ModelNotAvailableError
 from core.metrics import OperationalMetricsRegistry
 from core.models.catalog import ModelSpec
 from core.models.manifest import ModelDescriptor
 from core.observability import get_logger, log_event, operation_scope
 from core.registry import ArtifactRegistry, ModelCatalogRegistry, RuntimeModelRegistry
-
 
 LOGGER = get_logger(__name__)
 SUPPORTED_PRELOAD_POLICIES = {"none", "all", "listed"}
@@ -58,9 +56,7 @@ class ModelRegistry:
         self._metrics = metrics or OperationalMetricsRegistry()
         normalized_policy = (preload_policy or "none").strip().lower()
         self._preload_policy = (
-            normalized_policy
-            if normalized_policy in SUPPORTED_PRELOAD_POLICIES
-            else "none"
+            normalized_policy if normalized_policy in SUPPORTED_PRELOAD_POLICIES else "none"
         )
         self._preload_model_ids = tuple(preload_model_ids)
         self.catalog = ModelCatalogRegistry(self.backend_registry.model_specs)
@@ -104,9 +100,7 @@ class ModelRegistry:
     #   SIDE_EFFECTS: none
     #   LINKS: M-MODEL-REGISTRY
     # END_CONTRACT: get_model_spec
-    def get_model_spec(
-        self, model_name: Optional[str] = None, mode: Optional[str] = None
-    ) -> ModelSpec:
+    def get_model_spec(self, model_name: str | None = None, mode: str | None = None) -> ModelSpec:
         return self.backend_registry.get_model_spec(model_name=model_name, mode=mode)
 
     # START_CONTRACT: get_model
@@ -117,7 +111,7 @@ class ModelRegistry:
     #   LINKS: M-MODEL-REGISTRY
     # END_CONTRACT: get_model
     def get_model(
-        self, model_name: Optional[str] = None, mode: Optional[str] = None
+        self, model_name: str | None = None, mode: str | None = None
     ) -> tuple[ModelSpec, LoadedModelHandle]:
         with operation_scope("core.model_registry.get_model"):
             spec = self.get_model_spec(model_name=model_name, mode=mode)
@@ -291,8 +285,7 @@ class ModelRegistry:
         per_model_backend_overrides = sum(
             1
             for item in items
-            if item.get("execution_backend")
-            and item.get("execution_backend") != self.backend.key
+            if item.get("execution_backend") and item.get("execution_backend") != self.backend.key
         )
         degraded_routes = sum(
             1
@@ -357,9 +350,7 @@ class ModelRegistry:
                 "descriptor_count": len(self.model_descriptors),
             },
         }
-        report["registry_ready"] = (
-            runtime_ready_count > 0 and backend_diagnostics["ready"]
-        )
+        report["registry_ready"] = runtime_ready_count > 0 and backend_diagnostics["ready"]
         return report
         # END_BLOCK_BUILD_READINESS_REPORT
 
@@ -379,9 +370,7 @@ class ModelRegistry:
         specs = self._resolve_preload_specs()
         requested_ids = self._requested_preload_model_ids()
         if not specs:
-            policy_reason = (
-                "disabled" if self._preload_policy == "none" else "no_matching_models"
-            )
+            policy_reason = "disabled" if self._preload_policy == "none" else "no_matching_models"
             self._preload_report = self._build_preload_report(
                 status="skipped",
                 requested_model_ids=requested_ids,
@@ -395,9 +384,7 @@ class ModelRegistry:
         preload_groups: dict[str, list[ModelSpec]] = {}
         for spec in specs:
             try:
-                preload_groups.setdefault(self.backend_for_spec(spec).key, []).append(
-                    spec
-                )
+                preload_groups.setdefault(self.backend_for_spec(spec).key, []).append(spec)
             except BackendCapabilityError:
                 continue
         loaded_model_ids: list[str] = []

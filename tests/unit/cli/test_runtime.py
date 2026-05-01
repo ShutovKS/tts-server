@@ -26,7 +26,6 @@ import pytest
 from cli.runtime import CLI_MODELS, CliRuntime
 from core.contracts.results import GenerationResult
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -55,9 +54,7 @@ def test_run_design_session_uses_model_metadata_id_for_omnivoice(
     monkeypatch.setattr(runtime, "display_saved_output", lambda *args, **kwargs: None)
     inputs = iter(["Design validation sample.", None])
     monkeypatch.setattr(runtime, "get_safe_input", lambda *args, **kwargs: next(inputs))
-    monkeypatch.setattr(
-        runtime, "_prompt_instruct", lambda **kwargs: "Warm bilingual narrator"
-    )
+    monkeypatch.setattr(runtime, "_prompt_instruct", lambda **kwargs: "Warm bilingual narrator")
     monkeypatch.setattr(runtime, "_prompt_language", lambda: "auto")
     monkeypatch.setattr(
         runtime, "_available_model_specs", lambda: [CLI_MODELS["omnivoice-design-1"]]

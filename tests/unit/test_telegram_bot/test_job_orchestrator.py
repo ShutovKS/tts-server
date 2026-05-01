@@ -194,7 +194,9 @@ class TestTelegramJobOrchestratorRemoteSubmission:
         remote_client.submit_speech_job.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_submit_design_job_uses_design_specific_idempotency_key(self, orchestrator, remote_client):
+    async def test_submit_design_job_uses_design_specific_idempotency_key(
+        self, orchestrator, remote_client
+    ):
         result = await orchestrator.submit_design_job(
             voice_description="calm narrator",
             text="Hello",
@@ -209,7 +211,9 @@ class TestTelegramJobOrchestratorRemoteSubmission:
         assert payload["voice_description"] == "calm narrator"
 
     @pytest.mark.asyncio
-    async def test_submit_clone_job_uses_clone_specific_idempotency_key(self, orchestrator, remote_client, temp_storage):
+    async def test_submit_clone_job_uses_clone_specific_idempotency_key(
+        self, orchestrator, remote_client, temp_storage
+    ):
         ref_audio = temp_storage.with_suffix(".wav")
         ref_audio.write_bytes(b"RIFFfake")
 
@@ -367,9 +371,7 @@ class TestTelegramJobOrchestratorRemotePolling:
             settings=_make_settings(),
         )
 
-        result = await orchestrator.check_job_completion(
-            "job-api-error", "submit-api-error"
-        )
+        result = await orchestrator.check_job_completion("job-api-error", "submit-api-error")
 
         assert result.status is JobStatus.FAILED
         assert result.success is False

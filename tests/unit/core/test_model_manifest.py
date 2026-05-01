@@ -35,7 +35,6 @@ from core.models.manifest import (
     load_model_manifest,
 )
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -83,9 +82,7 @@ def test_load_model_manifest_rejects_unknown_version(tmp_path: Path):
         encoding="utf-8",
     )
 
-    with pytest.raises(
-        ModelManifestValidationError, match="Unsupported manifest version: 99"
-    ):
+    with pytest.raises(ModelManifestValidationError, match="Unsupported manifest version: 99"):
         load_model_manifest(path)
 
 
@@ -153,17 +150,9 @@ def test_manifest_artifact_validation_rules_match_existing_backend_requirements(
     ]:
         (model_path / filename).write_text("{}", encoding="utf-8")
 
-    mlx_check = (
-        MODEL_SPECS["1"].artifact_validation_for_backend("mlx").validate(model_path)
-    )
-    torch_check = (
-        MODEL_SPECS["1"].artifact_validation_for_backend("torch").validate(model_path)
-    )
-    fast_check = (
-        MODEL_SPECS["1"]
-        .artifact_validation_for_backend("qwen_fast")
-        .validate(model_path)
-    )
+    mlx_check = MODEL_SPECS["1"].artifact_validation_for_backend("mlx").validate(model_path)
+    torch_check = MODEL_SPECS["1"].artifact_validation_for_backend("torch").validate(model_path)
+    fast_check = MODEL_SPECS["1"].artifact_validation_for_backend("qwen_fast").validate(model_path)
 
     assert mlx_check == {
         "loadable": True,
@@ -197,9 +186,7 @@ def test_manifest_artifact_validation_rules_match_existing_backend_requirements_
             (model_path / filename).write_text("{}", encoding="utf-8")
 
         fast_check = (
-            MODEL_SPECS[spec_key]
-            .artifact_validation_for_backend("qwen_fast")
-            .validate(model_path)
+            MODEL_SPECS[spec_key].artifact_validation_for_backend("qwen_fast").validate(model_path)
         )
 
         assert fast_check == {
@@ -217,9 +204,7 @@ def test_manifest_artifact_validation_reports_missing_torch_preprocessor(
     for filename in ["config.json", "model.safetensors", "tokenizer_config.json"]:
         (model_path / filename).write_text("{}", encoding="utf-8")
 
-    torch_check = (
-        MODEL_SPECS["1"].artifact_validation_for_backend("torch").validate(model_path)
-    )
+    torch_check = MODEL_SPECS["1"].artifact_validation_for_backend("torch").validate(model_path)
 
     assert torch_check == {
         "loadable": False,

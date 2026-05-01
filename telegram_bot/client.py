@@ -34,22 +34,17 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
-from core.observability import get_logger, log_event
-from telegram_bot.polling import TelegramClient, classify_telegram_error
+from core.observability import get_logger
 from telegram_bot.observability import (
-    METRICS,
-    ClassifiedError,
-    ErrorClass,
     log_telegram_event,
 )
-
+from telegram_bot.polling import TelegramClient, classify_telegram_error
 
 LOGGER = get_logger(__name__)
 
@@ -152,7 +147,7 @@ class TelegramBotClient(TelegramClient):
         self,
         bot_token: str,
         logger: logging.Logger | None = None,
-        retry_config: Optional[RetryConfig] = None,
+        retry_config: RetryConfig | None = None,
     ):
         """
         Initialize Telegram bot client.
@@ -310,14 +305,9 @@ class TelegramBotClient(TelegramClient):
                 )
 
                 # Classify error for retry decisions
-                classified = classify_telegram_error(
-                    TelegramAPIError(description, error_code)
-                )
+                classified = classify_telegram_error(TelegramAPIError(description, error_code))
 
-                if (
-                    classified.is_retryable
-                    and retry_count < self._retry_config.max_attempts
-                ):
+                if classified.is_retryable and retry_count < self._retry_config.max_attempts:
                     delay = self._calculate_delay(retry_count)
                     log_telegram_event(
                         self._logger,
@@ -334,7 +324,7 @@ class TelegramBotClient(TelegramClient):
             return data.get("result", {})
             # END_BLOCK_EXECUTE_API_REQUEST
 
-        except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
+        except (TimeoutError, httpx.TimeoutException) as exc:
             # START_BLOCK_HANDLE_TIMEOUT_ERROR
             self._error_count += 1
 
@@ -352,9 +342,7 @@ class TelegramBotClient(TelegramClient):
                 await asyncio.sleep(delay)
                 return await self._request(method, retry_count + 1, **kwargs)
 
-            raise TelegramAPIError(
-                f"Request timeout after {retry_count + 1} attempts"
-            ) from exc
+            raise TelegramAPIError(f"Request timeout after {retry_count + 1} attempts") from exc
             # END_BLOCK_HANDLE_TIMEOUT_ERROR
 
         except httpx.ConnectError as exc:
@@ -375,9 +363,7 @@ class TelegramBotClient(TelegramClient):
                 await asyncio.sleep(delay)
                 return await self._request(method, retry_count + 1, **kwargs)
 
-            raise TelegramAPIError(
-                f"Connection failed after {retry_count + 1} attempts"
-            ) from exc
+            raise TelegramAPIError(f"Connection failed after {retry_count + 1} attempts") from exc
             # END_BLOCK_HANDLE_CONNECTION_ERROR
 
         except httpx.HTTPStatusError as exc:
@@ -400,9 +386,7 @@ class TelegramBotClient(TelegramClient):
 
     def _calculate_delay(self, retry_count: int) -> float:
         """Calculate exponential backoff delay."""
-        delay = self._retry_config.initial_delay * (
-            self._retry_config.multiplier**retry_count
-        )
+        delay = self._retry_config.initial_delay * (self._retry_config.multiplier**retry_count)
         return min(delay, self._retry_config.max_delay)
 
     def _extract_retry_after(self, response: httpx.Response) -> float | None:
@@ -512,9 +496,7 @@ class TelegramBotClient(TelegramClient):
         file_info = await self.get_file(file_id)
         file_path = file_info.get("file_path")
         if not file_path:
-            raise TelegramAPIError(
-                "Telegram did not return file_path for the requested media"
-            )
+            raise TelegramAPIError("Telegram did not return file_path for the requested media")
         # END_BLOCK_RESOLVE_FILE_METADATA
 
         # START_BLOCK_PREPARE_DOWNLOAD_DESTINATION
@@ -647,6 +629,7 @@ class TelegramBotClient(TelegramClient):
         except httpx.ConnectError as exc:
             raise TelegramAPIError(f"Voice send connection error: {exc}") from exc
         # END_BLOCK_SEND_VOICE_MESSAGE
+
 
 __all__ = [
     "LOGGER",

@@ -32,11 +32,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable, Mapping
-
+from typing import Any
 
 SUPPORTED_MANIFEST_VERSIONS = {1}
 SUPPORTED_MODES = {"custom", "design", "clone"}
@@ -53,7 +53,7 @@ class ArtifactValidationRule:
     any_of: tuple[str, ...]
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any]) -> "ArtifactValidationRule":
+    def from_mapping(cls, payload: Mapping[str, Any]) -> ArtifactValidationRule:
         name = _require_non_empty_string(payload, "name")
         any_of_payload = payload.get("any_of")
         if not isinstance(any_of_payload, list) or not any_of_payload:
@@ -71,9 +71,7 @@ class ArtifactValidationRule:
         return cls(name=name, any_of=any_of)
 
     def matches(self, model_path: Path) -> bool:
-        return any(
-            (model_path / relative_path).exists() for relative_path in self.any_of
-        )
+        return any((model_path / relative_path).exists() for relative_path in self.any_of)
 
     def describe(self) -> str:
         return "|".join(self.any_of)
@@ -84,17 +82,13 @@ class BackendArtifactValidation:
     required_rules: tuple[ArtifactValidationRule, ...]
 
     @classmethod
-    def from_mapping(
-        cls, payload: Mapping[str, Any], *, backend: str
-    ) -> "BackendArtifactValidation":
+    def from_mapping(cls, payload: Mapping[str, Any], *, backend: str) -> BackendArtifactValidation:
         rules_payload = payload.get("required_rules")
         if not isinstance(rules_payload, list) or not rules_payload:
             raise ModelManifestValidationError(
                 f"Backend artifact validation for '{backend}' must declare required_rules"
             )
-        rules = tuple(
-            ArtifactValidationRule.from_mapping(item) for item in rules_payload
-        )
+        rules = tuple(ArtifactValidationRule.from_mapping(item) for item in rules_payload)
         names = [rule.name for rule in rules]
         if len(set(names)) != len(names):
             raise ModelManifestValidationError(
@@ -103,11 +97,7 @@ class BackendArtifactValidation:
         return cls(required_rules=rules)
 
     def validate(self, model_path: Path) -> dict[str, Any]:
-        missing = [
-            rule.describe()
-            for rule in self.required_rules
-            if not rule.matches(model_path)
-        ]
+        missing = [rule.describe() for rule in self.required_rules if not rule.matches(model_path)]
         return {
             "loadable": not missing,
             "required_artifacts": [rule.describe() for rule in self.required_rules],
@@ -122,7 +112,7 @@ class ModeMetadata:
     semantics: str
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any]) -> "ModeMetadata":
+    def from_mapping(cls, payload: Mapping[str, Any]) -> ModeMetadata:
         return cls(
             id=_require_non_empty_string(payload, "id"),
             label=_require_non_empty_string(payload, "label"),
@@ -137,12 +127,10 @@ class ModelRollout:
     default_preference: int
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any]) -> "ModelRollout":
+    def from_mapping(cls, payload: Mapping[str, Any]) -> ModelRollout:
         enabled = payload.get("enabled")
         if not isinstance(enabled, bool):
-            raise ModelManifestValidationError(
-                "Model rollout.enabled must be a boolean"
-            )
+            raise ModelManifestValidationError("Model rollout.enabled must be a boolean")
         stage = _require_non_empty_string(payload, "stage")
         default_preference = payload.get("default_preference")
         if not isinstance(default_preference, int):
@@ -190,8 +178,7 @@ class ModelSpec:
     @property
     def family_key(self) -> str:
         normalized = "".join(
-            character if character.isalnum() else "_"
-            for character in self.family.lower()
+            character if character.isalnum() else "_" for character in self.family.lower()
         )
         collapsed = "_".join(part for part in normalized.split("_") if part)
         return collapsed or "qwen3_tts"
@@ -245,9 +232,7 @@ class ModelSpec:
     def supports_backend(self, backend_key: str) -> bool:
         return backend_key in self.backend_affinity
 
-    def artifact_validation_for_backend(
-        self, backend_key: str
-    ) -> BackendArtifactValidation:
+    def artifact_validation_for_backend(self, backend_key: str) -> BackendArtifactValidation:
         validation = self.artifact_validation.get(backend_key)
         if validation is None:
             raise ModelManifestValidationError(
@@ -256,32 +241,23 @@ class ModelSpec:
         return validation
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any]) -> "ModelSpec":
+    def from_mapping(cls, payload: Mapping[str, Any]) -> ModelSpec:
         key = _require_non_empty_string(payload, "key")
         public_name = _require_non_empty_string(payload, "public_name")
         folder = _require_non_empty_string(payload, "folder")
         mode = _require_non_empty_string(payload, "mode")
         if mode not in SUPPORTED_MODES:
-            raise ModelManifestValidationError(
-                f"Model '{key}' declares unsupported mode '{mode}'"
-            )
+            raise ModelManifestValidationError(f"Model '{key}' declares unsupported mode '{mode}'")
         output_subfolder = _require_non_empty_string(payload, "output_subfolder")
         metadata_payload = payload.get("metadata")
         if not isinstance(metadata_payload, Mapping):
             raise ModelManifestValidationError(f"Model '{key}' must declare metadata")
         mode_metadata_payload = payload.get("mode_metadata")
         if not isinstance(mode_metadata_payload, Mapping):
-            raise ModelManifestValidationError(
-                f"Model '{key}' must declare mode_metadata"
-            )
+            raise ModelManifestValidationError(f"Model '{key}' must declare mode_metadata")
         backend_affinity_payload = payload.get("backend_affinity")
-        if (
-            not isinstance(backend_affinity_payload, list)
-            or not backend_affinity_payload
-        ):
-            raise ModelManifestValidationError(
-                f"Model '{key}' must declare backend_affinity"
-            )
+        if not isinstance(backend_affinity_payload, list) or not backend_affinity_payload:
+            raise ModelManifestValidationError(f"Model '{key}' must declare backend_affinity")
         backend_affinity = tuple(
             _coerce_non_empty_string(item, f"model.{key}.backend_affinity[]")
             for item in backend_affinity_payload
@@ -293,14 +269,10 @@ class ModelSpec:
             )
         rollout_payload = payload.get("rollout")
         if not isinstance(rollout_payload, Mapping):
-            raise ModelManifestValidationError(
-                f"Model '{key}' must declare rollout metadata"
-            )
+            raise ModelManifestValidationError(f"Model '{key}' must declare rollout metadata")
         artifact_validation_payload = payload.get("artifact_validation")
         if not isinstance(artifact_validation_payload, Mapping):
-            raise ModelManifestValidationError(
-                f"Model '{key}' must declare artifact_validation"
-            )
+            raise ModelManifestValidationError(f"Model '{key}' must declare artifact_validation")
         validations = {
             backend: BackendArtifactValidation.from_mapping(value, backend=backend)
             for backend, value in artifact_validation_payload.items()
@@ -337,20 +309,16 @@ class ModelManifest:
     def get(self, key: str) -> ModelSpec:
         return self.models[key]
 
-    def descriptors(self) -> tuple["ModelDescriptor", ...]:
-        return tuple(
-            ModelDescriptor.from_model_spec(spec) for spec in self.models.values()
-        )
+    def descriptors(self) -> tuple[ModelDescriptor, ...]:
+        return tuple(ModelDescriptor.from_model_spec(spec) for spec in self.models.values())
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any]) -> "ModelManifest":
+    def from_mapping(cls, payload: Mapping[str, Any]) -> ModelManifest:
         version = payload.get("version")
         if not isinstance(version, int):
             raise ModelManifestValidationError("Manifest version must be an integer")
         if version not in SUPPORTED_MANIFEST_VERSIONS:
-            raise ModelManifestValidationError(
-                f"Unsupported manifest version: {version}"
-            )
+            raise ModelManifestValidationError(f"Unsupported manifest version: {version}")
 
         metadata_payload = payload.get("metadata")
         if not isinstance(metadata_payload, Mapping):
@@ -360,8 +328,7 @@ class ModelManifest:
         if not isinstance(modes_payload, list) or not modes_payload:
             raise ModelManifestValidationError("Manifest must declare modes")
         modes = {
-            mode.id: mode
-            for mode in (ModeMetadata.from_mapping(item) for item in modes_payload)
+            mode.id: mode for mode in (ModeMetadata.from_mapping(item) for item in modes_payload)
         }
         if len(modes) != len(modes_payload):
             raise ModelManifestValidationError("Manifest modes must have unique ids")
@@ -370,17 +337,14 @@ class ModelManifest:
         if not isinstance(models_payload, list) or not models_payload:
             raise ModelManifestValidationError("Manifest must declare models")
         models = {
-            spec.key: spec
-            for spec in (ModelSpec.from_mapping(item) for item in models_payload)
+            spec.key: spec for spec in (ModelSpec.from_mapping(item) for item in models_payload)
         }
         if len(models) != len(models_payload):
             raise ModelManifestValidationError("Manifest models must have unique keys")
 
         model_ids = [spec.model_id for spec in models.values()]
         if len(set(model_ids)) != len(model_ids):
-            raise ModelManifestValidationError(
-                "Manifest models must have unique model ids"
-            )
+            raise ModelManifestValidationError("Manifest models must have unique model ids")
 
         for spec in models.values():
             declared_mode = modes.get(spec.mode)
@@ -393,9 +357,7 @@ class ModelManifest:
                     f"Model '{spec.key}' mode_metadata must match manifest-level definition for mode '{spec.mode}'"
                 )
 
-        return cls(
-            version=version, metadata=dict(metadata_payload), modes=modes, models=models
-        )
+        return cls(version=version, metadata=dict(metadata_payload), modes=modes, models=models)
 
 
 DEFAULT_MODEL_MANIFEST_PATH = Path(__file__).with_name("manifest.v1.json")
@@ -422,7 +384,7 @@ class ModelDescriptor:
     metadata: Mapping[str, Any]
 
     @classmethod
-    def from_model_spec(cls, spec: ModelSpec) -> "ModelDescriptor":
+    def from_model_spec(cls, spec: ModelSpec) -> ModelDescriptor:
         return cls(
             key=spec.key,
             model_id=spec.model_id,
@@ -470,18 +432,12 @@ def _require_non_empty_string(payload: Mapping[str, Any], field: str) -> str:
 
 def _coerce_non_empty_string(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise ModelManifestValidationError(
-            f"Field '{field}' must be a non-empty string"
-        )
+        raise ModelManifestValidationError(f"Field '{field}' must be a non-empty string")
     return value.strip()
 
 
-def iter_models_for_backend(
-    manifest: ModelManifest, backend_key: str
-) -> Iterable[ModelSpec]:
-    return (
-        spec for spec in manifest.enabled_models() if spec.supports_backend(backend_key)
-    )
+def iter_models_for_backend(manifest: ModelManifest, backend_key: str) -> Iterable[ModelSpec]:
+    return (spec for spec in manifest.enabled_models() if spec.supports_backend(backend_key))
 
 
 __all__ = [

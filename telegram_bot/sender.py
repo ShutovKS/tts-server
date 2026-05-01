@@ -34,16 +34,14 @@ with the Telegram client and audio conversion utilities, featuring:
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
-import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from core.errors import AudioConversionError
-from core.observability import get_logger, log_event, Timer
+from core.observability import Timer, get_logger
 from telegram_bot.audio import convert_wav_to_telegram_ogg
-from telegram_bot.client import TelegramBotClient, TelegramAPIError
+from telegram_bot.client import TelegramAPIError, TelegramBotClient
 from telegram_bot.observability import (
     METRICS,
     TelegramMetrics,
@@ -97,10 +95,10 @@ class DeliveryResult:
     """Result of voice delivery attempt."""
 
     success: bool
-    error_message: Optional[str] = None
+    error_message: str | None = None
     attempts: int = 1
     duration_ms: float = 0.0
-    error_class: Optional[str] = None
+    error_class: str | None = None
     is_retryable: bool = False
 
 
@@ -180,8 +178,8 @@ class TelegramSender:
         client: TelegramBotClient,
         settings: TelegramSettings,
         logger: logging.Logger | None = None,
-        metrics: Optional[TelegramMetrics] = None,
-        retry_config: Optional[DeliveryRetryConfig] = None,
+        metrics: TelegramMetrics | None = None,
+        retry_config: DeliveryRetryConfig | None = None,
     ):
         """
         Initialize Telegram sender.
@@ -406,8 +404,7 @@ class TelegramSender:
 
                     await self._notify_error(
                         chat_id,
-                        "❌ *Send Error*\n\n"
-                        "Failed to send voice message. Please try again later.",
+                        "❌ *Send Error*\n\nFailed to send voice message. Please try again later.",
                     )
 
                     return DeliveryResult(
@@ -463,8 +460,7 @@ class TelegramSender:
 
                     await self._notify_error(
                         chat_id,
-                        "❌ *Send Error*\n\n"
-                        "Failed to send voice message. Please try again later.",
+                        "❌ *Send Error*\n\nFailed to send voice message. Please try again later.",
                     )
 
                     return DeliveryResult(
@@ -499,14 +495,10 @@ class TelegramSender:
 
         return DeliveryResult(
             success=False,
-            error_message=last_classified.message
-            if last_classified
-            else "Max retries exceeded",
+            error_message=last_classified.message if last_classified else "Max retries exceeded",
             attempts=attempt,
             duration_ms=timer.elapsed_ms,
-            error_class=last_classified.error_class.value
-            if last_classified
-            else "unknown",
+            error_class=last_classified.error_class.value if last_classified else "unknown",
             is_retryable=False,
         )
         # END_BLOCK_SEND_VOICE_MESSAGE
@@ -522,9 +514,7 @@ class TelegramSender:
             return min(classified.retry_after, self._retry_config.max_delay)
 
         # Exponential backoff
-        delay = self._retry_config.initial_delay * (
-            self._retry_config.multiplier ** (attempt - 1)
-        )
+        delay = self._retry_config.initial_delay * (self._retry_config.multiplier ** (attempt - 1))
         return min(delay, self._retry_config.max_delay)
 
     async def _notify_error(self, chat_id: int, message: str) -> None:
@@ -544,6 +534,7 @@ class TelegramSender:
 
 # Import Protocol for type hints
 from typing import Protocol
+
 import telegram_bot.observability
 
 __all__ = [

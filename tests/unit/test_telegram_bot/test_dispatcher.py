@@ -30,6 +30,7 @@ Tests message routing, command handling, and response generation.
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from telegram_bot.handlers.dispatcher import (
@@ -378,9 +379,7 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -423,9 +422,7 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -465,9 +462,7 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -506,9 +501,7 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -540,9 +533,7 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -588,9 +579,7 @@ class TestDispatcherTTSHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -632,7 +621,6 @@ class TestDispatcherTTSHandling:
         )
 
         mock_delivery_store.create.assert_not_awaited()
-
 
 
 class TestDispatcherErrorHandling:
@@ -759,9 +747,7 @@ class TestDispatcherDesignHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -797,9 +783,7 @@ class TestDispatcherDesignHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -845,9 +829,7 @@ class TestDispatcherDesignHandling:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -900,12 +882,14 @@ class TestCloneJobDelivery:
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_orchestrator = MagicMock()
-        mock_orchestrator.submit_clone_job = AsyncMock(return_value=MagicMock(
-            success=True,
-            is_duplicate=True,
-            job_id="job-existing-123",
-            submit_request_id="submit-existing-123",
-        ))
+        mock_orchestrator.submit_clone_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=True,
+                job_id="job-existing-123",
+                submit_request_id="submit-existing-123",
+            )
+        )
         mock_delivery_store = MagicMock()
         mock_delivery_store.get = AsyncMock(return_value=None)
         mock_delivery_store.create = AsyncMock()
@@ -943,12 +927,14 @@ class TestCloneJobDelivery:
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_orchestrator = MagicMock()
-        mock_orchestrator.submit_clone_job = AsyncMock(return_value=MagicMock(
-            success=True,
-            is_duplicate=True,
-            job_id="job-existing-123",
-            submit_request_id="submit-existing-123",
-        ))
+        mock_orchestrator.submit_clone_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=True,
+                job_id="job-existing-123",
+                submit_request_id="submit-existing-123",
+            )
+        )
         mock_delivery_store = MagicMock()
         mock_delivery_store.get = AsyncMock(
             return_value={
@@ -1040,12 +1026,14 @@ class TestCloneMediaPreparation:
         mock_sender.send_text = AsyncMock()
         mock_sender._client = MagicMock()
         mock_orchestrator = MagicMock()
-        mock_orchestrator.submit_clone_job = AsyncMock(return_value=MagicMock(
-            success=True,
-            is_duplicate=False,
-            job_id="job-new-123",
-            submit_request_id="submit-new-123",
-        ))
+        mock_orchestrator.submit_clone_job = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                is_duplicate=False,
+                job_id="job-new-123",
+                submit_request_id="submit-new-123",
+            )
+        )
         mock_delivery_store = MagicMock()
         mock_delivery_store.create = AsyncMock()
 
@@ -1216,9 +1204,7 @@ class TestCloneMediaPreparation:
         mock_settings = MagicMock()
         mock_settings.is_user_allowed.return_value = True
         mock_settings.telegram_max_text_length = 1000
-        mock_settings.resolve_runtime_model_binding.side_effect = (
-            lambda mode: f"model-{mode}"
-        )
+        mock_settings.resolve_runtime_model_binding.side_effect = lambda mode: f"model-{mode}"
         mock_sender = MagicMock()
         mock_sender.send_text = AsyncMock()
         mock_sender.send_voice = AsyncMock()
@@ -1244,6 +1230,8 @@ class TestCloneMediaPreparation:
 
         mock_orchestrator.submit_design_job.assert_awaited_once()
         mock_synth.synthesize_design.assert_not_called()
+
+
 class _AsyncJobOrchestratorDouble:
     def __init__(self):
         self.submit_tts_job = AsyncMock(

@@ -31,7 +31,6 @@ import pytest
 from core.config import CoreSettings
 from core.infrastructure.audio_io import convert_audio_to_wav_if_needed
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -53,7 +52,12 @@ def _write_wav(path: Path, *, sample_rate: int, channels: int, sample_width: int
 
 
 def test_convert_audio_to_wav_if_needed_keeps_matching_reference_wav(tmp_path: Path):
-    settings = CoreSettings(sample_rate=24000, models_dir=tmp_path / "models", outputs_dir=tmp_path / "outputs", voices_dir=tmp_path / "voices")
+    settings = CoreSettings(
+        sample_rate=24000,
+        models_dir=tmp_path / "models",
+        outputs_dir=tmp_path / "outputs",
+        voices_dir=tmp_path / "voices",
+    )
     source = tmp_path / "matching.wav"
     _write_wav(source, sample_rate=24000, channels=1, sample_width=2)
 
@@ -64,7 +68,12 @@ def test_convert_audio_to_wav_if_needed_keeps_matching_reference_wav(tmp_path: P
 
 
 def test_convert_audio_to_wav_if_needed_reencodes_incompatible_wav(tmp_path: Path):
-    settings = CoreSettings(sample_rate=24000, models_dir=tmp_path / "models", outputs_dir=tmp_path / "outputs", voices_dir=tmp_path / "voices")
+    settings = CoreSettings(
+        sample_rate=24000,
+        models_dir=tmp_path / "models",
+        outputs_dir=tmp_path / "outputs",
+        voices_dir=tmp_path / "voices",
+    )
     source = tmp_path / "stereo_44100.wav"
     _write_wav(source, sample_rate=44100, channels=2, sample_width=2)
 

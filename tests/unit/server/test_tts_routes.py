@@ -32,8 +32,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.contracts.jobs import JobStatus
-from core.contracts.jobs import JobOperation
+from core.contracts.jobs import JobOperation, JobStatus
 from core.errors import ModelCapabilityError
 from server.api.routes_tts import (
     build_idempotency_fingerprint,
@@ -46,7 +45,6 @@ from server.api.routes_tts import (
 from server.bootstrap import ServerSettings
 from server.schemas.audio import CustomTTSRequest, DesignTTSRequest, OpenAISpeechRequest
 from tests.support.api_fakes import DummyRegistry
-
 
 pytestmark = pytest.mark.unit
 

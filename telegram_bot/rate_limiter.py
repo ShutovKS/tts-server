@@ -82,9 +82,7 @@ class UserRateLimitState:
     #   SIDE_EFFECTS: Mutates stored request timestamps when the request is accepted.
     #   LINKS: M-TELEGRAM
     # END_CONTRACT: is_allowed
-    def is_allowed(
-        self, limit: int, window_seconds: int
-    ) -> tuple[bool, int, float | None]:
+    def is_allowed(self, limit: int, window_seconds: int) -> tuple[bool, int, float | None]:
         """Check if request is allowed.
 
         Returns:
@@ -127,9 +125,7 @@ class TelegramRateLimiter:
     def __init__(self, settings: TelegramSettings):
         """Initialize rate limiter with settings."""
         self._settings = settings
-        self._user_states: dict[int, UserRateLimitState] = defaultdict(
-            UserRateLimitState
-        )
+        self._user_states: dict[int, UserRateLimitState] = defaultdict(UserRateLimitState)
         self._lock = asyncio.Lock()
         self._window_seconds = 60  # 1 minute window
         self._limit = settings.telegram_rate_limit_per_user_per_minute
@@ -280,6 +276,7 @@ class TelegramRateLimiter:
 def create_telegram_rate_limiter(settings: TelegramSettings) -> TelegramRateLimiter:
     """Factory function to create rate limiter from settings."""
     return TelegramRateLimiter(settings)
+
 
 __all__ = [
     "LOGGER",

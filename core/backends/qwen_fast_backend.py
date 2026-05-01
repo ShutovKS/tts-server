@@ -19,9 +19,9 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import platform
-import inspect
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -136,9 +136,7 @@ class QwenFastBackend(TTSBackend):
         with self._lock:
             runtime_model = self._cache.get(spec.folder)
             if runtime_model is None:
-                self._metrics.collector.increment(
-                    "models.cache.miss", tags={"backend": self.key}
-                )
+                self._metrics.collector.increment("models.cache.miss", tags={"backend": self.key})
                 try:
                     runtime_model = self._load_runtime_model(model_path)
                 except ModelLoadError:
@@ -163,9 +161,7 @@ class QwenFastBackend(TTSBackend):
                     "models.load.duration_ms", 0.0, tags={"backend": self.key}
                 )
             else:
-                self._metrics.collector.increment(
-                    "models.cache.hit", tags={"backend": self.key}
-                )
+                self._metrics.collector.increment("models.cache.hit", tags={"backend": self.key})
 
         return LoadedModelHandle(
             spec=spec,
@@ -184,17 +180,13 @@ class QwenFastBackend(TTSBackend):
                 "loadable": False,
                 "required_artifacts": [
                     rule.describe()
-                    for rule in spec.artifact_validation_for_backend(
-                        self.key
-                    ).required_rules
+                    for rule in spec.artifact_validation_for_backend(self.key).required_rules
                 ],
                 "missing_artifacts": ["model_directory"],
             }
         )
         diagnostics = self.readiness_diagnostics()
-        runtime_ready = bool(
-            available and artifact_check["loadable"] and diagnostics.ready
-        )
+        runtime_ready = bool(available and artifact_check["loadable"] and diagnostics.ready)
         cached = spec.folder in self._cache
         return {
             "key": spec.key,
@@ -263,9 +255,7 @@ class QwenFastBackend(TTSBackend):
                 "torch_version": torch_version,
                 "minimum_torch_version": self._version_text(self._MIN_TORCH_VERSION),
                 "torch_version_supported": version_supported,
-                "torch_error": None
-                if TORCH_IMPORT_ERROR is None
-                else str(TORCH_IMPORT_ERROR),
+                "torch_error": None if TORCH_IMPORT_ERROR is None else str(TORCH_IMPORT_ERROR),
                 "faster_qwen3_tts_error": None
                 if FASTER_QWEN_IMPORT_ERROR is None
                 else str(FASTER_QWEN_IMPORT_ERROR),
@@ -364,7 +354,11 @@ class QwenFastBackend(TTSBackend):
             return
         raise TTSGenerationError(
             f"Unsupported execution mode '{request.execution_mode}' for backend '{self.key}'",
-            details={"backend": self.key, "mode": request.execution_mode, "model": request.handle.spec.api_name},
+            details={
+                "backend": self.key,
+                "mode": request.execution_mode,
+                "model": request.handle.spec.api_name,
+            },
         )
 
     def _execute_custom(
@@ -520,12 +514,8 @@ class QwenFastBackend(TTSBackend):
                     "runtime_dependency": "faster_qwen3_tts",
                 },
             )
-        faster_runtime_cls = getattr(
-            faster_qwen3_tts_runtime, "FasterQwen3TTS", None
-        )
-        if faster_runtime_cls is not None and hasattr(
-            faster_runtime_cls, "from_pretrained"
-        ):
+        faster_runtime_cls = getattr(faster_qwen3_tts_runtime, "FasterQwen3TTS", None)
+        if faster_runtime_cls is not None and hasattr(faster_runtime_cls, "from_pretrained"):
             return faster_runtime_cls.from_pretrained(str(model_path))
         runtime_cls = getattr(faster_qwen3_tts_runtime, "Qwen3TTSModel", None)
         if runtime_cls is not None and hasattr(runtime_cls, "from_pretrained"):
@@ -567,9 +557,7 @@ class QwenFastBackend(TTSBackend):
 
         return _TestRuntimeModel(model_path)
 
-    def _persist_first_wav(
-        self, output_dir: Path, wavs: list[Any], sample_rate: int
-    ) -> None:
+    def _persist_first_wav(self, output_dir: Path, wavs: list[Any], sample_rate: int) -> None:
         if not wavs:
             raise TTSGenerationError(
                 "Fast Qwen backend returned empty audio result",

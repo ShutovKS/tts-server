@@ -30,9 +30,9 @@ import pytest
 
 from telegram_bot.config import TelegramSettings
 from telegram_bot.rate_limiter import (
+    RateLimitDecision,
     TelegramRateLimiter,
     UserRateLimitState,
-    RateLimitDecision,
     create_telegram_rate_limiter,
 )
 
@@ -138,9 +138,7 @@ class TestTelegramRateLimiter:
         """Create test settings."""
         settings = MagicMock(spec=TelegramSettings)
         settings.telegram_rate_limit_enabled = rate_limit_enabled
-        settings.telegram_rate_limit_per_user_per_minute = (
-            rate_limit_per_user_per_minute
-        )
+        settings.telegram_rate_limit_per_user_per_minute = rate_limit_per_user_per_minute
         settings.telegram_dev_mode = dev_mode
         settings.telegram_admin_user_ids = admin_user_ids
         settings.is_admin_user = lambda uid: str(uid) in admin_user_ids
@@ -158,9 +156,7 @@ class TestTelegramRateLimiter:
 
     def test_first_request_allowed(self):
         """First request should be allowed."""
-        settings = self._create_settings(
-            rate_limit_enabled=True, rate_limit_per_user_per_minute=20
-        )
+        settings = self._create_settings(rate_limit_enabled=True, rate_limit_per_user_per_minute=20)
         limiter = TelegramRateLimiter(settings)
 
         decision = limiter.check_and_consume(123)
@@ -170,9 +166,7 @@ class TestTelegramRateLimiter:
 
     def test_under_limit_allowed(self):
         """Requests under limit should be allowed."""
-        settings = self._create_settings(
-            rate_limit_enabled=True, rate_limit_per_user_per_minute=5
-        )
+        settings = self._create_settings(rate_limit_enabled=True, rate_limit_per_user_per_minute=5)
         limiter = TelegramRateLimiter(settings)
 
         # Make 4 requests
@@ -186,9 +180,7 @@ class TestTelegramRateLimiter:
 
     def test_at_limit_rejected(self):
         """Requests at limit should be rejected."""
-        settings = self._create_settings(
-            rate_limit_enabled=True, rate_limit_per_user_per_minute=5
-        )
+        settings = self._create_settings(rate_limit_enabled=True, rate_limit_per_user_per_minute=5)
         limiter = TelegramRateLimiter(settings)
 
         # Make 5 requests (at limit)
@@ -203,9 +195,7 @@ class TestTelegramRateLimiter:
 
     def test_different_users_separate_limits(self):
         """Different users should have separate rate limits."""
-        settings = self._create_settings(
-            rate_limit_enabled=True, rate_limit_per_user_per_minute=2
-        )
+        settings = self._create_settings(rate_limit_enabled=True, rate_limit_per_user_per_minute=2)
         limiter = TelegramRateLimiter(settings)
 
         # User 1 makes 2 requests
@@ -275,9 +265,7 @@ class TestTelegramRateLimiter:
 
     def test_reset_user(self):
         """Reset should clear user's rate limit state."""
-        settings = self._create_settings(
-            rate_limit_enabled=True, rate_limit_per_user_per_minute=2
-        )
+        settings = self._create_settings(rate_limit_enabled=True, rate_limit_per_user_per_minute=2)
         limiter = TelegramRateLimiter(settings)
 
         # Use up the limit
@@ -306,9 +294,7 @@ class TestTelegramRateLimiter:
 
     def test_get_stats_known_user(self):
         """Stats for known user should show request count."""
-        settings = self._create_settings(
-            rate_limit_enabled=True, rate_limit_per_user_per_minute=10
-        )
+        settings = self._create_settings(rate_limit_enabled=True, rate_limit_per_user_per_minute=10)
         limiter = TelegramRateLimiter(settings)
 
         # Make some requests
@@ -334,9 +320,7 @@ class TestTelegramRateLimiter:
 
     def test_limit_per_minute_property(self):
         """Test limit_per_minute property."""
-        settings = self._create_settings(
-            rate_limit_enabled=True, rate_limit_per_user_per_minute=30
-        )
+        settings = self._create_settings(rate_limit_enabled=True, rate_limit_per_user_per_minute=30)
         limiter = TelegramRateLimiter(settings)
         assert limiter.limit_per_minute == 30
 

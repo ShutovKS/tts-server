@@ -47,21 +47,20 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from core.contracts.jobs import (
     JobStatus,
 )
+from core.observability import log_event
 from telegram_bot.remote_client import (
     RemoteAsyncJobResponse,
     RemoteServerAPIError,
     RemoteServerClient,
     RemoteServerTransportError,
 )
-from core.observability import log_event
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -188,9 +187,9 @@ class DeliveryMetadataStore:
             return
 
         try:
-            with open(self._storage_path, "r") as f:
+            with open(self._storage_path) as f:
                 self._cache = json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             self._cache = {}
 
         self._loaded = True
@@ -293,7 +292,7 @@ class DeliveryMetadataStore:
         async with self._lock:
             await self._load_unlocked()
             key = self._key(chat_id, message_id)
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
 
             metadata = {
                 "chat_id": chat_id,
@@ -345,7 +344,7 @@ class DeliveryMetadataStore:
         async with self._lock:
             await self._load_unlocked()
             key = self._key(chat_id, message_id)
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
 
             # Start with existing metadata if present, or create new
             metadata: dict[str, Any]
@@ -1000,7 +999,6 @@ class TelegramJobPoller:
 
     async def _check_pending_deliveries(self) -> None:
         """Check pending deliveries and deliver completed jobs."""
-        from telegram_bot.observability import METRICS
 
         # START_BLOCK_LOAD_PENDING_DELIVERY_BATCH
         pending = await self.delivery_store.get_pending_deliveries()
@@ -1121,6 +1119,7 @@ class TelegramJobPoller:
             f"{error}\n\n"
             "Откройте `/help`, чтобы проверить синтаксис команды и примеры использования."
         )
+
 
 __all__ = [
     "LOGGER",

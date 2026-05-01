@@ -44,9 +44,7 @@ class ONNXBackend(TTSBackend):
     key = "onnx"
     label = "ONNX Runtime"
 
-    def __init__(
-        self, models_dir: Path, *, metrics: OperationalMetricsRegistry | None = None
-    ):
+    def __init__(self, models_dir: Path, *, metrics: OperationalMetricsRegistry | None = None):
         self.models_dir = models_dir
         self._cache: dict[str, Any] = {}
         self._lock = Lock()
@@ -101,9 +99,7 @@ class ONNXBackend(TTSBackend):
         with self._lock:
             voice = self._cache.get(model_key)
             if voice is None:
-                self._metrics.collector.increment(
-                    "models.cache.miss", tags={"backend": self.key}
-                )
+                self._metrics.collector.increment("models.cache.miss", tags={"backend": self.key})
                 try:
                     voice = PiperVoice.load(
                         model_path / "model.onnx",
@@ -124,9 +120,7 @@ class ONNXBackend(TTSBackend):
                     ) from exc
                 self._cache[model_key] = voice
             else:
-                self._metrics.collector.increment(
-                    "models.cache.hit", tags={"backend": self.key}
-                )
+                self._metrics.collector.increment("models.cache.hit", tags={"backend": self.key})
 
         return LoadedModelHandle(
             spec=spec,
@@ -192,9 +186,7 @@ class ONNXBackend(TTSBackend):
             details={
                 "platform_supported": self.supports_platform(),
                 "piper_available": PiperVoice is not None,
-                "piper_error": None
-                if PIPER_IMPORT_ERROR is None
-                else str(PIPER_IMPORT_ERROR),
+                "piper_error": None if PIPER_IMPORT_ERROR is None else str(PIPER_IMPORT_ERROR),
             },
         )
 
@@ -275,7 +267,11 @@ class ONNXBackend(TTSBackend):
             return
         raise TTSGenerationError(
             f"Unsupported execution mode '{request.execution_mode}' for backend '{self.key}'",
-            details={"backend": self.key, "mode": request.execution_mode, "model": request.handle.spec.model_id},
+            details={
+                "backend": self.key,
+                "mode": request.execution_mode,
+                "model": request.handle.spec.model_id,
+            },
         )
 
     def _execute_custom(

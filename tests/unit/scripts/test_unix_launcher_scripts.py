@@ -32,7 +32,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -139,7 +138,7 @@ def test_unix_launcher_menu_rendering_uses_stderr_while_returning_selection_on_s
 
     for contents in (linux_contents, macos_contents):
         assert "printf '\\n%s\\n' \"$prompt\" >&2" in contents
-        assert "printf '[%d] %s\\n' \"$count\" \"$label\" >&2" in contents
+        assert 'printf \'[%d] %s\\n\' "$count" "$label" >&2' in contents
         assert "printf '%s' \"$line\"" in contents
 
 
@@ -157,9 +156,15 @@ def test_unix_launcher_server_start_checks_port_before_health_probe():
 
     for contents in (linux_contents, macos_contents):
         assert "assert_http_server_port_available()" in contents
-        assert "ensure_http_server_launch_target \"$project_root\" \"${TTS_HOST:-0.0.0.0}\" \"${TTS_PORT:-8000}\"" in contents
-        assert "wait_http_health_check \"${TTS_HOST:-0.0.0.0}\" \"${TTS_PORT:-8000}\"" in contents
-        assert 'wait_http_health_check "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}" || true' not in contents
+        assert (
+            'ensure_http_server_launch_target "$project_root" "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}"'
+            in contents
+        )
+        assert 'wait_http_health_check "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}"' in contents
+        assert (
+            'wait_http_health_check "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}" || true'
+            not in contents
+        )
 
 
 def test_unix_launcher_server_restart_uses_pid_file_management():
@@ -174,11 +179,23 @@ def test_unix_launcher_server_restart_uses_pid_file_management():
         assert "resolve_http_server_port_owner_pid()" in contents
         assert "ensure_http_server_launch_target()" in contents
         assert ".state/launcher/http-server.pid" in contents
-        assert "Launcher-managed HTTP server is already running. [R]estart / [K]eep existing / [C]hange port:" in contents
+        assert (
+            "Launcher-managed HTTP server is already running. [R]estart / [K]eep existing / [C]hange port:"
+            in contents
+        )
         assert "Stopping existing launcher-managed HTTP server" in contents
         assert "Stopping existing launcher-managed HTTP listener" in contents
-        assert 'stop_http_server_listener_pid "$bind_host" "$bind_port" "$project_root" "$HTTP_SERVER_PID"' in contents
-        assert "Port is occupied by a non-launcher process. [S]top and restart / [K]eep existing / [C]hange port:" in contents
-        assert 'listener_pid="$(resolve_http_server_port_owner_pid "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}" 2>/dev/null || true)"' in contents
+        assert (
+            'stop_http_server_listener_pid "$bind_host" "$bind_port" "$project_root" "$HTTP_SERVER_PID"'
+            in contents
+        )
+        assert (
+            "Port is occupied by a non-launcher process. [S]top and restart / [K]eep existing / [C]hange port:"
+            in contents
+        )
+        assert (
+            'listener_pid="$(resolve_http_server_port_owner_pid "${TTS_HOST:-0.0.0.0}" "${TTS_PORT:-8000}" 2>/dev/null || true)"'
+            in contents
+        )
         assert 'if [[ -n "$listener_pid" ]]; then' in contents
         assert 'exec --family "$family" --module "$module" >/dev/null 2>&1 &' in contents

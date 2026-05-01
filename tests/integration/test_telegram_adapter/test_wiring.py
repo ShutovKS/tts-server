@@ -36,21 +36,19 @@ import io
 import wave
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from telegram_bot.bootstrap import build_telegram_runtime, TelegramRuntime
-from telegram_bot.client import TelegramBotClient, TelegramAPIError
+from telegram_bot.bootstrap import TelegramRuntime, build_telegram_runtime
+from telegram_bot.client import TelegramAPIError, TelegramBotClient
 from telegram_bot.config import TelegramSettings
 from telegram_bot.handlers.dispatcher import CommandDispatcher
 from telegram_bot.handlers.tts_handler import TTSSynthesizer
 from telegram_bot.polling import PollingAdapter
 from telegram_bot.remote_client import RemoteServerClient
 from telegram_bot.sender import TelegramSender
-
 
 pytestmark = pytest.mark.integration
 

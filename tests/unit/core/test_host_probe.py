@@ -27,7 +27,6 @@ from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
 from core.planning.capability_resolver import CapabilityResolver
 from core.planning.host_probe import HostProbe, HostSnapshot
 
-
 pytestmark = pytest.mark.unit
 
 

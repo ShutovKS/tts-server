@@ -32,9 +32,10 @@ Tests startup validation, lifecycle logging, polling metrics, and self-checks.
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestPollingMetrics:
@@ -240,8 +241,8 @@ class TestStructuredLoggingConstants:
     def test_commands_module_exports_constants(self):
         """Test commands module has expected constants."""
         from telegram_bot.handlers.commands import (
-            MIN_SPEED,
             MAX_SPEED,
+            MIN_SPEED,
             VALID_SPEAKERS,
         )
 

@@ -28,8 +28,8 @@ import shutil
 import subprocess
 import sys
 import warnings
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 from cli.bootstrap import build_cli_runtime
 from cli.runtime_config import CliSettings
@@ -62,7 +62,7 @@ CLI_FAMILY_LABELS = {
 #   LINKS: M-CLI
 # END_CONTRACT: CliRuntime
 class CliRuntime:
-    def __init__(self, settings: Optional[CliSettings] = None):
+    def __init__(self, settings: CliSettings | None = None):
         runtime = build_cli_runtime(settings)
         self.settings = runtime.settings
         self.registry = runtime.core.registry
@@ -151,7 +151,7 @@ class CliRuntime:
                 actions.append((capability, label, mode))
         return actions
 
-    def _pick_family(self) -> Optional[str]:
+    def _pick_family(self) -> str | None:
         runtime_family = self._runtime_bound_family()
         if runtime_family is not None:
             return runtime_family
@@ -174,7 +174,7 @@ class CliRuntime:
             return None
         return self._family_menu_order[selected_index]
 
-    def _pick_spec_from_list(self, specs: Iterable, *, prompt: str) -> Optional[str]:
+    def _pick_spec_from_list(self, specs: Iterable, *, prompt: str) -> str | None:
         spec_list = list(specs)
         if not spec_list:
             print("No runtime-ready models available for this flow.")
@@ -200,7 +200,7 @@ class CliRuntime:
             return None
         return spec_list[selected_index].key
 
-    def _pick_family_action(self, family_key: str) -> Optional[tuple[str, str, str]]:
+    def _pick_family_action(self, family_key: str) -> tuple[str, str, str] | None:
         actions = self._family_actions(family_key)
         if not actions:
             print("No supported CLI actions are available for this family.")
@@ -288,9 +288,7 @@ class CliRuntime:
     #   SIDE_EFFECTS: Writes status text to stdout and may trigger audio playback.
     #   LINKS: M-CLI
     # END_CONTRACT: display_saved_output
-    def display_saved_output(
-        self, saved_path: Optional[Path], backend: Optional[str] = None
-    ) -> None:
+    def display_saved_output(self, saved_path: Path | None, backend: str | None = None) -> None:
         if not saved_path:
             return
         try:
@@ -335,9 +333,7 @@ class CliRuntime:
     #   SIDE_EFFECTS: Reads stdin and may read text content from disk.
     #   LINKS: M-CLI
     # END_CONTRACT: get_safe_input
-    def get_safe_input(
-        self, prompt: str = "\nEnter text (or drag .txt file): "
-    ) -> Optional[str]:
+    def get_safe_input(self, prompt: str = "\nEnter text (or drag .txt file): ") -> str | None:
         try:
             raw_input = input(prompt).strip()
             if raw_input.lower() in ["exit", "quit", "q"]:
@@ -347,9 +343,9 @@ class CliRuntime:
             if os.path.exists(clean_p) and clean_p.endswith(".txt"):
                 print(f"Reading from: {os.path.basename(clean_p)}")
                 try:
-                    with open(clean_p, "r", encoding="utf-8") as file_handle:
+                    with open(clean_p, encoding="utf-8") as file_handle:
                         return file_handle.read().strip()
-                except IOError as exc:
+                except OSError as exc:
                     print(f"Error reading file: {exc}")
                     return None
 
@@ -447,9 +443,7 @@ class CliRuntime:
             return
 
         try:
-            clean_wav_path, converted = convert_audio_to_wav_if_needed(
-                raw_path, self.settings
-            )
+            clean_wav_path, converted = convert_audio_to_wav_if_needed(raw_path, self.settings)
         except Exception as exc:
             print(f"Error: {exc}")
             return
@@ -583,8 +577,8 @@ class CliRuntime:
             print("Error: Model not found.")
             return
 
-        ref_audio: Optional[Path] = None
-        ref_text: Optional[str] = None
+        ref_audio: Path | None = None
+        ref_text: str | None = None
         converted = False
         language = self._prompt_language()
 
@@ -614,9 +608,7 @@ class CliRuntime:
             ref_input = input("\nDrag Reference Audio: ").strip()
             raw_path = Path(self.clean_path(ref_input))
             try:
-                ref_audio, converted = convert_audio_to_wav_if_needed(
-                    raw_path, self.settings
-                )
+                ref_audio, converted = convert_audio_to_wav_if_needed(raw_path, self.settings)
             except Exception as exc:
                 print(f"Error: {exc}")
                 return
@@ -731,6 +723,7 @@ def run_cli() -> None:
         return
     except KeyboardInterrupt:
         print("\nExiting...")
+
 
 __all__ = [
     "CLI_MODELS",

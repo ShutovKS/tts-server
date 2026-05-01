@@ -38,7 +38,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from telegram_bot.audio import convert_wav_to_telegram_ogg
-from telegram_bot.client import TelegramBotClient, TelegramAPIError
+from telegram_bot.client import TelegramAPIError, TelegramBotClient
 from telegram_bot.config import TelegramSettings
 from telegram_bot.sender import TelegramSender
 
@@ -84,9 +84,7 @@ class TestConvertWavToTelegramOgg:
         ogg_bytes, was_converted = convert_wav_to_telegram_ogg(wav_bytes, settings)
 
         assert isinstance(ogg_bytes, bytes), f"Expected bytes, got {type(ogg_bytes)}"
-        assert isinstance(was_converted, bool), (
-            f"Expected bool, got {type(was_converted)}"
-        )
+        assert isinstance(was_converted, bool), f"Expected bool, got {type(was_converted)}"
         assert len(ogg_bytes) > 0, "OGG bytes should not be empty"
         assert was_converted is True, "Conversion should return True (was converted)"
 
@@ -130,9 +128,7 @@ class TestTelegramSenderSendVoice:
         # Client.send_voice should be called with bytes, not tuple
         mock_client.send_voice.assert_called_once()
         call_args = mock_client.send_voice.call_args
-        assert isinstance(call_args[0][1], bytes), (
-            f"Expected bytes, got {type(call_args[0][1])}"
-        )
+        assert isinstance(call_args[0][1], bytes), f"Expected bytes, got {type(call_args[0][1])}"
 
     def test_send_voice_with_caption(self, mock_client, sender_settings):
         """Test send_voice with caption."""
@@ -179,9 +175,7 @@ class TestTelegramBotClientSendVoice:
 
         mock_client = MagicMock()
         mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client.post.return_value.json = MagicMock(
-            return_value=mock_response.json()
-        )
+        mock_client.post.return_value.json = MagicMock(return_value=mock_response.json())
 
         with patch.object(client, "_get_client", AsyncMock(return_value=mock_client)):
             audio_bytes = b"fake_ogg_data"
@@ -193,9 +187,7 @@ class TestTelegramBotClientSendVoice:
 
             assert "files" in call_kwargs, "files should be in call kwargs"
             files = call_kwargs["files"]
-            assert "voice" in files, (
-                f"Expected 'voice' key in files, got: {list(files.keys())}"
-            )
+            assert "voice" in files, f"Expected 'voice' key in files, got: {list(files.keys())}"
             assert "audio" not in files, "Should not have 'audio' key in files"
 
     @pytest.mark.asyncio
@@ -208,9 +200,7 @@ class TestTelegramBotClientSendVoice:
         mock_http_client = MagicMock()
         mock_http_client.post = AsyncMock(return_value=mock_response)
 
-        with patch.object(
-            client, "_get_client", AsyncMock(return_value=mock_http_client)
-        ):
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http_client)):
             audio_bytes = b"test_audio"
             await client.send_voice(12345, audio_bytes)
 
@@ -235,9 +225,7 @@ class TestTelegramBotClientSendVoice:
         mock_http_client = MagicMock()
         mock_http_client.post = AsyncMock(return_value=mock_response)
 
-        with patch.object(
-            client, "_get_client", AsyncMock(return_value=mock_http_client)
-        ):
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http_client)):
             await client.send_voice(67890, b"audio")
 
             call_kwargs = mock_http_client.post.call_args[1]
@@ -256,9 +244,7 @@ class TestTelegramBotClientSendVoice:
         mock_http_client = MagicMock()
         mock_http_client.post = AsyncMock(return_value=mock_response)
 
-        with patch.object(
-            client, "_get_client", AsyncMock(return_value=mock_http_client)
-        ):
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http_client)):
             await client.send_voice(12345, b"audio", caption="Test caption")
 
             call_kwargs = mock_http_client.post.call_args[1]
@@ -279,9 +265,7 @@ class TestTelegramBotClientSendVoice:
         mock_http_client = MagicMock()
         mock_http_client.post = AsyncMock(return_value=mock_response)
 
-        with patch.object(
-            client, "_get_client", AsyncMock(return_value=mock_http_client)
-        ):
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http_client)):
             await client.send_voice(12345, b"audio", duration=10)
 
             call_kwargs = mock_http_client.post.call_args[1]
@@ -332,9 +316,7 @@ class TestTelegramSenderErrorHandling:
             mock_client.send_message.assert_called()
 
     @pytest.mark.asyncio
-    async def test_send_voice_send_error_returns_error_result(
-        self, mock_client, sender_settings
-    ):
+    async def test_send_voice_send_error_returns_error_result(self, mock_client, sender_settings):
         """Test that send error returns error result instead of raising."""
         sender = TelegramSender(mock_client, sender_settings)
         wav_bytes = _make_wav_bytes()

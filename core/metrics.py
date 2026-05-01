@@ -29,7 +29,6 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
-
 MetricTags = tuple[tuple[str, str], ...]
 
 
@@ -63,9 +62,7 @@ class MetricSummary:
 # END_CONTRACT: MetricsCollector
 class MetricsCollector(ABC):
     @abstractmethod
-    def increment(
-        self, name: str, value: int = 1, *, tags: dict[str, str] | None = None
-    ) -> None:
+    def increment(self, name: str, value: int = 1, *, tags: dict[str, str] | None = None) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -93,9 +90,7 @@ class MetricsCollector(ABC):
 #   LINKS: M-METRICS
 # END_CONTRACT: NoOpMetricsCollector
 class NoOpMetricsCollector(MetricsCollector):
-    def increment(
-        self, name: str, value: int = 1, *, tags: dict[str, str] | None = None
-    ) -> None:
+    def increment(self, name: str, value: int = 1, *, tags: dict[str, str] | None = None) -> None:
         return
 
     def set_gauge(
@@ -128,9 +123,7 @@ class InMemoryMetricsCollector(MetricsCollector):
             lambda: {"count": 0.0, "sum_ms": 0.0, "max_ms": 0.0, "last_ms": 0.0}
         )
 
-    def increment(
-        self, name: str, value: int = 1, *, tags: dict[str, str] | None = None
-    ) -> None:
+    def increment(self, name: str, value: int = 1, *, tags: dict[str, str] | None = None) -> None:
         key = (name, _normalize_tags(tags))
         with self._lock:
             self._counters[key] += value
@@ -206,12 +199,8 @@ class OperationalMetricsRegistry:
                 "miss": _split_counter_by_tag(counters, "models.cache.miss", "backend"),
             },
             "load": {
-                "failures": _split_counter_by_tag(
-                    counters, "models.load.failed", "backend"
-                ),
-                "duration_ms": _split_timing_by_tag(
-                    timings, "models.load.duration_ms", "backend"
-                ),
+                "failures": _split_counter_by_tag(counters, "models.load.failed", "backend"),
+                "duration_ms": _split_timing_by_tag(timings, "models.load.duration_ms", "backend"),
             },
         }
 
@@ -246,9 +235,7 @@ def _group_timing_series(
 ) -> dict[str, dict[str, Any]]:
     grouped: dict[str, dict[str, Any]] = {}
     for (name, tags), value in series.items():
-        grouped.setdefault(
-            name, {"count": 0, "sum_ms": 0.0, "max_ms": 0.0, "series": []}
-        )
+        grouped.setdefault(name, {"count": 0, "sum_ms": 0.0, "max_ms": 0.0, "series": []})
         grouped[name]["count"] += int(value["count"])
         grouped[name]["sum_ms"] += value["sum_ms"]
         grouped[name]["max_ms"] = max(grouped[name]["max_ms"], value["max_ms"])
@@ -258,18 +245,14 @@ def _group_timing_series(
                 "count": int(value["count"]),
                 "sum_ms": round(value["sum_ms"], 3),
                 "max_ms": round(value["max_ms"], 3),
-                "avg_ms": round(value["sum_ms"] / value["count"], 3)
-                if value["count"]
-                else 0.0,
+                "avg_ms": round(value["sum_ms"] / value["count"], 3) if value["count"] else 0.0,
                 "last_ms": round(value["last_ms"], 3),
             }
         )
     for item in grouped.values():
         item["sum_ms"] = round(item["sum_ms"], 3)
         item["max_ms"] = round(item["max_ms"], 3)
-        item["avg_ms"] = (
-            round(item["sum_ms"] / item["count"], 3) if item["count"] else 0.0
-        )
+        item["avg_ms"] = round(item["sum_ms"] / item["count"], 3) if item["count"] else 0.0
         item["series"].sort(key=lambda entry: sorted(entry["tags"].items()))
     return grouped
 

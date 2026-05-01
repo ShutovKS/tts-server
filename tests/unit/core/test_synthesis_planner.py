@@ -29,11 +29,11 @@ from pathlib import Path
 import pytest
 
 from core.config import (
-    CoreSettings,
     DEFAULT_MODELS_DIR,
     DEFAULT_OUTPUTS_DIR,
     DEFAULT_UPLOAD_STAGING_DIR,
     DEFAULT_VOICES_DIR,
+    CoreSettings,
 )
 from core.contracts.commands import (
     CustomVoiceCommand,
@@ -49,7 +49,6 @@ from core.contracts.synthesis import (
 from core.errors import ModelCapabilityError, RuntimeCapabilityNotConfiguredError
 from core.models.catalog import MODEL_SPECS
 from core.planning import SynthesisPlanner
-
 
 pytestmark = pytest.mark.unit
 
@@ -275,9 +274,7 @@ def test_synthesis_planner_surfaces_fast_backend_selection_reason_for_design():
         settings=_settings(default_design_model="Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit"),
     )  # type: ignore[arg-type]
 
-    plan = planner.plan_command(
-        VoiceDesignCommand(text="Hello", voice_description="Warm narrator")
-    )
+    plan = planner.plan_command(VoiceDesignCommand(text="Hello", voice_description="Warm narrator"))
 
     assert plan.backend_key == "qwen_fast"
     assert plan.backend_label == "Qwen Fast CUDA"

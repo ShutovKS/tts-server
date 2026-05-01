@@ -55,6 +55,7 @@ def register_models_routes(app: FastAPI, logger) -> None:
             )
             return ModelsResponse(data=models)
 
+
 __all__ = [
     "register_models_routes",
 ]

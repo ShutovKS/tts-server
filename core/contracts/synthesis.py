@@ -40,7 +40,6 @@ from core.contracts.commands import (
 )
 from core.models.manifest import ModelSpec
 
-
 SynthesisCapability = Literal[
     "preset_speaker_tts",
     "voice_description_tts",
@@ -114,7 +113,7 @@ class SynthesisRequest:
         object.__setattr__(self, "language", normalized_language)
 
     @classmethod
-    def from_command(cls, command: GenerationCommand) -> "SynthesisRequest":
+    def from_command(cls, command: GenerationCommand) -> SynthesisRequest:
         if isinstance(command, CustomVoiceCommand):
             return cls(
                 capability="preset_speaker_tts",

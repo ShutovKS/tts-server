@@ -49,14 +49,11 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.smoke
 
 
 SMOKE_FLAG = "TTS_RUN_SMOKE"
-SMOKE_BASE_URL = os.getenv("TTS_SMOKE_BASE_URL", "http://127.0.0.1:8001").rstrip(
-    "/"
-)
+SMOKE_BASE_URL = os.getenv("TTS_SMOKE_BASE_URL", "http://127.0.0.1:8001").rstrip("/")
 MODELS_DIR = Path(os.getenv("TTS_MODELS_DIR", ".models"))
 CUSTOM_MODEL_DIR = MODELS_DIR / "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
 OMNIVOICE_MODEL_DIR = MODELS_DIR / "OmniVoice"
@@ -125,17 +122,13 @@ SMOKE_TARGETS: dict[str, dict[str, str | Path | bool | dict[str, object]]] = {
 SUPPORTED_SMOKE_MODEL_IDS = set(SMOKE_TARGETS)
 ASYNC_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timeout"}
 ASYNC_POLL_ATTEMPTS = int(os.getenv("TTS_SMOKE_ASYNC_POLL_ATTEMPTS", "60"))
-ASYNC_POLL_INTERVAL_SECONDS = float(
-    os.getenv("TTS_SMOKE_ASYNC_POLL_INTERVAL_SECONDS", "1.0")
-)
+ASYNC_POLL_INTERVAL_SECONDS = float(os.getenv("TTS_SMOKE_ASYNC_POLL_INTERVAL_SECONDS", "1.0"))
 
 
 @pytest.fixture(scope="module", autouse=True)
 def require_smoke_prerequisites():
     if os.getenv(SMOKE_FLAG) != "1":
-        pytest.skip(
-            f"smoke suite is disabled; set {SMOKE_FLAG}=1 and run pytest tests/smoke"
-        )
+        pytest.skip(f"smoke suite is disabled; set {SMOKE_FLAG}=1 and run pytest tests/smoke")
     if not shutil.which("ffmpeg"):
         pytest.skip("ffmpeg is not available in PATH")
     smoke_target = resolve_smoke_target()
@@ -315,7 +308,8 @@ def build_runtime_failure_request(model_entry: dict[str, object]) -> tuple[str, 
 
 
 def resolve_runtime_failure_candidate(
-    *, active_model_id: str,
+    *,
+    active_model_id: str,
 ) -> dict[str, object] | None:
     models_response = request_json("GET", "/api/v1/models")
     assert models_response["status"] == 200
@@ -346,8 +340,7 @@ def resolve_runtime_failure_candidate(
         key=lambda item: (
             0 if item.get("missing_artifacts") else 1,
             0
-            if (item.get("route") or {}).get("selected_backend_compatible_with_model")
-            is False
+            if (item.get("route") or {}).get("selected_backend_compatible_with_model") is False
             else 1,
             str(item["id"]),
         )
@@ -383,9 +376,7 @@ def assert_machine_readable_error_response(
     )
 
 
-def skip_if_missing_runtime_feature(
-    exc: urllib.error.HTTPError, *, feature: str
-) -> None:
+def skip_if_missing_runtime_feature(exc: urllib.error.HTTPError, *, feature: str) -> None:
     if exc.code in {404, 405, 501}:  # pragma: no cover - environment-dependent gate
         pytest.skip(
             f"local runtime does not expose required {feature} endpoint at {SMOKE_BASE_URL}: HTTP {exc.code}"
@@ -440,17 +431,13 @@ def test_health_ready_smoke():
     assert response["json"]["status"] in {"ok", "degraded"}
     assert response["json"]["checks"]["ffmpeg"]["available"] is True
     assert response["json"]["checks"]["models"]["available_models"] >= 1
-    runtime_ready_models = response["json"]["checks"]["models"].get(
-        "runtime_ready_models"
-    )
+    runtime_ready_models = response["json"]["checks"]["models"].get("runtime_ready_models")
     if runtime_ready_models is not None:
         assert runtime_ready_models >= 1
     if EXPECTED_BACKEND and smoke_target["supports_async_custom_jobs"] is True:
         models_check = response["json"]["checks"]["models"]
         selected_backend = models_check.get("selected_backend")
-        mixed_backend_routing = models_check.get("routing", {}).get(
-            "mixed_backend_routing"
-        )
+        mixed_backend_routing = models_check.get("routing", {}).get("mixed_backend_routing")
         assert selected_backend == EXPECTED_BACKEND or mixed_backend_routing is True
 
     runtime_checks = response["json"]["checks"]["runtime"]
@@ -486,9 +473,7 @@ def test_custom_tts_endpoint_smoke():
 def test_async_custom_job_flow_smoke():
     smoke_target = resolve_smoke_target()
     if smoke_target["supports_async_custom_jobs"] is not True:
-        pytest.skip(
-            "async custom smoke flow is only applicable to custom-family smoke targets"
-        )
+        pytest.skip("async custom smoke flow is only applicable to custom-family smoke targets")
 
     model_entry = assert_target_runtime_ready(smoke_target)
 
@@ -525,9 +510,7 @@ def test_async_custom_job_flow_smoke():
     assert terminal_status["status"] == "succeeded", (
         f"Expected async smoke job to succeed, got {terminal_status}"
     )
-    assert terminal_status["backend"], (
-        "Expected terminal async smoke snapshot to report backend"
-    )
+    assert terminal_status["backend"], "Expected terminal async smoke snapshot to report backend"
     assert terminal_status["response_format"] == "wav"
     assert terminal_status["save_output"] is False
     if EXPECTED_BACKEND:
@@ -539,9 +522,7 @@ def test_async_custom_job_flow_smoke():
     except urllib.error.HTTPError as exc:
         skip_if_missing_runtime_feature(exc, feature="async job result")
 
-    assert_audio_response(
-        result_response, expected_model=str(smoke_target["model_id"])
-    )
+    assert_audio_response(result_response, expected_model=str(smoke_target["model_id"]))
     assert result_response["headers"].get("x-job-id") == job_id
     assert result_response["headers"].get("x-tts-mode") == "custom"
 
@@ -609,9 +590,8 @@ def test_sync_runtime_failure_smoke():
         allow_model_load_failure=not bool(failure_candidate.get("missing_artifacts")),
     )
     route = failure_candidate.get("route") or {}
-    if (
-        route.get("selected_backend_compatible_with_model") is False
-        and route.get("execution_backend")
+    if route.get("selected_backend_compatible_with_model") is False and route.get(
+        "execution_backend"
     ):
         assert route.get("execution_backend")
         assert route.get("selected_backend") != route.get("execution_backend")
@@ -637,9 +617,7 @@ def test_model_discovery_smoke_exposes_runtime_metadata_for_target():
 
     assert response["status"] == 200
     live_entry = next(
-        item
-        for item in response["json"]["data"]
-        if item["id"] == str(smoke_target["model_id"])
+        item for item in response["json"]["data"] if item["id"] == str(smoke_target["model_id"])
     )
 
     assert live_entry["available"] is True

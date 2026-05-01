@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # FILE: scripts/validate_runtime.py
-#JH|# VERSION: 1.10.1
+# JH|# VERSION: 1.10.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide operator- and CI-facing validation commands for host-specific backend checks, automated local smoke orchestration, Docker parity probes, optional Telegram live connectivity, and explicit advisory artifact review.
 #   SCOPE: CLI subcommands, runtime validation environment helpers, HTTP smoke start/stop orchestration, qwen_fast host-matrix assertions, optional representative real-model validation, server and Telegram Docker parity validation, Telegram Bot API reachability checks, explicit Telegram remote-server boundary summaries, opt-in inbound Telegram update validation, and optional artifact-review of persisted validation evidence
@@ -53,11 +53,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
 import os
-from pathlib import Path
 import shutil
 import socket
 import subprocess
@@ -66,8 +64,10 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Mapping, NoReturn
-
+from collections.abc import Mapping
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from typing import Any, NoReturn
 
 # START_BLOCK_BOOTSTRAP_IMPORT_PATH
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -77,7 +77,6 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from scripts.runtime_self_check import build_self_check_payload  # noqa: E402
 from telegram_bot.client import RetryConfig, TelegramBotClient  # noqa: E402
-
 
 DEFAULT_SERVER_HOST = "127.0.0.1"
 DEFAULT_SERVER_PORT = 0
@@ -171,9 +170,7 @@ def _build_result_summary(
         "outcome": outcome,
         "reason": reason,
         "artifacts": {
-            key: value
-            for key, value in dict(artifacts or {}).items()
-            if value is not None
+            key: value for key, value in dict(artifacts or {}).items() if value is not None
         },
         "advisories": list(advisories or []),
     }
@@ -251,7 +248,11 @@ def _collect_reviewable_artifacts(
             if artifact.is_file() and artifact.suffix.lower() in reviewable_suffixes:
                 collected.append(artifact)
     for artifact in _normalize_artifact_paths(explicit_paths):
-        if artifact.is_file() and artifact.suffix.lower() in reviewable_suffixes and artifact not in collected:
+        if (
+            artifact.is_file()
+            and artifact.suffix.lower() in reviewable_suffixes
+            and artifact not in collected
+        ):
             collected.append(artifact)
     return collected
 
@@ -327,9 +328,9 @@ def _merge_error_context(
     merged_details = dict(error.details)
     merged_details.update(dict(details or {}))
     merged_artifacts = dict(error.artifacts)
-    merged_artifacts.update({
-        key: value for key, value in dict(artifacts or {}).items() if value is not None
-    })
+    merged_artifacts.update(
+        {key: value for key, value in dict(artifacts or {}).items() if value is not None}
+    )
     return ValidationCommandError(
         message or str(error),
         command=error.command,
@@ -507,9 +508,7 @@ def _wait_for_server_docker_probes(
 
         return {"live": live, "ready": ready, "models": models}
 
-    raise RuntimeError(
-        f"Timed out waiting for Docker server probes to succeed: {last_error}"
-    )
+    raise RuntimeError(f"Timed out waiting for Docker server probes to succeed: {last_error}")
 
 
 def _wait_for_telegram_docker_startup(
@@ -806,19 +805,13 @@ def build_validation_env(
         normalized_entries = {entry.lower() for entry in path_entries}
         if str(sox_dir).lower() not in normalized_entries:
             env["PATH"] = os.pathsep.join([str(sox_dir), *path_entries])
-    env.setdefault(
-        "TTS_MODELS_DIR", (PROJECT_ROOT / ".models").resolve().as_posix()
-    )
+    env.setdefault("TTS_MODELS_DIR", (PROJECT_ROOT / ".models").resolve().as_posix())
     env.setdefault(
         "TTS_MLX_MODELS_DIR",
         (PROJECT_ROOT / ".models" / "mlx").resolve().as_posix(),
     )
-    env.setdefault(
-        "TTS_OUTPUTS_DIR", (PROJECT_ROOT / ".outputs").resolve().as_posix()
-    )
-    env.setdefault(
-        "TTS_VOICES_DIR", (PROJECT_ROOT / ".voices").resolve().as_posix()
-    )
+    env.setdefault("TTS_OUTPUTS_DIR", (PROJECT_ROOT / ".outputs").resolve().as_posix())
+    env.setdefault("TTS_VOICES_DIR", (PROJECT_ROOT / ".voices").resolve().as_posix())
     env.setdefault(
         "TTS_UPLOAD_STAGING_DIR",
         (PROJECT_ROOT / ".uploads").resolve().as_posix(),
@@ -940,9 +933,7 @@ def _find_matching_update(
         if expected_chat_id is not None and chat_id != expected_chat_id:
             continue
         message_text = message.get("text") or message.get("caption") or ""
-        if normalized_expected_text and normalized_expected_text not in str(
-            message_text
-        ):
+        if normalized_expected_text and normalized_expected_text not in str(message_text):
             continue
         return update
     return None
@@ -967,9 +958,7 @@ def _wait_for_server(base_url: str, *, timeout_seconds: float) -> dict[str, Any]
             return {"live": live["json"], "ready": ready["json"]}
         last_error = f"live_status={live['status']}, ready_status={ready['status']}"
         time.sleep(1.0)
-    raise RuntimeError(
-        f"Timed out waiting for server health at {base_url}: {last_error}"
-    )
+    raise RuntimeError(f"Timed out waiting for server health at {base_url}: {last_error}")
 
 
 def _raise_validation_error(
@@ -1078,9 +1067,7 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
     _require("onnx" in baseline_backends, "onnx backend is missing")
 
     baseline_qwen_fast = baseline_backends["qwen_fast"]
-    qwen_fast_enabled = bool(
-        baseline["settings"].get("qwen_fast_enabled", True)
-    )
+    qwen_fast_enabled = bool(baseline["settings"].get("qwen_fast_enabled", True))
     if host["platform_system"] == "darwin":
         _require(
             baseline_qwen_fast["diagnostics"]["reason"] == "platform_unsupported",
@@ -1164,8 +1151,7 @@ def run_host_matrix_validation(environ: Mapping[str, str]) -> dict[str, Any]:
     dependency_missing_qwen_fast = dependency_missing_backends["qwen_fast"]
     if qwen_fast_enabled:
         _require(
-            dependency_missing_qwen_fast["diagnostics"]["reason"]
-            == "runtime_dependency_missing",
+            dependency_missing_qwen_fast["diagnostics"]["reason"] == "runtime_dependency_missing",
             "Expected qwen_fast dependency_missing simulation to report runtime_dependency_missing",
         )
     else:
@@ -1257,9 +1243,7 @@ def run_smoke_server_validation(
     payload, self_check_diagnostics = _build_self_check_payload_with_diagnostics(env)
     host = payload["readiness"]["host"]
     smoke_model = _model_entry(payload, smoke_model_id)
-    smoke_model_dir = (
-        Path(env["TTS_MODELS_DIR"]) / resolve_smoke_model_folder(smoke_model)
-    )
+    smoke_model_dir = Path(env["TTS_MODELS_DIR"]) / resolve_smoke_model_folder(smoke_model)
     if not smoke_model_dir.exists():
         _raise_validation_error(
             command,
@@ -1370,9 +1354,7 @@ def run_smoke_server_validation(
             stderr=subprocess.STDOUT,
             text=True,
         )
-        health = _wait_for_server(
-            base_url, timeout_seconds=args.startup_timeout_seconds
-        )
+        health = _wait_for_server(base_url, timeout_seconds=args.startup_timeout_seconds)
 
         smoke_env = dict(env)
         smoke_env["TTS_RUN_SMOKE"] = "1"
@@ -1406,7 +1388,9 @@ def run_smoke_server_validation(
     except Exception as exc:
         reason = "server_startup_timeout"
         stage = "server_startup"
-        if isinstance(exc, RuntimeError) and str(exc).startswith("Timed out waiting for server health"):
+        if isinstance(exc, RuntimeError) and str(exc).startswith(
+            "Timed out waiting for server health"
+        ):
             reason = "server_startup_timeout"
         else:
             reason = "smoke_server_runtime_error"
@@ -1480,7 +1464,10 @@ def run_representative_model_validation(
                 status=status,
                 outcome=outcome,
                 reason=target_reason,
-                message=str(target_entry.get("message") or "Representative target did not satisfy validation preflight."),
+                message=str(
+                    target_entry.get("message")
+                    or "Representative target did not satisfy validation preflight."
+                ),
                 stage="preflight",
                 representative_target=target,
                 smoke_model_id=model_id,
@@ -1660,9 +1647,15 @@ def run_server_docker_validation(
             timeout_seconds=args.startup_timeout_seconds,
             environ=env,
         )
-        live_artifact.write_text(json.dumps(probes["live"], indent=2, sort_keys=True), encoding="utf-8")
-        ready_artifact.write_text(json.dumps(probes["ready"], indent=2, sort_keys=True), encoding="utf-8")
-        models_artifact.write_text(json.dumps(probes["models"], indent=2, sort_keys=True), encoding="utf-8")
+        live_artifact.write_text(
+            json.dumps(probes["live"], indent=2, sort_keys=True), encoding="utf-8"
+        )
+        ready_artifact.write_text(
+            json.dumps(probes["ready"], indent=2, sort_keys=True), encoding="utf-8"
+        )
+        models_artifact.write_text(
+            json.dumps(probes["models"], indent=2, sort_keys=True), encoding="utf-8"
+        )
     except ValidationCommandError as exc:
         main_error = exc
     except Exception as exc:
@@ -1801,7 +1794,9 @@ async def run_telegram_live_validation(
     )
     remote_server_boundary = {
         "topology": "telegram_remote_client",
-        "server_base_url": str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip().rstrip("/"),
+        "server_base_url": str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "")
+        .strip()
+        .rstrip("/"),
         "server_base_url_configured": bool(
             str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip()
         ),
@@ -1810,9 +1805,7 @@ async def run_telegram_live_validation(
         "server_side_execution_checked": False,
         "boundary_status": "remote_server_configuration_not_provided",
     }
-    server_base_url = (
-        str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip().rstrip("/")
-    )
+    server_base_url = str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip().rstrip("/")
     if not server_base_url:
         _raise_validation_error(
             command,
@@ -1849,13 +1842,13 @@ async def run_telegram_live_validation(
         summary["remote_server_boundary"]["telegram_bot_api_checked"] = True
         summary["remote_server_boundary"]["telegram_client_runtime_checked"] = True
         if summary["remote_server_boundary"]["server_base_url_configured"]:
-            summary["remote_server_boundary"][
-                "boundary_status"
-            ] = "configured_remote_server_declared"
+            summary["remote_server_boundary"]["boundary_status"] = (
+                "configured_remote_server_declared"
+            )
         else:
-            summary["remote_server_boundary"][
-                "boundary_status"
-            ] = "remote_server_configuration_not_provided"
+            summary["remote_server_boundary"]["boundary_status"] = (
+                "remote_server_configuration_not_provided"
+            )
             summary["advisories"].append(
                 {
                     "kind": "telegram_remote_server_boundary",
@@ -1875,9 +1868,7 @@ async def run_telegram_live_validation(
             summary["message_sent"] = True
             summary["message_id"] = message.get("message_id")
 
-        expected_update_text = (
-            args.expect_update_text.strip() if args.expect_update_text else None
-        )
+        expected_update_text = args.expect_update_text.strip() if args.expect_update_text else None
         update_requested = (
             args.expect_update_chat_id is not None or expected_update_text is not None
         )
@@ -2037,9 +2028,7 @@ async def run_telegram_docker_validation(
             },
             artifacts=retained_artifacts,
         )
-    server_base_url = (
-        str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip().rstrip("/")
-    )
+    server_base_url = str(environ.get("TTS_TELEGRAM_SERVER_BASE_URL") or "").strip().rstrip("/")
     if not server_base_url:
         _raise_validation_error(
             command,
@@ -2266,9 +2255,7 @@ async def run_telegram_docker_validation(
             "server_side_execution_checked": False,
             "server_side_execution_reason": "docker_telegram_validates_remote_client_startup_and_host_bot_api_only",
             "boundary_status": "configured_remote_server_startup_validated",
-            "companion_server_evidence_required": list(
-                TELEGRAM_REMOTE_SERVER_COMPANION_EVIDENCE
-            ),
+            "companion_server_evidence_required": list(TELEGRAM_REMOTE_SERVER_COMPANION_EVIDENCE),
         },
         startup_proof=startup_proof,
         telegram_live=api_summary,
@@ -2314,7 +2301,10 @@ def run_artifact_review_validation(
             reviewed_artifacts=[],
             reviews=[],
             authoritative_signals=[],
-            explicit_paths=[Path(path).expanduser().as_posix() for path in getattr(args, "artifact_path", []) or []],
+            explicit_paths=[
+                Path(path).expanduser().as_posix()
+                for path in getattr(args, "artifact_path", []) or []
+            ],
             contains_authoritative_failure=False,
         )
 
@@ -2345,7 +2335,9 @@ def run_artifact_review_validation(
             }
         ],
         authoritative_signals=sorted(set(authoritative_signals)),
-        explicit_paths=[Path(path).expanduser().as_posix() for path in getattr(args, "artifact_path", []) or []],
+        explicit_paths=[
+            Path(path).expanduser().as_posix() for path in getattr(args, "artifact_path", []) or []
+        ],
     )
 
     advisory_summary["contains_authoritative_failure"] = any(

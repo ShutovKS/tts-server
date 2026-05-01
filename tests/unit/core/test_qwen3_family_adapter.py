@@ -36,7 +36,6 @@ from core.contracts.synthesis import ExecutionPlan, SynthesisRequest
 from core.model_families import PiperFamilyAdapter, Qwen3FamilyAdapter
 from core.models.catalog import EMOTION_EXAMPLES, MODEL_SPECS, SPEAKER_MAP
 
-
 pytestmark = pytest.mark.unit
 
 

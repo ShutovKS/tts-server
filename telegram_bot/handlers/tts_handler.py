@@ -37,24 +37,22 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from core.application import TTSApplicationService
 from core.contracts.commands import (
     CustomVoiceCommand,
-    VoiceDesignCommand,
     VoiceCloneCommand,
+    VoiceDesignCommand,
 )
 from core.contracts.results import GenerationResult
 from core.errors import CoreError
-from core.observability import Timer, get_logger, log_event
-
+from core.observability import Timer, get_logger
 from telegram_bot.observability import (
     METRICS,
     TelegramCorrelationContext,
     log_telegram_event,
 )
-
 
 LOGGER = get_logger(__name__)
 
@@ -74,8 +72,8 @@ class TTSSynthesisResult:
     """Result of TTS synthesis operation."""
 
     success: bool
-    audio_bytes: Optional[bytes] = None
-    error_message: Optional[str] = None
+    audio_bytes: bytes | None = None
+    error_message: str | None = None
     duration_ms: float = 0.0
     speaker: str = "unknown"
     language: str = "auto"
@@ -93,8 +91,8 @@ class VoiceDesignSynthesisResult:
     """Result of Voice Design synthesis operation."""
 
     success: bool
-    audio_bytes: Optional[bytes] = None
-    error_message: Optional[str] = None
+    audio_bytes: bytes | None = None
+    error_message: str | None = None
     duration_ms: float = 0.0
     voice_description: str = ""
     language: str = "auto"
@@ -112,8 +110,8 @@ class VoiceCloneSynthesisResult:
     """Result of Voice Clone synthesis operation."""
 
     success: bool
-    audio_bytes: Optional[bytes] = None
-    error_message: Optional[str] = None
+    audio_bytes: bytes | None = None
+    error_message: str | None = None
     duration_ms: float = 0.0
     ref_text: str | None = None
     language: str = "auto"
@@ -168,7 +166,7 @@ class TTSSynthesizer:
         speaker: str | None = None,
         speed: float | None = None,
         language: str = "auto",
-        correlation: Optional[TelegramCorrelationContext] = None,
+        correlation: TelegramCorrelationContext | None = None,
     ) -> TTSSynthesisResult:
         """
         Synthesize speech from text using core application service.
@@ -349,7 +347,7 @@ class TTSSynthesizer:
         voice_description: str,
         text: str,
         language: str = "auto",
-        correlation: Optional[TelegramCorrelationContext] = None,
+        correlation: TelegramCorrelationContext | None = None,
     ) -> VoiceDesignSynthesisResult:
         """
         Synthesize speech from text using a custom voice design.
@@ -517,7 +515,7 @@ class TTSSynthesizer:
         ref_audio_path: str,
         ref_text: str | None = None,
         language: str = "auto",
-        correlation: Optional[TelegramCorrelationContext] = None,
+        correlation: TelegramCorrelationContext | None = None,
     ) -> VoiceCloneSynthesisResult:
         """
         Synthesize speech from text using voice cloning.

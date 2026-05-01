@@ -27,7 +27,6 @@ import pytest
 from profiles import FamilyProfile, HostProfile, ModuleProfile, ResolvedLaunchProfile
 from scripts import runtime_self_check
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -122,12 +121,16 @@ def test_runtime_self_check_exposes_dedicated_family_env_guidance(
                 reasons=(),
                 selected_backend=family_profile.allowed_backends[0],
                 required_env_name=family_profile.isolated_env_name,
-                expected_python_path=str(tmp_path / ".envs" / family_profile.isolated_env_name / "python"),
+                expected_python_path=str(
+                    tmp_path / ".envs" / family_profile.isolated_env_name / "python"
+                ),
                 backend_candidates=family_profile.allowed_backends,
                 metadata={"pack_refs": {"family": [family_profile.key]}},
             )
 
-    monkeypatch.setattr(runtime_self_check, "parse_core_settings_from_env", lambda environ=None: settings_payload)
+    monkeypatch.setattr(
+        runtime_self_check, "parse_core_settings_from_env", lambda environ=None: settings_payload
+    )
     monkeypatch.setattr(
         runtime_self_check,
         "build_runtime",

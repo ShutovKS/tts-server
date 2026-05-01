@@ -34,30 +34,29 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Protocol
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Protocol
 
 from core.observability import get_logger
 from telegram_bot.handlers.commands import (
+    MAX_TEXT_LENGTH as MAX_CLONE_TEXT_LENGTH,
     CommandType,
     ParsedCommand,
     get_valid_speakers,
     is_private_chat,
+    parse_clone_args,
     parse_command,
     parse_design_args,
     parse_tts_args,
+    validate_clone_command,
     validate_design_command,
     validate_tts_command,
-    parse_clone_args,
-    validate_clone_command,
-    MAX_TEXT_LENGTH as MAX_CLONE_TEXT_LENGTH,
 )
-from telegram_bot.handlers.tts_handler import TTSSynthesizer
 from telegram_bot.media import DownloadError, MediaValidationError, stage_clone_media
 from telegram_bot.observability import (
     METRICS,
     log_telegram_event,
 )
-
 
 if TYPE_CHECKING:
     from telegram_bot.config import TelegramSettings
@@ -96,9 +95,7 @@ class MessageSender(Protocol):
     #   SIDE_EFFECTS: Sends a Telegram voice message in concrete implementations.
     #   LINKS: M-TELEGRAM
     # END_CONTRACT: send_voice
-    async def send_voice(
-        self, chat_id: int, audio_bytes: bytes, caption: str | None = None
-    ) -> Any:
+    async def send_voice(self, chat_id: int, audio_bytes: bytes, caption: str | None = None) -> Any:
         """Send voice message to chat."""
         ...
 
@@ -213,8 +210,8 @@ class CommandDispatcher:
         logger: logging.Logger | None = None,
         job_orchestrator=None,
         delivery_store=None,
-        client: "TelegramClient | None" = None,
-        rate_limiter: "TelegramRateLimiter | None" = None,
+        client: TelegramClient | None = None,
+        rate_limiter: TelegramRateLimiter | None = None,
     ):
         """
         Initialize command dispatcher.
@@ -356,9 +353,7 @@ class CommandDispatcher:
         if self._rate_limiter is not None and self._rate_limiter.is_enabled:
             decision = self._rate_limiter.check_and_consume(user_id)
             if not decision.allowed:
-                retry_after_seconds = max(
-                    1, math.ceil(decision.retry_after_seconds or 0.0)
-                )
+                retry_after_seconds = max(1, math.ceil(decision.retry_after_seconds or 0.0))
                 log_telegram_event(
                     self._logger,
                     level=logging.WARNING,
@@ -462,9 +457,7 @@ class CommandDispatcher:
 
         # START_BLOCK_VALIDATE_TTS_COMMAND
         # Validate command syntax first
-        validation = validate_tts_command(
-            parsed, self._settings.telegram_max_text_length
-        )
+        validation = validate_tts_command(parsed, self._settings.telegram_max_text_length)
         if not validation.is_valid:
             log_telegram_event(
                 self._logger,
@@ -648,9 +641,7 @@ class CommandDispatcher:
             # Send error message to user
             await self._sender.send_text(
                 chat_id,
-                self.ERROR_TEMPLATE.format(
-                    error=f"Failed to submit job: {result.error_message}"
-                ),
+                self.ERROR_TEMPLATE.format(error=f"Failed to submit job: {result.error_message}"),
             )
 
     async def _handle_design(self, parsed: ParsedCommand) -> None:
@@ -991,9 +982,7 @@ class CommandDispatcher:
 
         telegram_client = self._client or getattr(self._sender, "_client", None)
         if telegram_client is None:
-            self._metrics.command_rejected(
-                command_name, "clone_media_client_unavailable"
-            )
+            self._metrics.command_rejected(command_name, "clone_media_client_unavailable")
             await self._sender.send_text(
                 parsed.chat_id,
                 self.ERROR_TEMPLATE.format(
@@ -1006,9 +995,7 @@ class CommandDispatcher:
         # START_BLOCK_SUBMIT_TTS_JOB
         command_message_id = parsed.message_id
         reply_message_id = reply_message.get("message_id") or parsed.message_id
-        media_kinds = [
-            kind for kind in ("voice", "audio", "document") if reply_message.get(kind)
-        ]
+        media_kinds = [kind for kind in ("voice", "audio", "document") if reply_message.get(kind)]
         media_kind = media_kinds[0] if media_kinds else "unknown"
 
         log_telegram_event(
@@ -1067,9 +1054,7 @@ class CommandDispatcher:
             )
             return
         except DownloadError as exc:
-            self._metrics.command_rejected(
-                command_name, "reference_media_download_failed"
-            )
+            self._metrics.command_rejected(command_name, "reference_media_download_failed")
             log_telegram_event(
                 self._logger,
                 level=logging.ERROR,
@@ -1287,6 +1272,7 @@ class CommandDispatcher:
     def _metrics(self):
         """Access metrics singleton."""
         return METRICS
+
 
 __all__ = [
     "LOGGER",

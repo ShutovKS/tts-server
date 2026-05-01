@@ -49,18 +49,17 @@ Environment variables:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Mapping
 
 from core.config import (
     CoreSettings,
-    parse_core_settings_from_env,
-    env_text,
-    env_int,
-    env_bool,
     _parse_csv_env,
+    env_bool,
+    env_int,
+    env_text,
+    parse_core_settings_from_env,
 )
-
 
 # Default values for Telegram-specific settings
 DEFAULT_TELEGRAM_LOG_LEVEL = "info"
@@ -91,9 +90,7 @@ class TelegramSecurityPolicy:
 
     # Rate limiting
     rate_limit_enabled: bool = DEFAULT_TELEGRAM_RATE_LIMIT_ENABLED
-    rate_limit_per_user_per_minute: int = (
-        DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE
-    )
+    rate_limit_per_user_per_minute: int = DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE
 
     # Dev mode - relaxes certain security checks for development
     dev_mode: bool = DEFAULT_TELEGRAM_DEV_MODE
@@ -168,9 +165,7 @@ class TelegramSettings(CoreSettings):
     # Security policy settings
     telegram_dev_mode: bool = DEFAULT_TELEGRAM_DEV_MODE
     telegram_rate_limit_enabled: bool = DEFAULT_TELEGRAM_RATE_LIMIT_ENABLED
-    telegram_rate_limit_per_user_per_minute: int = (
-        DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE
-    )
+    telegram_rate_limit_per_user_per_minute: int = DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE
     telegram_admin_user_ids: tuple[str, ...] = field(default_factory=tuple)
 
     # Operational settings
@@ -205,7 +200,7 @@ class TelegramSettings(CoreSettings):
     #   LINKS: M-TELEGRAM
     # END_CONTRACT: from_env
     @classmethod
-    def from_env(cls, environ: Mapping[str, str] | None = None) -> "TelegramSettings":
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> TelegramSettings:
         """Parse Telegram settings from environment variables.
 
         Uses parse_core_settings_from_env() to ensure consistency with core settings
@@ -220,9 +215,7 @@ class TelegramSettings(CoreSettings):
             **core_settings,  # type: ignore[arg-type]
             # Telegram-specific settings
             telegram_bot_token=bot_token,
-            telegram_allowed_user_ids=_parse_csv_env(
-                "TTS_TELEGRAM_ALLOWED_USER_IDS", environ
-            ),
+            telegram_allowed_user_ids=_parse_csv_env("TTS_TELEGRAM_ALLOWED_USER_IDS", environ),
             telegram_log_level=env_text(
                 "TTS_TELEGRAM_LOG_LEVEL", DEFAULT_TELEGRAM_LOG_LEVEL, environ
             ),
@@ -237,9 +230,7 @@ class TelegramSettings(CoreSettings):
                 environ,
             ),
             # Security policy settings
-            telegram_dev_mode=env_bool(
-                "TTS_TELEGRAM_DEV_MODE", DEFAULT_TELEGRAM_DEV_MODE, environ
-            ),
+            telegram_dev_mode=env_bool("TTS_TELEGRAM_DEV_MODE", DEFAULT_TELEGRAM_DEV_MODE, environ),
             telegram_rate_limit_enabled=env_bool(
                 "TTS_TELEGRAM_RATE_LIMIT_ENABLED",
                 DEFAULT_TELEGRAM_RATE_LIMIT_ENABLED,
@@ -250,13 +241,9 @@ class TelegramSettings(CoreSettings):
                 DEFAULT_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE,
                 environ,
             ),
-            telegram_admin_user_ids=_parse_csv_env(
-                "TTS_TELEGRAM_ADMIN_USER_IDS", environ
-            ),
+            telegram_admin_user_ids=_parse_csv_env("TTS_TELEGRAM_ADMIN_USER_IDS", environ),
             # Operational settings
-            telegram_delivery_store_path=env_text(
-                "TTS_TELEGRAM_DELIVERY_STORE_PATH", "", environ
-            ),
+            telegram_delivery_store_path=env_text("TTS_TELEGRAM_DELIVERY_STORE_PATH", "", environ),
             telegram_poll_interval_seconds=float(
                 env_text(
                     "TTS_TELEGRAM_POLL_INTERVAL_SECONDS",
@@ -328,9 +315,7 @@ class TelegramSettings(CoreSettings):
         if not self.telegram_bot_token or not self.telegram_bot_token.strip():
             errors.append("TTS_TELEGRAM_BOT_TOKEN is required")
         elif len(self.telegram_bot_token) < 20 and not self.telegram_dev_mode:
-            errors.append(
-                "TTS_TELEGRAM_BOT_TOKEN appears to be invalid (too short)"
-            )
+            errors.append("TTS_TELEGRAM_BOT_TOKEN appears to be invalid (too short)")
 
         # Text length validation
         if self.telegram_max_text_length <= 0:
@@ -340,9 +325,7 @@ class TelegramSettings(CoreSettings):
 
         # Rate limit validation
         if self.telegram_rate_limit_per_user_per_minute <= 0:
-            errors.append(
-                "TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE must be positive"
-            )
+            errors.append("TTS_TELEGRAM_RATE_LIMIT_PER_USER_PER_MINUTE must be positive")
 
         # Poll interval validation
         if self.telegram_poll_interval_seconds <= 0:
@@ -360,6 +343,7 @@ class TelegramSettings(CoreSettings):
         # In production, users should set proper allowlist or admin users
 
         return errors
+
 
 __all__ = [
     "DEFAULT_TELEGRAM_LOG_LEVEL",

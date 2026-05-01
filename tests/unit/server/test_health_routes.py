@@ -30,7 +30,6 @@ from server.api.routes_health import build_readiness_report
 from server.bootstrap import ServerSettings
 from tests.support.api_fakes import DegradedRegistry, DummyRegistry
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -107,16 +106,13 @@ def test_build_readiness_report_returns_deep_diagnostics(
     assert report.checks["models"]["routing"]["mixed_backend_routing"] is True
     assert report.checks["models"]["host"]["platform_system"] == "darwin"
     assert any(
-        item["key"] == "qwen_fast"
-        and item["diagnostics"]["reason"] == "platform_unsupported"
+        item["key"] == "qwen_fast" and item["diagnostics"]["reason"] == "platform_unsupported"
         for item in report.checks["models"]["available_backends"]
     )
     assert report.checks["ffmpeg"]["available"] is True
     assert report.checks["config"]["models_dir_exists"] is True
     assert report.checks["config"]["model_preload_policy"] == "listed"
-    assert report.checks["config"]["model_preload_ids"] == [
-        "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
-    ]
+    assert report.checks["config"]["model_preload_ids"] == ["Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"]
     assert report.checks["runtime"]["configured_backend"] is None
     assert report.checks["runtime"]["backend_autoselect"] is True
     assert report.checks["runtime"]["runtime_capability_map"] == {
@@ -126,16 +122,17 @@ def test_build_readiness_report_returns_deep_diagnostics(
         "clone_model": None,
     }
     assert report.checks["capabilities"]["capability_status"]["clone"]["bound"] is False
-    assert report.checks["capabilities"]["capability_status"]["clone"]["reason"] == "runtime_binding_missing"
+    assert (
+        report.checks["capabilities"]["capability_status"]["clone"]["reason"]
+        == "runtime_binding_missing"
+    )
     assert any(
         candidate["key"] == "qwen_fast"
         for item in report.checks["models"]["items"]
         for candidate in item.get("route", {}).get("candidates", [])
     )
     assert report.checks["runtime"]["metrics"]["execution"]["submitted"] == 1
-    assert (
-        report.checks["models"]["metrics"]["operational"]["execution"]["completed"] == 1
-    )
+    assert report.checks["models"]["metrics"]["operational"]["execution"]["completed"] == 1
 
 
 def test_build_readiness_report_returns_degraded_status_when_runtime_not_ready(
@@ -147,9 +144,7 @@ def test_build_readiness_report_returns_degraded_status_when_runtime_not_ready(
         voices_dir=tmp_path / ".voices",
     )
     settings.ensure_directories()
-    monkeypatch.setattr(
-        "server.api.routes_health.check_ffmpeg_available", lambda: False
-    )
+    monkeypatch.setattr("server.api.routes_health.check_ffmpeg_available", lambda: False)
 
     report = build_readiness_report(_make_request(settings, DegradedRegistry(settings)))
 

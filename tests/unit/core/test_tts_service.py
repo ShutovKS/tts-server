@@ -35,7 +35,6 @@ from core.models.catalog import MODEL_SPECS
 from core.services.tts_service import TTSService
 from tests.support.api_fakes import extract_json_logs, make_wav_bytes
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -135,9 +134,7 @@ def test_synthesize_clone_passes_ref_audio_as_string(
     assert captured_kwargs["language"] == "auto"
 
 
-def test_synthesize_clone_passes_explicit_language(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_synthesize_clone_passes_explicit_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     settings = _make_core_settings(tmp_path)
     ref_audio_path = tmp_path / "reference.wav"
     ref_audio_path.write_bytes(make_wav_bytes())
@@ -216,9 +213,7 @@ def test_tts_service_emits_structured_logs(
     )
 
     assert result.mode == "clone"
-    started_logs = extract_json_logs(
-        caplog, "[TTSService][synthesize_clone][SYNTHESIZE_CLONE]"
-    )
+    started_logs = extract_json_logs(caplog, "[TTSService][synthesize_clone][SYNTHESIZE_CLONE]")
     completed_logs = extract_json_logs(
         caplog, "[TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]"
     )
@@ -230,9 +225,7 @@ def test_tts_service_emits_structured_logs(
         for item in started_logs
     )
     assert any(
-        item["mode"] == "clone"
-        and item["model"] == result.model
-        and item["language"] == "auto"
+        item["mode"] == "clone" and item["model"] == result.model and item["language"] == "auto"
         for item in completed_logs
     )
 

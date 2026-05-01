@@ -58,9 +58,7 @@ class ArtifactRegistry:
             spec = self.catalog.get_spec(folder_name)
         except KeyError:
             return self.backend_registry.selected_backend.resolve_model_path(folder_name)
-        return self.backend_registry.resolve_backend_for_spec(spec).resolve_model_path(
-            spec.folder
-        )
+        return self.backend_registry.resolve_backend_for_spec(spec).resolve_model_path(spec.folder)
 
 
 __all__ = ["ArtifactRegistry"]

@@ -19,7 +19,6 @@
 
 from launcher.main import main
 
-
 # START_BLOCK_MODULE_EXECUTION_GUARD
 if __name__ == "__main__":
     raise SystemExit(main())

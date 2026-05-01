@@ -31,7 +31,6 @@ from core.contracts.synthesis import (
 from core.errors import ModelCapabilityError, RuntimeCapabilityNotConfiguredError
 from core.observability import get_logger, log_event, operation_scope
 
-
 LOGGER = get_logger(__name__)
 
 
@@ -42,8 +41,9 @@ class SynthesisPlanner:
 
     def plan(self, request: SynthesisRequest) -> ExecutionPlan:
         with operation_scope("core.synthesis_planner.plan"):
-            resolved_model_name = request.requested_model or self.settings.resolve_runtime_model_binding(
-                request.execution_mode
+            resolved_model_name = (
+                request.requested_model
+                or self.settings.resolve_runtime_model_binding(request.execution_mode)
             )
             if resolved_model_name is None:
                 raise RuntimeCapabilityNotConfiguredError(
@@ -81,7 +81,9 @@ class SynthesisPlanner:
                 message="Synthesis request resolved into execution plan",
                 capability=request.capability,
                 requested_model=request.requested_model,
-                runtime_bound_model=resolved_model_name if request.requested_model is None else None,
+                runtime_bound_model=resolved_model_name
+                if request.requested_model is None
+                else None,
                 resolved_model=spec.api_name,
                 execution_mode=plan.execution_mode,
                 backend=plan.backend_key,

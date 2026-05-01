@@ -31,9 +31,11 @@ These tests verify:
 # END_CHANGE_SUMMARY
 
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from telegram_bot.client import TelegramAPIError
 from telegram_bot.polling import (
     BackoffConfig,
     ExponentialBackoff,
@@ -42,7 +44,6 @@ from telegram_bot.polling import (
     PollingState,
     classify_telegram_error,
 )
-from telegram_bot.client import TelegramAPIError
 
 
 class TestExponentialBackoff:
@@ -158,7 +159,7 @@ class TestClassifyTelegramError:
 
     def test_timeout_is_retryable(self):
         """Timeout is classified as retryable network error."""
-        exc = asyncio.TimeoutError("Request timeout")
+        exc = TimeoutError("Request timeout")
         classified = classify_telegram_error(exc)
 
         assert classified.is_retryable
@@ -249,9 +250,7 @@ class TestPollingAdapterDegradedBehavior:
         settings.telegram_max_text_length = 1000
         return settings
 
-    def test_adapter_uses_degradation_threshold(
-        self, mock_client, mock_dispatcher, mock_settings
-    ):
+    def test_adapter_uses_degradation_threshold(self, mock_client, mock_dispatcher, mock_settings):
         """Test that adapter uses degradation_threshold from config."""
         adapter = PollingAdapter(
             client=mock_client,
@@ -306,7 +305,7 @@ class TestRetryBehavior:
     @pytest.mark.asyncio
     async def test_client_retries_on_timeout(self):
         """Client retries on timeout with exponential backoff."""
-        from telegram_bot.client import TelegramBotClient, RetryConfig
+        from telegram_bot.client import RetryConfig, TelegramBotClient
 
         call_count = 0
 
@@ -314,7 +313,7 @@ class TestRetryBehavior:
             nonlocal call_count
             call_count += 1
             if call_count < 3:
-                raise asyncio.TimeoutError("Timeout")
+                raise TimeoutError("Timeout")
             # Return mock response
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -338,10 +337,10 @@ class TestRetryBehavior:
     @pytest.mark.asyncio
     async def test_client_fails_after_max_retries(self):
         """Client fails after exhausting retries."""
-        from telegram_bot.client import TelegramBotClient, RetryConfig
+        from telegram_bot.client import RetryConfig, TelegramBotClient
 
         async def mock_post(*args, **kwargs):
-            raise asyncio.TimeoutError("Persistent timeout")
+            raise TimeoutError("Persistent timeout")
 
         client = TelegramBotClient(
             bot_token="test_token",
@@ -363,7 +362,7 @@ class TestSenderRetryBehavior:
     @pytest.mark.asyncio
     async def test_sender_retries_on_api_error(self):
         """Sender retries on transient API errors."""
-        from telegram_bot.sender import TelegramSender, DeliveryRetryConfig
+        from telegram_bot.sender import DeliveryRetryConfig, TelegramSender
 
         call_count = 0
 
@@ -400,12 +399,10 @@ class TestSenderRetryBehavior:
     @pytest.mark.asyncio
     async def test_sender_fails_on_non_retryable_error(self):
         """Sender fails immediately on non-retryable errors."""
-        from telegram_bot.sender import TelegramSender, DeliveryRetryConfig
+        from telegram_bot.sender import DeliveryRetryConfig, TelegramSender
 
         mock_client = AsyncMock()
-        mock_client.send_voice = AsyncMock(
-            side_effect=TelegramAPIError("Bad Request", code=400)
-        )
+        mock_client.send_voice = AsyncMock(side_effect=TelegramAPIError("Bad Request", code=400))
 
         settings = MagicMock()
         settings.sample_rate = 24000

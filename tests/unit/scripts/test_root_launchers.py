@@ -29,7 +29,6 @@ from pathlib import Path
 
 import pytest
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 LAUNCH_PY_PATH = PROJECT_ROOT / "launch.py"
 LAUNCH_SH_PATH = PROJECT_ROOT / "launch.sh"
@@ -62,7 +61,14 @@ def test_root_python_launcher_delegates_to_launcher_module(monkeypatch: pytest.M
     exit_code = launch_module.main()
 
     assert exit_code == 9
-    assert recorded["command"] == [sys.executable, "-m", "launcher", "--project-root", str(PROJECT_ROOT), "launch"]
+    assert recorded["command"] == [
+        sys.executable,
+        "-m",
+        "launcher",
+        "--project-root",
+        str(PROJECT_ROOT),
+        "launch",
+    ]
     assert recorded["cwd"] == str(PROJECT_ROOT)
     assert recorded["check"] is False
 
@@ -83,7 +89,7 @@ def test_root_windows_bat_wrapper_delegates_to_launch_py():
     assert "START_MODULE_CONTRACT" in contents
     assert "shared cross-platform Python launcher flow" in contents
     assert "launch.py" in contents
-    assert "py -3.11 \"%PYTHON_LAUNCHER%\"" in contents
-    assert "python \"%PYTHON_LAUNCHER%\"" in contents
+    assert 'py -3.11 "%PYTHON_LAUNCHER%"' in contents
+    assert 'python "%PYTHON_LAUNCHER%"' in contents
     assert "Neither 'py' nor 'python' was found in PATH." in contents
     assert "pause" in contents

@@ -36,7 +36,6 @@ import pytest
 
 from launcher.main import main
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -92,13 +91,20 @@ def test_launcher_create_env_outputs_qwen_steps_without_apply(capsys: pytest.Cap
     if platform.system().lower() == "windows":
         assert steps[0] == ["py", "-3.11", "-m", "venv", payload["create_env"]["expected_env_root"]]
     else:
-        assert steps[0] == [sys.executable, "-m", "venv", payload["create_env"]["expected_env_root"]]
+        assert steps[0] == [
+            sys.executable,
+            "-m",
+            "venv",
+            payload["create_env"]["expected_env_root"],
+        ]
     assert steps[1][1:] == ["-m", "pip", "install", "--upgrade", "pip"]
     assert steps[2][-2:] == ["-r", payload["create_env"]["compiled_requirements_path"]]
     assert _preview_has_suffix(payload, "profiles\\packs\\family\\qwen.txt")
 
 
-def test_launcher_create_env_outputs_omnivoice_steps_without_apply(capsys: pytest.CaptureFixture[str]):
+def test_launcher_create_env_outputs_omnivoice_steps_without_apply(
+    capsys: pytest.CaptureFixture[str],
+):
     exit_code, payload = _run_create_env(capsys, "--family", "omnivoice", "--module", "telegram")
     steps = payload["create_env"]["steps"]
     expected_env_fragment = str(Path(".envs") / "omnivoice")
@@ -107,16 +113,24 @@ def test_launcher_create_env_outputs_omnivoice_steps_without_apply(capsys: pytes
     assert payload["create_env"]["family"] == "omnivoice"
     assert expected_env_fragment in steps[0][-1]
     if platform.system().lower() == "windows":
-        assert payload["create_env"]["expected_python_path"].endswith(str(Path(".envs") / "omnivoice" / "Scripts" / "python.exe"))
+        assert payload["create_env"]["expected_python_path"].endswith(
+            str(Path(".envs") / "omnivoice" / "Scripts" / "python.exe")
+        )
     else:
-        assert payload["create_env"]["expected_python_path"].endswith(str(Path(".envs") / "omnivoice" / "bin" / "python"))
+        assert payload["create_env"]["expected_python_path"].endswith(
+            str(Path(".envs") / "omnivoice" / "bin" / "python")
+        )
     assert _preview_has_suffix(payload, "profiles\\packs\\family\\omnivoice.txt")
 
 
-def test_launcher_create_env_preview_uses_pip_safe_posix_paths_on_windows(capsys: pytest.CaptureFixture[str]):
+def test_launcher_create_env_preview_uses_pip_safe_posix_paths_on_windows(
+    capsys: pytest.CaptureFixture[str],
+):
     exit_code, payload = _run_create_env(capsys, "--family", "qwen", "--module", "server")
     preview_lines = [
-        line for line in payload["create_env"]["compiled_requirements"]["preview_lines"] if line.startswith("-r ")
+        line
+        for line in payload["create_env"]["compiled_requirements"]["preview_lines"]
+        if line.startswith("-r ")
     ]
 
     assert exit_code == 0
@@ -150,7 +164,9 @@ def test_launcher_create_env_dry_run_avoids_runtime_bootstrap_imports(tmp_path: 
     env["PYTHONPATH"] = (
         f"{tmp_path}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(tmp_path)
     )
-    env["TTS_BLOCKED_IMPORTS"] = "numpy,torch,core.bootstrap,core.backends,core.backends.torch_backend"
+    env["TTS_BLOCKED_IMPORTS"] = (
+        "numpy,torch,core.bootstrap,core.backends,core.backends.torch_backend"
+    )
 
     completed = subprocess.run(
         [
@@ -209,7 +225,9 @@ def test_launcher_create_env_apply_reports_error_json_when_install_fails(
     def fake_run(cmd: list[str], check: bool, **kwargs: object) -> subprocess.CompletedProcess[str]:
         nonlocal install_command
         if len(cmd) >= 4 and cmd[1:3] == ["-m", "venv"]:
-            raise AssertionError("bootstrap step should be skipped when expected python already exists")
+            raise AssertionError(
+                "bootstrap step should be skipped when expected python already exists"
+            )
         if len(cmd) >= 3 and cmd[1] == "-c":
             return subprocess.CompletedProcess(
                 cmd,
@@ -227,12 +245,17 @@ def test_launcher_create_env_apply_reports_error_json_when_install_fails(
             stderr="install stderr\n",
         )
 
-    monkeypatch.setattr("launcher.main._write_compiled_requirements_file", lambda resolved: str(compiled_requirements_path))
+    monkeypatch.setattr(
+        "launcher.main._write_compiled_requirements_file",
+        lambda resolved: str(compiled_requirements_path),
+    )
     monkeypatch.setattr(Path, "exists", fake_exists)
     monkeypatch.setattr(Path, "unlink", fake_unlink)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    exit_code, payload = _run_create_env(capsys, "--family", "qwen", "--module", "server", "--apply")
+    exit_code, payload = _run_create_env(
+        capsys, "--family", "qwen", "--module", "server", "--apply"
+    )
 
     assert exit_code == 1
     assert install_command is not None

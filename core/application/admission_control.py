@@ -32,7 +32,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-
 RATE_LIMIT_POLICY_SYNC_TTS = "sync_tts"
 RATE_LIMIT_POLICY_ASYNC_SUBMIT = "async_submit"
 RATE_LIMIT_POLICY_JOB_READ = "job_read"
@@ -70,9 +69,7 @@ class QuotaDecision:
 # END_CONTRACT: RateLimiter
 @runtime_checkable
 class RateLimiter(Protocol):
-    def check_and_consume(
-        self, *, principal_id: str, policy: str
-    ) -> RateLimitDecision: ...
+    def check_and_consume(self, *, principal_id: str, policy: str) -> RateLimitDecision: ...
 
 
 # START_CONTRACT: QuotaGuard

@@ -212,23 +212,15 @@ def build_rate_limiter(settings: CoreSettings) -> RateLimiter:
     if not settings.rate_limit_enabled:
         return DisabledRateLimiter()
     if settings.rate_limit_backend != "local":
-        raise ValueError(
-            f"Unsupported rate limit backend: {settings.rate_limit_backend}"
-        )
+        raise ValueError(f"Unsupported rate limit backend: {settings.rate_limit_backend}")
     return LocalFixedWindowRateLimiter(
         policies={
-            "sync_tts": RateLimitPolicyConfig(
-                limit=settings.rate_limit_sync_tts_per_minute
-            ),
+            "sync_tts": RateLimitPolicyConfig(limit=settings.rate_limit_sync_tts_per_minute),
             "async_submit": RateLimitPolicyConfig(
                 limit=settings.rate_limit_async_submit_per_minute
             ),
-            "job_read": RateLimitPolicyConfig(
-                limit=settings.rate_limit_job_read_per_minute
-            ),
-            "job_cancel": RateLimitPolicyConfig(
-                limit=settings.rate_limit_job_cancel_per_minute
-            ),
+            "job_read": RateLimitPolicyConfig(limit=settings.rate_limit_job_read_per_minute),
+            "job_cancel": RateLimitPolicyConfig(limit=settings.rate_limit_job_cancel_per_minute),
             "control_plane": RateLimitPolicyConfig(
                 limit=settings.rate_limit_control_plane_per_minute
             ),

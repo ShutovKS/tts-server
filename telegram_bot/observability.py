@@ -49,11 +49,10 @@ import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from core.metrics import (
     DEFAULT_METRICS_COLLECTOR,
-    InMemoryMetricsCollector,
     MetricsCollector,
     OperationalMetricsRegistry,
 )
@@ -66,11 +65,11 @@ if TYPE_CHECKING:
 # Correlation Context
 # ============================================================================
 
-_UPDATE_ID: ContextVar[Optional[int]] = ContextVar("telegram_update_id", default=None)
-_CHAT_ID: ContextVar[Optional[int]] = ContextVar("telegram_chat_id", default=None)
-_USER_ID: ContextVar[Optional[int]] = ContextVar("telegram_user_id", default=None)
-_REQUEST_ID: ContextVar[Optional[str]] = ContextVar("telegram_request_id", default=None)
-_OPERATION: ContextVar[Optional[str]] = ContextVar("telegram_operation", default=None)
+_UPDATE_ID: ContextVar[int | None] = ContextVar("telegram_update_id", default=None)
+_CHAT_ID: ContextVar[int | None] = ContextVar("telegram_chat_id", default=None)
+_USER_ID: ContextVar[int | None] = ContextVar("telegram_user_id", default=None)
+_REQUEST_ID: ContextVar[str | None] = ContextVar("telegram_request_id", default=None)
+_OPERATION: ContextVar[str | None] = ContextVar("telegram_operation", default=None)
 
 
 # START_CONTRACT: TelegramCorrelationContext
@@ -95,18 +94,16 @@ class TelegramCorrelationContext:
 
     def __init__(
         self,
-        update_id: Optional[int] = None,
-        chat_id: Optional[int] = None,
-        user_id: Optional[int] = None,
-        request_id: Optional[str] = None,
-        operation: Optional[str] = None,
+        update_id: int | None = None,
+        chat_id: int | None = None,
+        user_id: int | None = None,
+        request_id: str | None = None,
+        operation: str | None = None,
     ):
         self.update_id = update_id
         self.chat_id = chat_id
         self.user_id = user_id
-        self.request_id = (
-            request_id if request_id is not None else str(uuid.uuid4())[:12]
-        )
+        self.request_id = request_id if request_id is not None else str(uuid.uuid4())[:12]
         self.operation = operation if operation is not None else "system"
         self.timestamp = time.time()
         self._tokens: dict[str, Any] = {}
@@ -204,7 +201,7 @@ def get_correlation() -> dict[str, Any]:
 #   SIDE_EFFECTS: none
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: get_correlation_context
-def get_correlation_context() -> Optional[TelegramCorrelationContext]:
+def get_correlation_context() -> TelegramCorrelationContext | None:
     """Get current correlation context as TelegramCorrelationContext object."""
     # Check if context is set (has values)
     request_id = _REQUEST_ID.get()
@@ -381,8 +378,8 @@ class ClassifiedError:
     error_class: ErrorClass
     severity: ErrorSeverity
     message: str
-    code: Optional[int] = None
-    retry_after: Optional[float] = None  # Seconds to wait for rate limits
+    code: int | None = None
+    retry_after: float | None = None  # Seconds to wait for rate limits
     details: dict[str, Any] = field(default_factory=dict)
 
     # START_CONTRACT: is_retryable
@@ -431,7 +428,7 @@ class SimpleCounter:
     def __init__(self) -> None:
         self._value = 0
 
-    def __iadd__(self, value: int) -> "SimpleCounter":
+    def __iadd__(self, value: int) -> SimpleCounter:
         self._value += value
         return self
 
@@ -494,7 +491,7 @@ class TelegramMetrics:
     - Commands: by type and result
     """
 
-    def __init__(self, collector: Optional[MetricsCollector] = None):
+    def __init__(self, collector: MetricsCollector | None = None):
         self._collector = collector or DEFAULT_METRICS_COLLECTOR
         self._registry = OperationalMetricsRegistry(self._collector)
 
@@ -960,12 +957,8 @@ class TelegramMetrics:
             "jobs_duplicate": getattr(self, "_jobs_duplicate_count", 0),
             "jobs_completed": getattr(self, "_jobs_completed_count", 0),
             "jobs_failed": getattr(self, "_jobs_failed_count", 0),
-            "jobs_delivery_completed": getattr(
-                self, "_jobs_delivery_completed_count", 0
-            ),
-            "jobs_delivery_recovered": getattr(
-                self, "_jobs_delivery_recovered_count", 0
-            ),
+            "jobs_delivery_completed": getattr(self, "_jobs_delivery_completed_count", 0),
+            "jobs_delivery_recovered": getattr(self, "_jobs_delivery_recovered_count", 0),
             "voice_sent": getattr(self, "_voice_sent_count", 0),
             "voice_send_failed": getattr(self, "_voice_send_failed_count", 0),
         }
@@ -1000,9 +993,9 @@ METRICS = TelegramMetrics()
 # END_CONTRACT: log_telegram_event
 def log_telegram_event(
     event_or_logger: Any,
-    level: Optional[int] = None,
+    level: int | None = None,
     message: str = "",
-    _logger: Optional[logging.Logger] = None,
+    _logger: logging.Logger | None = None,
     **fields: Any,
 ) -> None:
     """
@@ -1056,9 +1049,7 @@ def log_telegram_event(
     if correlation.get("user_id") is not None and "user_id" not in fields:
         payload["user_id"] = correlation["user_id"]
 
-    logger.log(
-        level, json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-    )
+    logger.log(level, json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
 
 
 # ============================================================================
@@ -1099,9 +1090,9 @@ class PollingHealth:
     consecutive_errors: int = 0
     consecutive_successes: int = 0
     recovery_threshold: int = 3
-    last_success_time: Optional[float] = None
-    last_error_time: Optional[float] = None
-    degradation_reason: Optional[str] = None
+    last_success_time: float | None = None
+    last_error_time: float | None = None
+    degradation_reason: str | None = None
     error_samples: list[str] = field(default_factory=list)
 
     # START_CONTRACT: is_healthy
@@ -1279,6 +1270,7 @@ def classify_telegram_error(exc: Exception) -> ClassifiedError:
         message=f"Unknown error: {exc}",
         details={"error_type": error_type},
     )
+
 
 __all__ = [
     "TelegramCorrelationContext",

@@ -32,30 +32,30 @@ from __future__ import annotations
 import pytest
 
 from telegram_bot.handlers.commands import (
-    CommandType,
-    ParsedCommand,
-    ParsedTTSArgs,
-    ParsedDesignArgs,
-    ParsedCloneArgs,
-    CommandValidationResult,
-    MIN_SPEED,
     MAX_SPEED,
-    VALID_SPEAKERS,
-    MIN_VOICE_DESCRIPTION_LENGTH,
-    MAX_VOICE_DESCRIPTION_LENGTH,
     MAX_TEXT_LENGTH,
-    parse_command,
-    parse_tts_args,
-    parse_design_args,
-    parse_clone_args,
-    validate_tts_args,
-    validate_design_args,
-    validate_clone_args,
-    validate_tts_command,
-    validate_design_command,
-    validate_clone_command,
-    is_private_chat,
+    MAX_VOICE_DESCRIPTION_LENGTH,
+    MIN_SPEED,
+    MIN_VOICE_DESCRIPTION_LENGTH,
+    VALID_SPEAKERS,
+    CommandType,
+    CommandValidationResult,
+    ParsedCloneArgs,
+    ParsedCommand,
+    ParsedDesignArgs,
+    ParsedTTSArgs,
     get_valid_speakers,
+    is_private_chat,
+    parse_clone_args,
+    parse_command,
+    parse_design_args,
+    parse_tts_args,
+    validate_clone_args,
+    validate_clone_command,
+    validate_design_args,
+    validate_design_command,
+    validate_tts_args,
+    validate_tts_command,
 )
 
 
@@ -630,9 +630,7 @@ class TestDesignCommandParsing:
 
     def test_parse_design_command(self):
         """Test parsing /design command with voice description and text."""
-        result = parse_command(
-            "/design calm narrator -- Hello world", 12345, 67890, 100
-        )
+        result = parse_command("/design calm narrator -- Hello world", 12345, 67890, 100)
 
         assert result is not None
         assert result.command == CommandType.DESIGN
@@ -648,9 +646,7 @@ class TestDesignCommandParsing:
 
     def test_parse_design_command_with_bot_name(self):
         """Test parsing /design with bot name."""
-        result = parse_command(
-            "/design@mybot calm narrator -- Hello", 12345, 67890, 100
-        )
+        result = parse_command("/design@mybot calm narrator -- Hello", 12345, 67890, 100)
 
         assert result is not None
         assert result.command == CommandType.DESIGN

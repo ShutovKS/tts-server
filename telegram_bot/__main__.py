@@ -32,16 +32,14 @@ import logging
 import signal
 import sys
 import time
-from typing import Any, Optional
+from typing import Any
 
-from core.observability import bind_request_context, log_event, operation_scope
 from telegram_bot.bootstrap import TelegramRuntime, build_telegram_runtime
 from telegram_bot.client import RetryConfig, TelegramBotClient
 from telegram_bot.handlers.dispatcher import CommandDispatcher
-from telegram_bot.observability import METRICS, TelegramMetrics, log_telegram_event
+from telegram_bot.observability import METRICS, log_telegram_event
 from telegram_bot.polling import BackoffConfig, PollingAdapter
 from telegram_bot.sender import DeliveryRetryConfig, TelegramSender
-
 
 LOGGER = logging.getLogger("telegram_bot")
 
@@ -84,9 +82,9 @@ class StartupCheckResult:
         self,
         success: bool = False,
         phase: StartupCheckPhase = StartupCheckPhase.CONFIG,
-        checks_passed: Optional[list] = None,
+        checks_passed: list | None = None,
         fatal_error: bool = False,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ):
         self.success = success
         self.phase = phase
@@ -189,7 +187,9 @@ def setup_logging(level: str = "INFO") -> None:
 #   SIDE_EFFECTS: Emits startup validation logs and inspects remote server boundary requirements plus adapter-local warnings.
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: run_startup_self_checks
-async def run_startup_self_checks(runtime_or_settings, client: TelegramBotClient | None = None) -> StartupCheckResult:
+async def run_startup_self_checks(
+    runtime_or_settings, client: TelegramBotClient | None = None
+) -> StartupCheckResult:
     """
     Perform comprehensive startup self-checks.
 
@@ -230,9 +230,7 @@ async def run_startup_self_checks(runtime_or_settings, client: TelegramBotClient
     if hasattr(settings, "validate"):
         try:
             settings_errors = [
-                str(item).strip()
-                for item in settings.validate()
-                if str(item).strip()
+                str(item).strip() for item in settings.validate() if str(item).strip()
             ]
         except Exception as exc:
             result.errors.append(f"FATAL: Telegram settings validation failed: {exc}")
@@ -285,9 +283,7 @@ async def run_startup_self_checks(runtime_or_settings, client: TelegramBotClient
 
     # Check 3: Default speaker configuration
     if not settings.telegram_default_speaker:
-        result.warnings.append(
-            "WARNING: DEFAULT_SPEAKER_UNSET - No default speaker configured"
-        )
+        result.warnings.append("WARNING: DEFAULT_SPEAKER_UNSET - No default speaker configured")
     else:
         result.checks_passed.append("default_speaker_configured")
 
@@ -299,9 +295,7 @@ async def run_startup_self_checks(runtime_or_settings, client: TelegramBotClient
             result.errors.append(f"FATAL: Remote server readiness check failed: {exc}")
         else:
             if readiness.status.lower() != "ok":
-                result.errors.append(
-                    f"FATAL: Remote server readiness is '{readiness.status}'"
-                )
+                result.errors.append(f"FATAL: Remote server readiness is '{readiness.status}'")
             else:
                 result.checks_passed.append("remote_server_ready")
                 result.phase = StartupCheckPhase.REMOTE_SERVER
@@ -516,16 +510,14 @@ async def run_telegram_bot(
             client=client,
             settings=settings,
             logger=LOGGER,
-            retry_config=DeliveryRetryConfig(
-                max_attempts=settings.telegram_max_retries
-            ),
+            retry_config=DeliveryRetryConfig(max_attempts=settings.telegram_max_retries),
         )
 
         # Stage 2: Build job orchestrator and delivery store
         from telegram_bot.job_orchestrator import (
+            DeliveryMetadataStore,
             TelegramJobOrchestrator,
             TelegramJobPoller,
-            DeliveryMetadataStore,
         )
 
         delivery_store_path = (
@@ -678,9 +670,7 @@ async def run_telegram_bot(
         await _perform_shutdown(client, runtime)
 
 
-async def _perform_shutdown(
-    client: TelegramBotClient, runtime: TelegramRuntime
-) -> None:
+async def _perform_shutdown(client: TelegramBotClient, runtime: TelegramRuntime) -> None:
     """
     Perform graceful shutdown sequence.
 

@@ -26,8 +26,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from core.config import CoreSettings
 from core.backends.base import ExecutionRequest
+from core.config import CoreSettings
 from core.contracts import RuntimeExecutionRegistry
 from core.contracts.commands import (
     CustomVoiceCommand,
@@ -53,7 +53,6 @@ from core.model_families import (
 from core.models.catalog import ModelSpec
 from core.observability import Timer, get_logger, log_event, operation_scope
 from core.planning import SynthesisPlanner
-
 
 LOGGER = get_logger(__name__)
 
@@ -146,9 +145,7 @@ class SynthesisCoordinator:
         with temporary_output_dir(prefix="qwen3_tts_clone_input_") as temp_dir:
             source_audio = temp_dir / command.ref_audio_path.name
             source_audio.write_bytes(command.ref_audio_path.read_bytes())
-            wav_audio, converted = convert_audio_to_wav_if_needed(
-                source_audio, self.settings
-            )
+            wav_audio, converted = convert_audio_to_wav_if_needed(source_audio, self.settings)
             log_event(
                 LOGGER,
                 level=20,
@@ -308,9 +305,7 @@ class SynthesisCoordinator:
 
                 saved_path = None
                 if save_output:
-                    saved_path = persist_output(
-                        audio, spec.output_subfolder, text, self.settings
-                    )
+                    saved_path = persist_output(audio, spec.output_subfolder, text, self.settings)
 
                 result = GenerationResult(
                     audio=audio,

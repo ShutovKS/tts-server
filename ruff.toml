@@ -1,0 +1,108 @@
+# FILE: ruff.toml
+# VERSION: 1.0.0
+# Ruff configuration for the TTS server project.
+#
+# The codebase relies on the GRACE protocol's long-form CONTRACT and MODULE_MAP
+# comments, so we deliberately do NOT enforce line-too-long here. Other
+# correctness-oriented lints (pyflakes, bugbear, pyupgrade, isort) are enabled
+# to catch real defects without fighting the documentation conventions.
+
+target-version = "py311"
+line-length = 100
+
+# Project-local sources we care about.
+src = [
+    "core",
+    "server",
+    "telegram_bot",
+    "cli",
+    "launcher",
+    "profiles",
+    "scripts",
+    "tests",
+]
+
+extend-exclude = [
+    ".venv",
+    ".venv*",
+    ".models",
+    ".outputs",
+    ".uploads",
+    ".voices",
+    "build",
+    "dist",
+    "frontend_demo",
+    ".opencode",
+]
+
+[lint]
+# START_BLOCK_LINT_RULES
+# E,W   - pycodestyle (E501 explicitly disabled below; GRACE comments are long by design)
+# F     - pyflakes correctness checks (unused imports, undefined names, etc.)
+# I     - isort import ordering
+# B     - flake8-bugbear likely-bug patterns
+# UP    - pyupgrade syntax modernization
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "UP",
+]
+ignore = [
+    # Long lines are tolerated to keep GRACE markup readable.
+    "E501",
+    # Module-level imports inside `if __name__ == "__main__"` guards or after
+    # sys.path manipulation in scripts are intentional.
+    "E402",
+    # `B008` (function calls in default argument) trips on FastAPI patterns.
+    "B008",
+    # `B904` (raise from) is noisy and not always desired.
+    "B904",
+    # `UP022` (replace stdout/stderr with capture_output) is a style change
+    # that we don't want to apply across legacy launcher subprocess wiring.
+    "UP022",
+    # `UP042` (StrEnum) would change runtime types; not a refactor we want
+    # forced by lint at this stage.
+    "UP042",
+]
+# END_BLOCK_LINT_RULES
+
+[lint.per-file-ignores]
+# Test modules may shadow names through monkeypatch and re-import patterns,
+# captured exception variables for assertion context, and broad pytest.raises.
+"tests/**/*.py" = ["F401", "F811", "B011", "B017", "F841"]
+# Conftest files commonly re-export fixtures.
+"**/conftest.py" = ["F401", "F811"]
+# Generated/legacy launchers may keep platform-specific imports.
+"launcher/**/*.py" = ["E402"]
+"scripts/**/*.py" = ["E402"]
+# The Telegram polling adapter intentionally re-exports
+# `classify_telegram_error` while also keeping a local definition that
+# transports use through the module surface.
+"telegram_bot/polling.py" = ["F811"]
+# Telegram bot modules log exception context via captured `exc`/`last_error`
+# locals that are referenced by structured logging callsites only.
+"telegram_bot/job_orchestrator.py" = ["F841"]
+"telegram_bot/sender.py" = ["F841"]
+
+[lint.isort]
+known-first-party = [
+    "core",
+    "server",
+    "telegram_bot",
+    "cli",
+    "launcher",
+    "profiles",
+    "scripts",
+    "tests",
+]
+combine-as-imports = true
+
+[format]
+# Match PEP 8 / Black-compatible defaults for `ruff format`.
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

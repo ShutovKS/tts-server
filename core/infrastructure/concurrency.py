@@ -48,6 +48,7 @@ class InferenceGuard:
     def is_busy(self) -> bool:
         return self._busy
 
+
 __all__ = [
     "InferenceGuard",
 ]

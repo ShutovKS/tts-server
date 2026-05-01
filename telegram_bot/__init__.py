@@ -26,8 +26,8 @@ MVP Scope:
 - Async UX with fast acknowledgment
 """
 
-from telegram_bot.config import TelegramSettings
 from telegram_bot.bootstrap import TelegramRuntime, build_telegram_runtime
+from telegram_bot.config import TelegramSettings
 
 __all__ = [
     "TelegramSettings",

@@ -252,6 +252,4 @@ class TestPolicyDeterminism:
         )
 
         for user_id in ["1", "2", "3", "4", "5"]:
-            assert settings1.is_user_allowed(user_id) == settings2.is_user_allowed(
-                user_id
-            )
+            assert settings1.is_user_allowed(user_id) == settings2.is_user_allowed(user_id)

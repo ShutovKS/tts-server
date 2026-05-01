@@ -48,7 +48,6 @@ from telegram_bot.remote_client import (
     RemoteServerTransportError,
 )
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -181,7 +180,9 @@ class TestTelegramRemoteJobSubmissionIntegration:
         assert payload["model"] == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
 
     @pytest.mark.anyio
-    async def test_submit_design_job_uses_dedicated_remote_async_endpoint(self, orchestrator, remote_client):
+    async def test_submit_design_job_uses_dedicated_remote_async_endpoint(
+        self, orchestrator, remote_client
+    ):
         result = await orchestrator.submit_design_job(
             voice_description="calm narrator",
             text="Hello design",
@@ -200,7 +201,9 @@ class TestTelegramRemoteJobSubmissionIntegration:
         assert payload["voice_description"] == "calm narrator"
 
     @pytest.mark.anyio
-    async def test_submit_clone_job_uses_remote_async_clone_endpoint(self, orchestrator, remote_client, temp_storage):
+    async def test_submit_clone_job_uses_remote_async_clone_endpoint(
+        self, orchestrator, remote_client, temp_storage
+    ):
         ref_audio = temp_storage.with_suffix(".wav")
         ref_audio.write_bytes(b"RIFFfake")
 
@@ -280,7 +283,9 @@ class TestTelegramRemoteJobLifecycleIntegration:
         return _make_settings()
 
     @pytest.mark.anyio
-    async def test_check_job_completion_fetches_remote_result_when_succeeded(self, delivery_store, settings):
+    async def test_check_job_completion_fetches_remote_result_when_succeeded(
+        self, delivery_store, settings
+    ):
         remote_client = MagicMock()
         remote_client.get_job_status = AsyncMock(
             return_value=RemoteAsyncJobResponse(
@@ -352,7 +357,9 @@ class TestTelegramRemoteJobLifecycleIntegration:
         assert result.error_message == "Async job timed out"
 
     @pytest.mark.anyio
-    async def test_check_job_completion_reports_result_fetch_failure(self, delivery_store, settings):
+    async def test_check_job_completion_reports_result_fetch_failure(
+        self, delivery_store, settings
+    ):
         remote_client = MagicMock()
         remote_client.get_job_status = AsyncMock(
             return_value=RemoteAsyncJobResponse(
@@ -384,9 +391,7 @@ class TestTelegramRemoteJobLifecycleIntegration:
             settings=settings,
         )
 
-        result = await orchestrator.check_job_completion(
-            "job-result-fail", "submit-result-fail"
-        )
+        result = await orchestrator.check_job_completion("job-result-fail", "submit-result-fail")
 
         assert result.is_terminal is True
         assert result.success is False
@@ -395,7 +400,9 @@ class TestTelegramRemoteJobLifecycleIntegration:
         assert result.error_message == "Job result fetch failed"
 
     @pytest.mark.anyio
-    async def test_check_job_completion_treats_unreachable_server_as_non_terminal(self, delivery_store, settings):
+    async def test_check_job_completion_treats_unreachable_server_as_non_terminal(
+        self, delivery_store, settings
+    ):
         remote_client = MagicMock()
         remote_client.get_job_status = AsyncMock(
             side_effect=RemoteServerTransportError("Remote server connection failed")
@@ -413,7 +420,9 @@ class TestTelegramRemoteJobLifecycleIntegration:
         assert result.status is JobStatus.QUEUED
 
     @pytest.mark.anyio
-    async def test_check_job_completion_treats_missing_remote_job_as_terminal_failure(self, delivery_store, settings):
+    async def test_check_job_completion_treats_missing_remote_job_as_terminal_failure(
+        self, delivery_store, settings
+    ):
         remote_client = MagicMock()
         remote_client.get_job_status = AsyncMock(
             side_effect=RemoteServerAPIError(
@@ -439,7 +448,9 @@ class TestTelegramRemoteJobLifecycleIntegration:
         assert result.error_code == "job_not_found"
 
     @pytest.mark.anyio
-    async def test_poller_uses_submit_request_id_when_polling_pending_deliveries(self, delivery_store, settings):
+    async def test_poller_uses_submit_request_id_when_polling_pending_deliveries(
+        self, delivery_store, settings
+    ):
         remote_client = MagicMock()
         remote_client.get_job_status = AsyncMock(
             return_value=RemoteAsyncJobResponse(
@@ -523,7 +534,9 @@ class TestTelegramDispatcherRemoteOnlyIntegration:
         assert "async server" in sent_text.lower()
 
     @pytest.mark.anyio
-    async def test_design_requires_remote_job_orchestrator_and_has_no_local_fallback(self, settings):
+    async def test_design_requires_remote_job_orchestrator_and_has_no_local_fallback(
+        self, settings
+    ):
         synthesizer = MagicMock()
         synthesizer.synthesize_design = AsyncMock()
         sender = _SenderDouble()

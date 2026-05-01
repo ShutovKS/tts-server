@@ -61,9 +61,7 @@ def _load_qwen_tts_model_cls():
         return None
     model_cls = getattr(module, "Qwen3TTSModel", None)
     if model_cls is None:
-        QWEN_MODEL_IMPORT_ERROR = ImportError(
-            "qwen_tts does not expose Qwen3TTSModel"
-        )
+        QWEN_MODEL_IMPORT_ERROR = ImportError("qwen_tts does not expose Qwen3TTSModel")
         return None
     Qwen3TTSModel = model_cls
     QWEN_MODEL_IMPORT_ERROR = None
@@ -83,9 +81,7 @@ def _load_omnivoice_model_cls():
         return None
     model_cls = getattr(module, "OmniVoice", None)
     if model_cls is None:
-        OMNIVOICE_IMPORT_ERROR = ImportError(
-            "omnivoice does not expose OmniVoice"
-        )
+        OMNIVOICE_IMPORT_ERROR = ImportError("omnivoice does not expose OmniVoice")
         return None
     OmniVoiceModel = model_cls
     OMNIVOICE_IMPORT_ERROR = None
@@ -145,7 +141,11 @@ class TorchBackend(TTSBackend):
             return
         raise TTSGenerationError(
             f"Unsupported execution mode '{request.execution_mode}' for backend '{self.key}'",
-            details={"backend": self.key, "mode": request.execution_mode, "model": request.handle.spec.api_name},
+            details={
+                "backend": self.key,
+                "mode": request.execution_mode,
+                "model": request.handle.spec.api_name,
+            },
         )
 
     # START_CONTRACT: __init__
@@ -155,9 +155,7 @@ class TorchBackend(TTSBackend):
     #   SIDE_EFFECTS: Allocates in-memory cache and synchronization primitives for backend use
     #   LINKS: M-BACKENDS
     # END_CONTRACT: __init__
-    def __init__(
-        self, models_dir: Path, *, metrics: OperationalMetricsRegistry | None = None
-    ):
+    def __init__(self, models_dir: Path, *, metrics: OperationalMetricsRegistry | None = None):
         self.models_dir = models_dir
         self._cache: dict[str, Any] = {}
         self._lock = Lock()
@@ -264,9 +262,7 @@ class TorchBackend(TTSBackend):
         with self._lock:
             runtime_model = self._cache.get(spec.folder)
             if runtime_model is None:
-                self._metrics.collector.increment(
-                    "models.cache.miss", tags={"backend": self.key}
-                )
+                self._metrics.collector.increment("models.cache.miss", tags={"backend": self.key})
                 try:
                     runtime_model = model_cls.from_pretrained(
                         str(model_path),
@@ -291,9 +287,7 @@ class TorchBackend(TTSBackend):
                     "models.load.duration_ms", 0.0, tags={"backend": self.key}
                 )
             else:
-                self._metrics.collector.increment(
-                    "models.cache.hit", tags={"backend": self.key}
-                )
+                self._metrics.collector.increment("models.cache.hit", tags={"backend": self.key})
         # END_BLOCK_CHECK_CACHE
 
         # START_BLOCK_LOAD_FROM_DISK
@@ -322,18 +316,12 @@ class TorchBackend(TTSBackend):
                 "loadable": False,
                 "required_artifacts": [
                     rule.describe()
-                    for rule in spec.artifact_validation_for_backend(
-                        self.key
-                    ).required_rules
+                    for rule in spec.artifact_validation_for_backend(self.key).required_rules
                 ],
                 "missing_artifacts": ["model_directory"],
             }
         )
-        runtime_ready = bool(
-            available
-            and artifact_check["loadable"]
-            and self.is_available()
-        )
+        runtime_ready = bool(available and artifact_check["loadable"] and self.is_available())
         cached = spec.folder in self._cache
         return {
             "key": spec.key,
@@ -388,9 +376,7 @@ class TorchBackend(TTSBackend):
                 "torch_available": torch is not None,
                 "qwen_tts_available": _load_qwen_tts_model_cls() is not None,
                 "omnivoice_available": _load_omnivoice_model_cls() is not None,
-                "torch_error": None
-                if TORCH_IMPORT_ERROR is None
-                else str(TORCH_IMPORT_ERROR),
+                "torch_error": None if TORCH_IMPORT_ERROR is None else str(TORCH_IMPORT_ERROR),
                 "qwen_tts_error": None
                 if QWEN_MODEL_IMPORT_ERROR is None
                 else str(QWEN_MODEL_IMPORT_ERROR),
@@ -765,9 +751,7 @@ class TorchBackend(TTSBackend):
     def _resolve_language(language: str) -> str:
         return "Auto" if language == "auto" else language
 
-    def _persist_first_wav(
-        self, output_dir: Path, wavs: list[Any], sample_rate: int
-    ) -> None:
+    def _persist_first_wav(self, output_dir: Path, wavs: list[Any], sample_rate: int) -> None:
         if not wavs:
             raise TTSGenerationError(
                 "Torch backend returned empty audio result",
@@ -856,6 +840,7 @@ class TorchBackend(TTSBackend):
     def _resolve_dtype_name(cls) -> str | None:
         dtype = cls._resolve_dtype()
         return None if dtype is None else str(dtype).replace("torch.", "")
+
 
 __all__ = [
     "TorchBackend",

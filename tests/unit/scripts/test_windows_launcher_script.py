@@ -28,7 +28,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -86,9 +85,15 @@ def test_windows_launcher_script_manages_http_server_pid_restart():
     assert "Stop-HttpServerProcess" in contents
     assert "Ensure-HttpServerLaunchTarget" in contents
     assert ".state/launcher/http-server.pid" in contents
-    assert "Launcher-managed HTTP server is already running. [R]estart / [K]eep existing / [C]hange port" in contents
+    assert (
+        "Launcher-managed HTTP server is already running. [R]estart / [K]eep existing / [C]hange port"
+        in contents
+    )
     assert "Stopping existing launcher-managed HTTP server" in contents
-    assert "Port is occupied by a non-launcher process. [S]top and restart / [K]eep existing / [C]hange port" in contents
+    assert (
+        "Port is occupied by a non-launcher process. [S]top and restart / [K]eep existing / [C]hange port"
+        in contents
+    )
     assert "[Parameter(Mandatory = $true)][int]$ProcessId" in contents
     assert "Stop-HttpServerProcess -ProcessId" in contents
     assert "Stop-HttpServerProcess -Pid" not in contents

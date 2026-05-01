@@ -31,7 +31,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -87,7 +87,7 @@ def validate_text_length(value: str, *, field_name: str, max_chars: int) -> str:
 class OpenAISpeechRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    model: Optional[str] = Field(default=None, description="Optional model override")
+    model: str | None = Field(default=None, description="Optional model override")
     input: str = Field(..., min_length=1, description="Input text")
     voice: str = Field(default="Vivian", description="Speaker/voice name")
     language: str = Field(default="auto", description="Language code or auto")
@@ -129,16 +129,14 @@ class OpenAISpeechRequest(BaseModel):
 class CustomTTSRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    model: Optional[str] = Field(
-        default=None, description="Optional custom voice model override"
-    )
+    model: str | None = Field(default=None, description="Optional custom voice model override")
     text: str = Field(..., min_length=1)
     speaker: str = Field(default="Vivian")
-    emotion: Optional[str] = Field(default=None)
-    instruct: Optional[str] = Field(default=None)
+    emotion: str | None = Field(default=None)
+    instruct: str | None = Field(default=None)
     language: str = Field(default="auto")
     speed: float = Field(default=1.0, ge=0.25, le=4.0)
-    save_output: Optional[bool] = Field(default=None)
+    save_output: bool | None = Field(default=None)
 
     @field_validator("text")
     @classmethod
@@ -175,13 +173,11 @@ class CustomTTSRequest(BaseModel):
 class DesignTTSRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    model: Optional[str] = Field(
-        default=None, description="Optional voice design model override"
-    )
+    model: str | None = Field(default=None, description="Optional voice design model override")
     text: str = Field(..., min_length=1)
     voice_description: str = Field(..., min_length=1)
     language: str = Field(default="auto")
-    save_output: Optional[bool] = Field(default=None)
+    save_output: bool | None = Field(default=None)
 
     @field_validator("text", "voice_description")
     @classmethod
@@ -218,7 +214,7 @@ class DesignTTSRequest(BaseModel):
 class JobFailurePayload(BaseModel):
     code: str
     message: str
-    details: Optional[dict[str, object]] = None
+    details: dict[str, object] | None = None
 
 
 # START_CONTRACT: JobSnapshotPayload
@@ -235,19 +231,19 @@ class JobSnapshotPayload(BaseModel):
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     operation: str
     mode: str
-    model: Optional[str] = None
-    backend: Optional[str] = None
-    response_format: Optional[str] = None
+    model: str | None = None
+    backend: str | None = None
+    response_format: str | None = None
     save_output: bool
     created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    saved_path: Optional[str] = None
-    terminal_error: Optional[JobFailurePayload] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    saved_path: str | None = None
+    terminal_error: JobFailurePayload | None = None
     status_url: str
     result_url: str
     cancel_url: str
-    idempotency_key: Optional[str] = None
+    idempotency_key: str | None = None
 
 
 # START_CONTRACT: TTSSuccessMetadata
@@ -262,7 +258,7 @@ class TTSSuccessMetadata(BaseModel):
     model: str
     mode: str
     backend: str
-    saved_path: Optional[str] = None
+    saved_path: str | None = None
 
 
 # START_CONTRACT: ModelInfo
@@ -277,20 +273,20 @@ class ModelInfo(BaseModel):
     id: str
     name: str
     mode: str
-    family: Optional[str] = None
-    family_key: Optional[str] = None
-    profile: Optional[dict[str, object]] = None
+    family: str | None = None
+    family_key: str | None = None
+    profile: dict[str, object] | None = None
     capabilities_supported: list[str] = Field(default_factory=list)
     backend_support: list[str] = Field(default_factory=list)
     folder: str
     available: bool
-    loadable: Optional[bool] = None
-    runtime_ready: Optional[bool] = None
-    backend: Optional[str] = None
-    selected_backend: Optional[str] = None
-    selected_backend_label: Optional[str] = None
-    execution_backend: Optional[str] = None
-    execution_backend_label: Optional[str] = None
+    loadable: bool | None = None
+    runtime_ready: bool | None = None
+    backend: str | None = None
+    selected_backend: str | None = None
+    selected_backend_label: str | None = None
+    execution_backend: str | None = None
+    execution_backend_label: str | None = None
     capabilities: dict[str, object]
     route: dict[str, object] = Field(default_factory=dict)
     missing_artifacts: list[str] = Field(default_factory=list)

@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,7 +49,6 @@ from server.api.routes_models import register_models_routes
 from server.api.routes_tts import register_tts_routes
 from server.bootstrap import ServerSettings, build_server_runtime
 
-
 LOGGER = get_logger(__name__)
 DEFAULT_DEMO_CORS_ORIGINS = (
     "http://127.0.0.1:8030",
@@ -66,7 +65,7 @@ DEFAULT_DEMO_CORS_ORIGINS = (
 #   SIDE_EFFECTS: Initializes app state, registers middleware and routes, and starts/stops job manager during lifespan
 #   LINKS: M-SERVER, M-BOOTSTRAP
 # END_CONTRACT: create_app
-def create_app(settings: Optional[ServerSettings] = None) -> FastAPI:
+def create_app(settings: ServerSettings | None = None) -> FastAPI:
     runtime = build_server_runtime(settings)
     app_settings = runtime.settings
     cors_allowed_origins = list(app_settings.cors_allowed_origins or DEFAULT_DEMO_CORS_ORIGINS)
@@ -169,12 +168,8 @@ def create_app(settings: Optional[ServerSettings] = None) -> FastAPI:
                 mapping = app.state.exception_mappings.get(type(exc))
                 if mapping is not None:
                     # START_BLOCK_BUILD_MAPPED_ERROR_RESPONSE
-                    descriptor = map_exception_to_descriptor(
-                        request, exc, mapping, LOGGER
-                    )
-                    response = build_error_response(
-                        request=request, descriptor=descriptor
-                    )
+                    descriptor = map_exception_to_descriptor(request, exc, mapping, LOGGER)
+                    response = build_error_response(request=request, descriptor=descriptor)
                     response.headers["x-request-id"] = request_id
                     log_event(
                         LOGGER,

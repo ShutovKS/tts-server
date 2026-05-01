@@ -34,7 +34,6 @@ from pathlib import Path
 
 import pytest
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 pytestmark = pytest.mark.unit
@@ -81,7 +80,8 @@ def _assert_compiled_requirements(compiled: dict[str, object], *, family: str, m
     assert preview_lines[3].startswith("# platform: ")
     assert preview_lines[4] == ""
     assert any(
-        line.startswith("-r ") and _normalized_path(line[3:]).endswith(f"/profiles/packs/family/{family}.txt")
+        line.startswith("-r ")
+        and _normalized_path(line[3:]).endswith(f"/profiles/packs/family/{family}.txt")
         for line in preview_lines
     )
 
@@ -133,7 +133,9 @@ def _assert_check_env_payload(
     }
     assert check_env["family"] == family
     assert check_env["module"] == module
-    assert _normalized_path(check_env["expected_python_path"]).endswith(f"/{_expected_python_suffix(family)}")
+    assert _normalized_path(check_env["expected_python_path"]).endswith(
+        f"/{_expected_python_suffix(family)}"
+    )
 
     checks = check_env["checks"]
     assert set(checks) == {"expected_env_root_exists", "expected_python_exists"}

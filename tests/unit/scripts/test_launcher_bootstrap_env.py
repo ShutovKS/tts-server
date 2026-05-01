@@ -35,7 +35,6 @@ from pathlib import Path
 
 import pytest
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 pytestmark = pytest.mark.unit
@@ -86,7 +85,8 @@ def _assert_compiled_requirements(compiled: dict[str, object], *, family: str, m
     assert preview_lines[3].startswith("# platform: ")
     assert preview_lines[4] == ""
     assert any(
-        line.startswith("-r ") and _normalized_path(line[3:]).endswith(f"/profiles/packs/family/{family}.txt")
+        line.startswith("-r ")
+        and _normalized_path(line[3:]).endswith(f"/profiles/packs/family/{family}.txt")
         for line in preview_lines
     )
 
@@ -117,8 +117,12 @@ def _assert_bootstrap_payload(payload: dict[str, object], *, family: str, module
         "suggested_backend_env",
         "commands",
     }
-    assert _normalized_path(bootstrap["expected_env_root"]).endswith(f"/{_expected_env_root_suffix(family)}")
-    assert _normalized_path(bootstrap["expected_python_path"]).endswith(f"/{_expected_python_suffix(family)}")
+    assert _normalized_path(bootstrap["expected_env_root"]).endswith(
+        f"/{_expected_env_root_suffix(family)}"
+    )
+    assert _normalized_path(bootstrap["expected_python_path"]).endswith(
+        f"/{_expected_python_suffix(family)}"
+    )
     assert bootstrap["backend_candidates"] == list(payload["backend_candidates"])
     assert bootstrap["suggested_backend_env"] == payload["selected_backend"]
     assert bootstrap["suggested_backend_env"] in bootstrap["backend_candidates"]
@@ -137,7 +141,10 @@ def _assert_bootstrap_payload(payload: dict[str, object], *, family: str, module
     )
     assert commands["create_env"] == expected_create_env_command
     assert commands["set_backend"] == f"set TTS_BACKEND={bootstrap['suggested_backend_env']}"
-    assert commands["upgrade_pip"] == f"{bootstrap['expected_python_path']} -m pip install --upgrade pip"
+    assert (
+        commands["upgrade_pip"]
+        == f"{bootstrap['expected_python_path']} -m pip install --upgrade pip"
+    )
     assert (
         commands["install_compiled_requirements"]
         == f"{bootstrap['expected_python_path']} -m pip install -r <temp compiled requirements file>"
@@ -182,7 +189,9 @@ def test_launcher_bootstrap_env_avoids_runtime_bootstrap_imports(tmp_path: Path)
     env["PYTHONPATH"] = (
         f"{tmp_path}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(tmp_path)
     )
-    env["TTS_BLOCKED_IMPORTS"] = "numpy,torch,core.bootstrap,core.backends,core.backends.torch_backend"
+    env["TTS_BLOCKED_IMPORTS"] = (
+        "numpy,torch,core.bootstrap,core.backends,core.backends.torch_backend"
+    )
 
     completed = subprocess.run(
         [

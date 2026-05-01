@@ -31,7 +31,6 @@ from core.contracts.synthesis import (
 from core.model_families import OmniVoiceFamilyAdapter
 from core.models.catalog import MODEL_SPECS
 
-
 pytestmark = pytest.mark.unit
 
 

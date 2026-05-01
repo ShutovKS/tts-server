@@ -20,8 +20,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import lru_cache
-from typing import Mapping
 
 from core.config import CoreSettings, parse_core_settings_from_env
 
@@ -42,7 +42,7 @@ class CliSettings(CoreSettings):
     #   LINKS: M-CLI
     # END_CONTRACT: from_env
     @classmethod
-    def from_env(cls, environ: Mapping[str, str] | None = None) -> "CliSettings":
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> CliSettings:
         return cls(**parse_core_settings_from_env(environ))
 
 
@@ -58,6 +58,7 @@ def get_cli_settings() -> CliSettings:
     settings = CliSettings.from_env()
     settings.ensure_directories()
     return settings
+
 
 __all__ = [
     "CliSettings",

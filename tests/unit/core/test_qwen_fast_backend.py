@@ -32,7 +32,6 @@ from core.backends.base import ExecutionRequest
 from core.backends.qwen_fast_backend import QwenFastBackend
 from core.models.catalog import MODEL_SPECS
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -99,9 +98,7 @@ def test_qwen_fast_backend_loads_model_with_stub_runtime(
             (),
             {
                 "model_path": str(model_path),
-                "generate_custom_voice": staticmethod(
-                    lambda **kwargs: ([[0.0, 0.0]], 24000)
-                ),
+                "generate_custom_voice": staticmethod(lambda **kwargs: ([[0.0, 0.0]], 24000)),
             },
         )(),
     )

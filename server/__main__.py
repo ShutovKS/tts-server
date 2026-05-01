@@ -19,7 +19,6 @@ import uvicorn
 
 from server.bootstrap import get_server_settings
 
-
 if __name__ == "__main__":
     settings = get_server_settings()
     uvicorn.run(

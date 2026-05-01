@@ -28,7 +28,6 @@ import pytest
 from core.backends.torch_backend import TorchBackend
 from core.errors import TTSGenerationError
 
-
 pytestmark = pytest.mark.unit
 
 

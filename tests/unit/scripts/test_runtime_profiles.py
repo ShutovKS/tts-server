@@ -35,9 +35,14 @@ from types import SimpleNamespace
 import pytest
 
 import profiles
-from profiles import FamilyProfile, HostProfile, ModuleProfile, ProfileResolver, ResolvedLaunchProfile
+from profiles import (
+    FamilyProfile,
+    HostProfile,
+    ModuleProfile,
+    ProfileResolver,
+    ResolvedLaunchProfile,
+)
 from scripts import runtime_self_check
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -171,7 +176,9 @@ def test_profile_resolver_lists_known_family_and_module_profiles():
     # END_BLOCK_ASSERT_CATALOG_SURFACE
 
 
-def test_profile_resolver_resolves_qwen_server_with_platform_aware_metadata(monkeypatch: pytest.MonkeyPatch):
+def test_profile_resolver_resolves_qwen_server_with_platform_aware_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+):
     resolver = ProfileResolver(PROJECT_ROOT)
     host = HostProfile(
         key="linux-amd64",
@@ -215,7 +222,9 @@ def test_profile_resolver_resolves_qwen_server_with_platform_aware_metadata(monk
     # END_BLOCK_ASSERT_QWEN_SERVER_RESOLUTION
 
 
-def test_profile_resolver_uses_family_env_when_qwen_host_runtime_is_missing(monkeypatch: pytest.MonkeyPatch):
+def test_profile_resolver_uses_family_env_when_qwen_host_runtime_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
     resolver = ProfileResolver(PROJECT_ROOT)
 
     monkeypatch.setattr(
@@ -242,7 +251,9 @@ def test_profile_resolver_uses_family_env_when_qwen_host_runtime_is_missing(monk
     assert resolved["selected_backend"] == "torch"
 
 
-def test_profile_resolver_prefers_onnx_for_piper_cli_when_provider_is_available(monkeypatch: pytest.MonkeyPatch):
+def test_profile_resolver_prefers_onnx_for_piper_cli_when_provider_is_available(
+    monkeypatch: pytest.MonkeyPatch,
+):
     resolver = ProfileResolver(PROJECT_ROOT)
 
     monkeypatch.setattr(
@@ -396,12 +407,18 @@ def test_runtime_self_check_builds_profile_payload_from_resolver_surface(
                 reasons=(),
                 selected_backend="torch",
                 required_env_name=family_profile.isolated_env_name,
-                expected_python_path=str(tmp_path / ".envs" / family_profile.isolated_env_name / "python"),
+                expected_python_path=str(
+                    tmp_path / ".envs" / family_profile.isolated_env_name / "python"
+                ),
                 backend_candidates=family_profile.allowed_backends,
-                metadata={"pack_refs": {"family": [family_profile.key], "module": [module_profile.key]}},
+                metadata={
+                    "pack_refs": {"family": [family_profile.key], "module": [module_profile.key]}
+                },
             )
 
-    monkeypatch.setattr(runtime_self_check, "parse_core_settings_from_env", lambda environ=None: settings_payload)
+    monkeypatch.setattr(
+        runtime_self_check, "parse_core_settings_from_env", lambda environ=None: settings_payload
+    )
     monkeypatch.setattr(
         runtime_self_check,
         "build_runtime",

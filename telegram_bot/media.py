@@ -58,7 +58,7 @@ import uuid
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from core.config import CoreSettings
 from core.errors import AudioConversionError
@@ -128,8 +128,8 @@ class MediaValidationResult:
 
     is_valid: bool
     media_type: MediaType
-    error_message: Optional[str] = None
-    content_type: Optional[str] = None
+    error_message: str | None = None
+    content_type: str | None = None
     file_size: int = 0
 
 
@@ -145,7 +145,7 @@ class StagedMedia:
     """Staged media file with cleanup capability."""
 
     original_path: Path
-    converted_path: Optional[Path]
+    converted_path: Path | None
     was_converted: bool
     is_wav: bool
 
@@ -217,7 +217,7 @@ def get_telegram_media_type(message: dict) -> MediaType:
 #   SIDE_EFFECTS: none
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: get_telegram_content_type
-def get_telegram_content_type(message: dict, media_type: MediaType) -> Optional[str]:
+def get_telegram_content_type(message: dict, media_type: MediaType) -> str | None:
     """
     Extract content type from Telegram message.
 
@@ -247,7 +247,7 @@ def get_telegram_content_type(message: dict, media_type: MediaType) -> Optional[
 #   SIDE_EFFECTS: none
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: get_telegram_file_id
-def get_telegram_file_id(message: dict, media_type: MediaType) -> Optional[str]:
+def get_telegram_file_id(message: dict, media_type: MediaType) -> str | None:
     """
     Extract file_id from Telegram message.
 
@@ -307,7 +307,7 @@ def get_telegram_file_size(message: dict, media_type: MediaType) -> int:
 #   SIDE_EFFECTS: none
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: get_telegram_file_name
-def get_telegram_file_name(message: dict, media_type: MediaType) -> Optional[str]:
+def get_telegram_file_name(message: dict, media_type: MediaType) -> str | None:
     """
     Extract file name from Telegram message.
 
@@ -331,9 +331,7 @@ def get_telegram_file_name(message: dict, media_type: MediaType) -> Optional[str
 #   SIDE_EFFECTS: none
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: validate_telegram_media
-def validate_telegram_media(
-    message: dict, max_size_bytes: int
-) -> MediaValidationResult:
+def validate_telegram_media(message: dict, max_size_bytes: int) -> MediaValidationResult:
     """
     Validate that a Telegram message contains valid clone media.
 
@@ -368,8 +366,7 @@ def validate_telegram_media(
         return MediaValidationResult(
             is_valid=False,
             media_type=media_type,
-            error_message=f"File too large: {actual_mb:.1f}MB. "
-            f"Maximum size: {max_mb:.1f}MB.",
+            error_message=f"File too large: {actual_mb:.1f}MB. Maximum size: {max_mb:.1f}MB.",
             content_type=content_type,
             file_size=file_size,
         )
@@ -420,7 +417,7 @@ async def download_telegram_media(
     message: dict,
     media_type: MediaType,
     staging_dir: Path,
-) -> tuple[Path, Optional[str]]:
+) -> tuple[Path, str | None]:
     """
     Download media from Telegram to staging directory.
 
@@ -530,9 +527,7 @@ async def stage_clone_media(
     # START_BLOCK_PREPARE_STAGING_DIRECTORY
     # Create staging directory if needed
     if staging_dir is None:
-        staging_dir = (
-            Path(tempfile.gettempdir()) / f"qwen3_clone_{uuid.uuid4().hex[:8]}"
-        )
+        staging_dir = Path(tempfile.gettempdir()) / f"qwen3_clone_{uuid.uuid4().hex[:8]}"
     staging_dir.mkdir(parents=True, exist_ok=True)
     # END_BLOCK_PREPARE_STAGING_DIRECTORY
 
@@ -619,9 +614,7 @@ class MediaValidationError(Exception):
 #   SIDE_EFFECTS: May invoke ffmpeg and create a converted WAV file on disk.
 #   LINKS: M-TELEGRAM
 # END_CONTRACT: convert_audio_to_wav_if_needed
-def convert_audio_to_wav_if_needed(
-    input_path: Path, settings: CoreSettings
-) -> tuple[Path, bool]:
+def convert_audio_to_wav_if_needed(input_path: Path, settings: CoreSettings) -> tuple[Path, bool]:
     """
     Convert audio to WAV format if needed.
 
@@ -667,19 +660,16 @@ def convert_audio_to_wav_if_needed(
     ]
 
     try:
-        subprocess.run(
-            command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
-        )
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         return temp_wav, True
     except FileNotFoundError as exc:
-        raise AudioConversionError(
-            "ffmpeg is not installed or not available in PATH"
-        ) from exc
+        raise AudioConversionError("ffmpeg is not installed or not available in PATH") from exc
     except subprocess.CalledProcessError as exc:
         raise AudioConversionError(
             exc.stderr.decode("utf-8", errors="ignore") or "ffmpeg conversion failed"
         ) from exc
     # END_BLOCK_FUNCTION_CONVERT_TO_WAV
+
 
 __all__ = [
     "LOGGER",

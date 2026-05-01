@@ -54,8 +54,12 @@ def _build_capability_status(settings, registry_report: dict[str, object]) -> di
             "bound_model": bound_model,
             "available": matching_item is not None,
             "runtime_ready": bool(matching_item.get("runtime_ready")) if matching_item else False,
-            "missing_artifacts": list(matching_item.get("missing_artifacts", [])) if matching_item else [],
-            "reason": "runtime_binding_missing" if bound_model is None else "runtime_binding_configured",
+            "missing_artifacts": list(matching_item.get("missing_artifacts", []))
+            if matching_item
+            else [],
+            "reason": "runtime_binding_missing"
+            if bound_model is None
+            else "runtime_binding_configured",
         }
 
     return {
@@ -146,9 +150,7 @@ def build_readiness_report(request: Request) -> HealthResponse:
     }
     status = (
         "ok"
-        if registry_report["registry_ready"]
-        and ffmpeg_ready
-        and config["models_dir_exists"]
+        if registry_report["registry_ready"] and ffmpeg_ready and config["models_dir_exists"]
         else "degraded"
     )
     return HealthResponse(
@@ -161,6 +163,7 @@ def build_readiness_report(request: Request) -> HealthResponse:
             "capabilities": capability_report,
         },
     )
+
 
 __all__ = [
     "register_health_routes",

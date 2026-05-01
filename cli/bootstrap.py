@@ -21,12 +21,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from cli.runtime_config import CliSettings, get_cli_settings
 from core.bootstrap import CoreRuntime, build_runtime
 from core.observability import get_logger, log_event
-
 
 LOGGER = get_logger(__name__)
 
@@ -51,7 +49,7 @@ class CliRuntimeBootstrap:
 #   SIDE_EFFECTS: Builds the shared core runtime for interactive CLI use.
 #   LINKS: M-CLI
 # END_CONTRACT: build_cli_runtime
-def build_cli_runtime(settings: Optional[CliSettings] = None) -> CliRuntimeBootstrap:
+def build_cli_runtime(settings: CliSettings | None = None) -> CliRuntimeBootstrap:
     resolved_settings = settings or get_cli_settings()
     core_runtime = build_runtime(resolved_settings)
     log_event(
@@ -63,6 +61,7 @@ def build_cli_runtime(settings: Optional[CliSettings] = None) -> CliRuntimeBoots
         runtime_capability_map=resolved_settings.runtime_capability_map(),
     )
     return CliRuntimeBootstrap(settings=resolved_settings, core=core_runtime)
+
 
 __all__ = [
     "CliRuntimeBootstrap",

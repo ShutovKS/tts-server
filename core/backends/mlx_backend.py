@@ -121,19 +121,19 @@ class MLXBackend(TTSBackend):
             return
         raise TTSGenerationError(
             f"Unsupported execution mode '{request.execution_mode}' for backend '{self.key}'",
-            details={"backend": self.key, "mode": request.execution_mode, "model": request.handle.spec.api_name},
+            details={
+                "backend": self.key,
+                "mode": request.execution_mode,
+                "model": request.handle.spec.api_name,
+            },
         )
 
-    def __init__(
-        self, models_dir: Path, *, metrics: OperationalMetricsRegistry | None = None
-    ):
+    def __init__(self, models_dir: Path, *, metrics: OperationalMetricsRegistry | None = None):
         self.models_dir = models_dir
         self._cache: dict[str, Any] = {}
         self._lock = Lock()
         self._normalized_runtime_dirs: dict[str, Path] = {}
-        self._normalized_runtime_tempdirs: dict[
-            str, tempfile.TemporaryDirectory[str]
-        ] = {}
+        self._normalized_runtime_tempdirs: dict[str, tempfile.TemporaryDirectory[str]] = {}
         self._metrics = metrics or OperationalMetricsRegistry()
 
     # START_CONTRACT: capabilities
@@ -229,11 +229,9 @@ class MLXBackend(TTSBackend):
         with self._lock:
             runtime_model = self._cache.get(spec.folder)
             if runtime_model is None:
-                self._metrics.collector.increment(
-                    "models.cache.miss", tags={"backend": self.key}
-                )
-                runtime_model, runtime_path, used_normalized_runtime = (
-                    self._load_runtime_model(spec=spec, model_path=model_path)
+                self._metrics.collector.increment("models.cache.miss", tags={"backend": self.key})
+                runtime_model, runtime_path, used_normalized_runtime = self._load_runtime_model(
+                    spec=spec, model_path=model_path
                 )
                 self._cache[spec.folder] = runtime_model
                 log_event(
@@ -249,9 +247,7 @@ class MLXBackend(TTSBackend):
                     normalized_runtime=used_normalized_runtime,
                 )
             else:
-                self._metrics.collector.increment(
-                    "models.cache.hit", tags={"backend": self.key}
-                )
+                self._metrics.collector.increment("models.cache.hit", tags={"backend": self.key})
         # END_BLOCK_CHECK_CACHE
 
         # START_BLOCK_LOAD_FROM_DISK
@@ -280,16 +276,12 @@ class MLXBackend(TTSBackend):
                 "loadable": False,
                 "required_artifacts": [
                     rule.describe()
-                    for rule in spec.artifact_validation_for_backend(
-                        self.key
-                    ).required_rules
+                    for rule in spec.artifact_validation_for_backend(self.key).required_rules
                 ],
                 "missing_artifacts": ["model_directory"],
             }
         )
-        runtime_ready = bool(
-            available and artifact_check["loadable"] and self.is_available()
-        )
+        runtime_ready = bool(available and artifact_check["loadable"] and self.is_available())
         cached = spec.folder in self._cache
         normalized_runtime_path = self._normalized_runtime_dirs.get(spec.folder)
         active_runtime_path = normalized_runtime_path or resolved_path
@@ -312,9 +304,7 @@ class MLXBackend(TTSBackend):
                 "cache_key": spec.folder,
                 "backend": self.key,
                 "normalized_runtime": normalized_runtime_path is not None,
-                "runtime_path": str(active_runtime_path)
-                if active_runtime_path
-                else None,
+                "runtime_path": str(active_runtime_path) if active_runtime_path else None,
                 "eviction_policy": "not_configured",
             },
             "missing_artifacts": artifact_check["missing_artifacts"],
@@ -550,9 +540,7 @@ class MLXBackend(TTSBackend):
                 },
             ) from exc
 
-    def _load_runtime_model(
-        self, *, spec: ModelSpec, model_path: Path
-    ) -> tuple[Any, Path, bool]:
+    def _load_runtime_model(self, *, spec: ModelSpec, model_path: Path) -> tuple[Any, Path, bool]:
         timer = Timer()
         direct_error: Exception | None = None
         # START_BLOCK_DIRECT_RUNTIME_LOAD
@@ -593,9 +581,7 @@ class MLXBackend(TTSBackend):
         # END_BLOCK_DIRECT_RUNTIME_LOAD
 
         # START_BLOCK_NORMALIZE_RUNTIME_LAYOUT
-        runtime_path = self._prepare_runtime_model_path(
-            spec=spec, model_path=model_path
-        )
+        runtime_path = self._prepare_runtime_model_path(spec=spec, model_path=model_path)
         try:
             runtime_model = self._invoke_runtime_loader(
                 spec=spec,
@@ -680,12 +666,8 @@ class MLXBackend(TTSBackend):
         if tokenizer is not None:
             return
 
-        model_tokenizer_artifacts = self._collect_tokenizer_artifact_presence(
-            model_path
-        )
-        runtime_tokenizer_artifacts = self._collect_tokenizer_artifact_presence(
-            runtime_path
-        )
+        model_tokenizer_artifacts = self._collect_tokenizer_artifact_presence(model_path)
+        runtime_tokenizer_artifacts = self._collect_tokenizer_artifact_presence(runtime_path)
         details = {
             "model": spec.api_name,
             "mode": spec.mode,
@@ -811,16 +793,12 @@ class MLXBackend(TTSBackend):
         )
 
     def _observe_load_failure(self) -> None:
-        self._metrics.collector.increment(
-            "models.load.failed", tags={"backend": self.key}
-        )
+        self._metrics.collector.increment("models.load.failed", tags={"backend": self.key})
 
     @staticmethod
     def _should_retry_with_normalized_runtime(exc: Exception) -> bool:
         message = str(exc)
-        return (
-            isinstance(exc, TypeError) and "ModelConfig.__init__() missing" in message
-        )
+        return isinstance(exc, TypeError) and "ModelConfig.__init__() missing" in message
 
     def _prepare_runtime_model_path(self, *, spec: ModelSpec, model_path: Path) -> Path:
         config = self._read_model_config(spec=spec, model_path=model_path)
@@ -833,9 +811,7 @@ class MLXBackend(TTSBackend):
             spec=spec, model_path=model_path, normalized_config=normalized_config
         )
 
-    def _read_model_config(
-        self, *, spec: ModelSpec, model_path: Path
-    ) -> dict[str, Any]:
+    def _read_model_config(self, *, spec: ModelSpec, model_path: Path) -> dict[str, Any]:
         config_path = model_path / "config.json"
         try:
             return json.loads(config_path.read_text(encoding="utf-8"))
@@ -912,9 +888,7 @@ class MLXBackend(TTSBackend):
         normalized = dict(config)
         normalized.update(talker_config)
         normalized["model_type"] = config.get("model_type")
-        normalized["tie_word_embeddings"] = bool(
-            talker_config.get("tie_word_embeddings", False)
-        )
+        normalized["tie_word_embeddings"] = bool(talker_config.get("tie_word_embeddings", False))
         normalized["talker_config"] = talker_config
         return normalized
 
@@ -931,9 +905,7 @@ class MLXBackend(TTSBackend):
         temp_dir = tempfile.TemporaryDirectory(prefix=f"qwen3-tts-mlx-{spec.mode}-")
         runtime_dir = Path(temp_dir.name)
         self._mirror_model_directory(source=model_path, destination=runtime_dir)
-        self._write_normalized_config(
-            runtime_dir=runtime_dir, normalized_config=normalized_config
-        )
+        self._write_normalized_config(runtime_dir=runtime_dir, normalized_config=normalized_config)
         self._normalized_runtime_dirs[spec.folder] = runtime_dir
         self._normalized_runtime_tempdirs[spec.folder] = temp_dir
         log_event(
@@ -1027,6 +999,7 @@ class MLXBackend(TTSBackend):
             "required_artifacts": list(requirements.keys()),
             "missing_artifacts": missing,
         }
+
 
 __all__ = [
     "LOGGER",

@@ -48,10 +48,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import tempfile
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event
-import tempfile
 from time import sleep
 
 import pytest
@@ -65,6 +65,19 @@ from core.application.job_execution import (
     JobNotCancellableError,
     JobQueueFullError,
 )
+from core.bootstrap import (
+    build_job_artifact_store,
+    build_job_execution_backend,
+    build_job_metadata_store,
+    build_runtime,
+)
+from core.config import (
+    DEFAULT_MODELS_DIR,
+    DEFAULT_OUTPUTS_DIR,
+    DEFAULT_UPLOAD_STAGING_DIR,
+    DEFAULT_VOICES_DIR,
+    CoreSettings,
+)
 from core.contracts.commands import (
     CustomVoiceCommand,
     VoiceCloneCommand,
@@ -77,28 +90,14 @@ from core.contracts.jobs import (
     create_job_submission,
 )
 from core.contracts.results import AudioResult, GenerationResult
-from core.bootstrap import (
-    build_job_artifact_store,
-    build_job_execution_backend,
-    build_job_metadata_store,
-    build_runtime,
-)
-from core.config import (
-    CoreSettings,
-    DEFAULT_MODELS_DIR,
-    DEFAULT_OUTPUTS_DIR,
-    DEFAULT_UPLOAD_STAGING_DIR,
-    DEFAULT_VOICES_DIR,
-)
 from core.errors import JobIdempotencyConflictError
-from core.metrics import OperationalMetricsRegistry
 from core.infrastructure.job_execution_local import (
     LocalBoundedExecutionManager,
     LocalInMemoryJobStore,
     LocalJobArtifactHandler,
     LocalJobArtifactStore,
 )
-
+from core.metrics import OperationalMetricsRegistry
 
 pytestmark = pytest.mark.unit
 
@@ -200,9 +199,9 @@ def _wait_for_status(
     *,
     timeout: float = 2.0,
 ):
-    deadline = datetime.now(timezone.utc) + timedelta(seconds=timeout)
+    deadline = datetime.now(UTC) + timedelta(seconds=timeout)
     last_snapshot = None
-    while datetime.now(timezone.utc) < deadline:
+    while datetime.now(UTC) < deadline:
         snapshot = store.get_snapshot(job_id)
         last_snapshot = snapshot
         if snapshot is not None and snapshot.status is status:
@@ -231,7 +230,7 @@ def test_in_memory_job_store_creates_queued_job_snapshot():
 def test_in_memory_job_store_marks_running_and_succeeded_with_result():
     store = LocalInMemoryJobStore(retention_ttl_seconds=60.0)
     created = store.create(_make_submission())
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     completed_at = started_at + timedelta(seconds=3)
 
     running = store.mark_running(created.job_id, started_at=started_at)
@@ -262,15 +261,11 @@ def test_local_in_memory_job_store_uses_artifact_handler_for_terminal_cleanup(
     staged_path = tmp_path / "staged-input.wav"
     staged_path.write_bytes(b"audio")
     artifact_store = LocalJobArtifactStore()
-    store = LocalInMemoryJobStore(
-        artifact_store=artifact_store, retention_ttl_seconds=60.0
-    )
+    store = LocalInMemoryJobStore(artifact_store=artifact_store, retention_ttl_seconds=60.0)
     created = store.create(
         create_job_submission(
             operation=JobOperation.SYNTHESIZE_CUSTOM,
-            command=CustomVoiceCommand(
-                text="hello", model="demo-model", save_output=False
-            ),
+            command=CustomVoiceCommand(text="hello", model="demo-model", save_output=False),
             submit_request_id="req-cleanup",
             owner_principal_id="local-default",
             response_format="wav",
@@ -322,7 +317,7 @@ def test_in_memory_job_store_purges_expired_terminal_jobs():
             idempotency_fingerprint="fp-1",
         )
     )
-    completed_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+    completed_at = datetime.now(UTC) - timedelta(seconds=5)
     store.mark_running(created.job_id, started_at=completed_at - timedelta(seconds=1))
     store.mark_succeeded(
         created.job_id, success=_make_success_snapshot(), completed_at=completed_at
@@ -695,16 +690,12 @@ def test_local_job_artifact_handler_cleans_up_staged_paths(tmp_path: Path):
             JobExecutionBackend,
             LocalBoundedExecutionManager(
                 store=LocalInMemoryJobStore(),
-                executor=InMemoryJobExecutor(
-                    application_service=StubApplicationService()
-                ),
+                executor=InMemoryJobExecutor(application_service=StubApplicationService()),
             ),
         ),
     ],
 )
-def test_local_adapters_conform_to_explicit_job_ports(
-    port_type: type[object], instance: object
-):
+def test_local_adapters_conform_to_explicit_job_ports(port_type: type[object], instance: object):
     assert isinstance(instance, port_type)
     if isinstance(instance, LocalBoundedExecutionManager):
         instance.stop()

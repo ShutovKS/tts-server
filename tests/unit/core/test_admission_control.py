@@ -24,9 +24,9 @@
 
 from __future__ import annotations
 
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import tempfile
 
 import pytest
 
@@ -38,7 +38,6 @@ from core.infrastructure.admission_control_local import (
 )
 from core.infrastructure.job_execution_local import LocalInMemoryJobStore
 from tests.unit.core.test_job_execution import _make_submission
-
 
 pytestmark = pytest.mark.unit
 
@@ -140,9 +139,7 @@ def test_local_quota_guard_is_deterministic_under_parallel_compute_contention() 
     quota_guard = build_quota_guard(settings, store=store)
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [
-            executor.submit(
-                quota_guard.check_and_consume_compute, principal_id="principal-a"
-            )
+            executor.submit(quota_guard.check_and_consume_compute, principal_id="principal-a")
             for _ in range(4)
         ]
         results = [future.result(timeout=1.0) for future in futures]
@@ -153,15 +150,11 @@ def test_local_quota_guard_is_deterministic_under_parallel_compute_contention() 
         f"Expected exactly two compute admissions before quota enforcement, got: {results}"
     )
     assert all(result.current_usage in {1, 2} for result in allowed)
-    assert len(blocked) == 2, (
-        f"Expected remaining parallel requests to be rejected, got: {results}"
-    )
+    assert len(blocked) == 2, f"Expected remaining parallel requests to be rejected, got: {results}"
     assert all(result.current_usage == 2 for result in blocked)
 
 
-def test_local_quota_guard_counts_active_jobs_per_principal_under_parallel_checks() -> (
-    None
-):
+def test_local_quota_guard_counts_active_jobs_per_principal_under_parallel_checks() -> None:
     store = LocalInMemoryJobStore()
     store.create(_make_submission(owner_principal_id="principal-a"))
     store.create(_make_submission(request_id="req-2", owner_principal_id="principal-a"))
@@ -173,15 +166,11 @@ def test_local_quota_guard_counts_active_jobs_per_principal_under_parallel_check
     quota_guard = build_quota_guard(settings, store=store)
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [
-            executor.submit(
-                quota_guard.check_active_async_jobs, principal_id="principal-a"
-            )
+            executor.submit(quota_guard.check_active_async_jobs, principal_id="principal-a")
             for _ in range(2)
         ]
         futures.extend(
-            executor.submit(
-                quota_guard.check_active_async_jobs, principal_id="principal-b"
-            )
+            executor.submit(quota_guard.check_active_async_jobs, principal_id="principal-b")
             for _ in range(2)
         )
         results = [future.result(timeout=1.0) for future in futures]
@@ -189,10 +178,8 @@ def test_local_quota_guard_counts_active_jobs_per_principal_under_parallel_check
     principal_a_results = results[:2]
     principal_b_results = results[2:]
     assert all(
-        result.allowed is False and result.current_usage == 2
-        for result in principal_a_results
+        result.allowed is False and result.current_usage == 2 for result in principal_a_results
     )
     assert all(
-        result.allowed is True and result.current_usage == 1
-        for result in principal_b_results
+        result.allowed is True and result.current_usage == 1 for result in principal_b_results
     )
