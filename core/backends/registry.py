@@ -30,6 +30,7 @@ from core.errors import (
     ModelNotAvailableError,
 )
 from core.models.catalog import ModelSpec, get_model_manifest
+from core.models.manifest import ModelManifest
 from core.planning.capability_resolver import CapabilityResolver
 from core.planning.host_probe import HostProbe
 
@@ -44,7 +45,7 @@ class BackendSelection:
 
 # START_CONTRACT: BackendRegistry
 #   PURPOSE: Select the active inference backend and resolve supported model specifications against it.
-#   INPUTS: { backends: Sequence[TTSBackend] - Registered backend implementations, requested_backend: str | None - Optional explicit backend override, autoselect: bool - Whether backend selection may auto-pick a ready backend, model_manifest_path: object - Optional manifest path override }
+#   INPUTS: { backends: Sequence[TTSBackend] - Registered backend implementations, requested_backend: str | None - Optional explicit backend override, autoselect: bool - Whether backend selection may auto-pick a ready backend, model_manifest_path: object - Optional manifest path override (used only when model_manifest is not provided), model_manifest: ModelManifest | None - Pre-loaded manifest taking precedence over model_manifest_path so callers (e.g. bootstrap) can hand in a composite-loaded manifest without going through the on-disk loader }
 #   OUTPUTS: { instance - Backend registry with a resolved backend selection }
 #   SIDE_EFFECTS: Loads the model manifest and selects an active backend during initialization
 #   LINKS: M-BACKENDS
@@ -57,17 +58,19 @@ class BackendRegistry:
         requested_backend: str | None = None,
         autoselect: bool = True,
         model_manifest_path=None,
+        model_manifest: ModelManifest | None = None,
     ):
         if not backends:
             raise ValueError("At least one backend must be registered")
         self._backends = {backend.key: backend for backend in backends}
         self._requested_backend = requested_backend
         self._autoselect = autoselect
-        self._model_manifest = (
-            get_model_manifest(model_manifest_path)
-            if model_manifest_path is not None
-            else get_model_manifest()
-        )
+        if model_manifest is not None:
+            self._model_manifest = model_manifest
+        elif model_manifest_path is not None:
+            self._model_manifest = get_model_manifest(model_manifest_path)
+        else:
+            self._model_manifest = get_model_manifest()
         self._host_probe = HostProbe()
         self._host_snapshot = self._host_probe.probe()
         self._capability_resolver = CapabilityResolver()

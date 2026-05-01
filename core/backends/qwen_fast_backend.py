@@ -24,13 +24,16 @@ import os
 import platform
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
 from core.errors import ModelLoadError, TTSGenerationError
 from core.metrics import OperationalMetricsRegistry
 from core.models.catalog import ModelSpec
+
+if TYPE_CHECKING:
+    from core.config import CoreSettings
 
 try:
     import torch
@@ -66,6 +69,26 @@ class QwenFastBackend(TTSBackend):
         self._cache: dict[str, Any] = {}
         self._lock = Lock()
         self._metrics = metrics or OperationalMetricsRegistry()
+
+    # START_CONTRACT: from_settings
+    #   PURPOSE: Build a QwenFastBackend from settings, threading the qwen_fast_enabled toggle through the constructor.
+    #   INPUTS: { settings: CoreSettings - Runtime settings, metrics: OperationalMetricsRegistry | None - Optional shared metrics facade }
+    #   OUTPUTS: { QwenFastBackend - Constructed backend bound to settings.models_dir and qwen_fast_enabled }
+    #   SIDE_EFFECTS: none
+    #   LINKS: M-BACKENDS, M-BOOTSTRAP
+    # END_CONTRACT: from_settings
+    @classmethod
+    def from_settings(
+        cls,
+        settings: CoreSettings,
+        *,
+        metrics: OperationalMetricsRegistry | None = None,
+    ) -> QwenFastBackend:
+        return cls(
+            settings.models_dir,
+            enabled=settings.qwen_fast_enabled,
+            metrics=metrics,
+        )
 
     def capabilities(self) -> BackendCapabilitySet:
         return BackendCapabilitySet(

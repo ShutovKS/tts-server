@@ -359,16 +359,20 @@
     </M-APPLICATION>
 
     <M-BOOTSTRAP NAME="CoreBootstrap" TYPE="ENTRY_POINT" STATUS="implemented">
-      <purpose>Assemble the full CoreRuntime from settings by wiring all components together.</purpose>
+      <purpose>Assemble the full CoreRuntime from settings by wiring all components together via auto-discovery (TTSBackend subclasses + composite manifest) so adding a new backend or model never requires editing this module.</purpose>
       <path>core/bootstrap.py, scripts/runtime_self_check.py</path>
-      <depends>M-CONFIG, M-BACKENDS, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-PROFILES</depends>
+      <depends>M-CONFIG, M-BACKENDS, M-MODELS, M-DISCOVERY, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-PROFILES</depends>
       <verification-ref>V-M-BOOTSTRAP</verification-ref>
+      <implementation-note>Phase 2.8 removes the hardcoded backend list and `model_manifest_path` plumbing from `build_runtime`. The bootstrap now (1) imports the four built-in backend modules at module load time only to register their `TTSBackend` subclasses, (2) calls `core.discovery.discover_backend_classes()` to obtain every concrete `TTSBackend` subclass (in-process subclasses + `tts_server.backends` entry-points), (3) constructs each backend through the new `TTSBackend.from_settings(settings, *, metrics)` classmethod factory (overridden in `MLXBackend` to use `mlx_models_dir` and in `QwenFastBackend` to thread `qwen_fast_enabled`), skipping any backend whose constructor raises with a `[Bootstrap][build_backends][SKIP]` warning, and (4) loads the active manifest via `core.models.composite.load_composite_manifest(base_path=settings.model_manifest_path, models_dir=settings.models_dir)` and passes the pre-loaded `ModelManifest` into `BackendRegistry(..., model_manifest=...)` (a new keyword that takes precedence over the legacy `model_manifest_path`). The result is that `bootstrap.py` no longer enumerates concrete backend classes, no longer hardcodes per-backend constructor signatures, and transparently picks up per-family fragments and `.models/` auto-discovery.</implementation-note>
       <annotations>
         <class-CoreRuntime PURPOSE="Frozen dataclass holding all wired runtime components" />
-        <fn-build_runtime PURPOSE="Factory function that assembles CoreRuntime from settings" />
+        <fn-build_runtime PURPOSE="Factory function that assembles CoreRuntime from settings via auto-discovered backends and composite manifest" />
+        <fn-build_backends PURPOSE="Phase 2.8 helper: auto-discovers concrete TTSBackend subclasses and instantiates each through TTSBackend.from_settings(...)" />
       </annotations>
       <CrossLink from="M-BOOTSTRAP" to="M-CONFIG" relation="reads-settings" />
       <CrossLink from="M-BOOTSTRAP" to="M-BACKENDS" relation="creates-backends" />
+      <CrossLink from="M-BOOTSTRAP" to="M-DISCOVERY" relation="auto-discovers-backends" />
+      <CrossLink from="M-BOOTSTRAP" to="M-MODELS" relation="loads-composite-manifest" />
       <CrossLink from="M-BOOTSTRAP" to="M-MODEL-REGISTRY" relation="creates-registry" />
       <CrossLink from="M-BOOTSTRAP" to="M-TTS-SERVICE" relation="creates-service" />
       <CrossLink from="M-BOOTSTRAP" to="M-APPLICATION" relation="creates-application" />
