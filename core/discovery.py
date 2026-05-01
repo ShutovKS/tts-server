@@ -77,9 +77,7 @@ def discover_family_adapter_classes(
     include_entry_points: bool = True,
     entry_points_loader: object | None = None,
 ) -> tuple[type[ModelFamilyAdapter], ...]:
-    discovered: list[type[ModelFamilyAdapter]] = list(
-        _iter_concrete_subclasses(ModelFamilyAdapter)
-    )
+    discovered: list[type[ModelFamilyAdapter]] = list(_iter_concrete_subclasses(ModelFamilyAdapter))
     if include_entry_points:
         for cls in _load_entry_point_classes(
             FAMILY_ADAPTER_ENTRY_POINT_GROUP,
@@ -102,9 +100,7 @@ def discover_family_plugin_classes(
     include_entry_points: bool = True,
     entry_points_loader: object | None = None,
 ) -> tuple[type[ModelFamilyPlugin], ...]:
-    discovered: list[type[ModelFamilyPlugin]] = list(
-        _iter_concrete_subclasses(ModelFamilyPlugin)
-    )
+    discovered: list[type[ModelFamilyPlugin]] = list(_iter_concrete_subclasses(ModelFamilyPlugin))
     if include_entry_points:
         for cls in _load_entry_point_classes(
             FAMILY_PLUGIN_ENTRY_POINT_GROUP,
@@ -188,9 +184,7 @@ def _resolve_entry_points(
         try:
             iterable = loader()
         except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "discovery: entry_points_loader raised for group %r: %s", group, exc
-            )
+            logger.warning("discovery: entry_points_loader raised for group %r: %s", group, exc)
             return ()
         return tuple(iterable)
     try:
@@ -202,9 +196,7 @@ def _resolve_entry_points(
     if select is not None:
         return tuple(select(group=group))
     # Fallback for older Python releases (pre-3.10 entry_points API).
-    return tuple(
-        getattr(all_entries, "get", lambda _key, default=(): default)(group, ())
-    )
+    return tuple(getattr(all_entries, "get", lambda _key, default=(): default)(group, ()))
 
 
 def _qualified_name(cls: type) -> str:

@@ -131,9 +131,7 @@ class _StubAdapter(ModelFamilyAdapter):
     def supports_plan(self, plan: ExecutionPlan) -> bool:  # pragma: no cover
         return False
 
-    def prepare_execution(
-        self, plan: ExecutionPlan
-    ) -> FamilyPreparedExecution:  # pragma: no cover
+    def prepare_execution(self, plan: ExecutionPlan) -> FamilyPreparedExecution:  # pragma: no cover
         raise NotImplementedError
 
 
@@ -209,9 +207,7 @@ def test_entry_point_loader_loads_external_classes() -> None:
         return [ep]
 
     with patch.object(EntryPoint, "load", lambda _self: _ExternalBackend):
-        discovered = discover_backend_classes(
-            include_entry_points=True, entry_points_loader=loader
-        )
+        discovered = discover_backend_classes(include_entry_points=True, entry_points_loader=loader)
 
     assert any(cls is _ExternalBackend for cls in discovered)
 
@@ -270,9 +266,7 @@ def test_dedup_and_sort_is_stable() -> None:
         return eps
 
     with patch.object(EntryPoint, "load", lambda _self: _StubBackend):
-        result = discover_backend_classes(
-            include_entry_points=True, entry_points_loader=loader
-        )
+        result = discover_backend_classes(include_entry_points=True, entry_points_loader=loader)
 
     occurrences = sum(1 for cls in result if cls is _StubBackend)
     assert occurrences == 1
