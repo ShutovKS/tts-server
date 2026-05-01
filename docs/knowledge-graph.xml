@@ -130,11 +130,15 @@
       <path>core/backends/</path>
       <depends>M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS</depends>
       <verification-ref>V-M-BACKENDS</verification-ref>
+      <implementation-note>Torch inference is split between a thin dispatcher (`core/backends/torch_backend/dispatcher.py`) and per-family strategies under `core/backends/torch_backend/` (Qwen3TTSStrategy, OmniVoiceStrategy). Adding a new Torch family means adding a new TorchFamilyStrategy subclass and registering it on TorchBackend; no edits to the dispatcher are required.</implementation-note>
       <annotations>
         <class-BackendRegistry PURPOSE="Backend selection and model spec resolution" />
         <class-MLXBackend PURPOSE="Apple Silicon MLX inference backend" />
         <class-QwenFastBackend PURPOSE="Accelerated Qwen backend for custom, design, and clone with explicit CUDA/runtime gating" />
-        <class-TorchBackend PURPOSE="PyTorch CPU/CUDA inference backend" />
+        <class-TorchBackend PURPOSE="Thin PyTorch dispatcher that selects a TorchFamilyStrategy by family key" />
+        <class-TorchFamilyStrategy PURPOSE="Abstract per-family strategy contract: load_model_class plus synthesize_custom/design/clone" />
+        <class-Qwen3TTSStrategy PURPOSE="TorchFamilyStrategy for the Qwen3 family backed by qwen_tts.Qwen3TTSModel" />
+        <class-OmniVoiceStrategy PURPOSE="TorchFamilyStrategy for the OmniVoice family backed by omnivoice.OmniVoice" />
         <class-ONNXBackend PURPOSE="ONNX runtime backend for Piper voices" />
         <class-TTSBackend PURPOSE="Abstract backend interface" />
         <class-LoadedModelHandle PURPOSE="Handle to a loaded model with metadata" />
