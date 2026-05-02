@@ -351,8 +351,17 @@
         <check-1>python -m pytest tests/unit/core/test_engine_registry.py -m unit</check-1>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">Engine discovery and resolution remain deterministic and fail fast when no compatible engine exists in the engine registry.</scenario-1>
+        <scenario-1 kind="success">EngineRegistry accepts explicit and built-in TTSEngine registrations and resolves explicit engine keys or aliases deterministically.</scenario-1>
+        <scenario-2 kind="success">Capability-plus-language matching prefers lower configured priority first, then exact language support, then stable registration order.</scenario-2>
+        <scenario-3 kind="success">Disabled engine config entries are skipped deterministically and do not appear in the registered engine surface.</scenario-3>
+        <scenario-4 kind="failure">Duplicate engine keys fail fast with the duplicate key named in the error.</scenario-4>
+        <scenario-5 kind="failure">Optional engine entry-point load failures and invalid objects/classes are logged and skipped in non-fail-fast mode so unrelated enabled engines still register.</scenario-5>
+        <scenario-6 kind="failure">Fail-fast registry loading raises the original optional entry-point exception instead of warning-and-skip behavior.</scenario-6>
       </scenarios>
+      <required-log-markers>
+        <marker-1>[EngineRegistry][load_engine_registry][REGISTER_ENGINE_CANDIDATES]</marker-1>
+        <marker-2>[EngineRegistry][load_engine_registry][LOAD_ENTRY_POINTS]</marker-2>
+      </required-log-markers>
     </V-M-ENGINE-REGISTRY>
 
     <V-M-ENGINE-BRIDGE MODULE="M-ENGINE-BRIDGE" PRIORITY="medium">

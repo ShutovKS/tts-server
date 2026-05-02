@@ -51,18 +51,20 @@
       </annotations>
     </M-ENGINE-CONFIG>
 
-    <M-ENGINE-REGISTRY NAME="EngineRegistry" TYPE="CORE_LOGIC" STATUS="planned">
-      <purpose>Register engines, resolve compatible strategies, and expose the active engine selection for each runtime family through the engine registry.</purpose>
+    <M-ENGINE-REGISTRY NAME="EngineRegistry" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Register TTSEngine implementations, optionally load them from entry points, and resolve deterministic engine selections by key or capability/language match.</purpose>
       <path>core/engines/registry.py</path>
       <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ERRORS, M-OBSERVABILITY</depends>
       <verification-ref>V-M-ENGINE-REGISTRY</verification-ref>
+      <implementation-note>The first registry wave stays process-local and discovery-focused: explicit engines, built-in registrations, and optional entry points can all contribute TTSEngine instances; disabled config entries are skipped deterministically; duplicate keys fail fast with the key named; and optional load failures are warning-isolated unless fail-fast is requested.</implementation-note>
       <annotations>
-        <class-EngineRegistry PURPOSE="Registry for engine discovery and selection" />
-        <fn-register_engine PURPOSE="Register an engine implementation with metadata" />
-        <fn-resolve_engine PURPOSE="Resolve the best matching engine for a requested family or backend" />
+        <class-EngineRegistry PURPOSE="Process-local registry for TTSEngine registration, alias lookup, and deterministic selection" />
+        <class-EngineRegistryError PURPOSE="Typed registry failure for duplicate keys and unresolved selection paths" />
+        <fn-load_engine_registry PURPOSE="Build the registry from explicit engines, built-ins, config, and optional entry points" />
       </annotations>
       <CrossLink from="M-ENGINE-REGISTRY" to="M-ENGINE-CONTRACTS" relation="uses-shared-engine-types" />
-      <CrossLink from="M-ENGINE-REGISTRY" to="M-BACKENDS" relation="selects-backend-strategies" />
+      <CrossLink from="M-ENGINE-REGISTRY" to="M-ENGINE-CONFIG" relation="filters-enabled-and-disabled-engine-config" />
+      <CrossLink from="M-ENGINE-REGISTRY" to="M-OBSERVABILITY" relation="emits-loader-warning-events" />
     </M-ENGINE-REGISTRY>
 
     <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" STATUS="planned">
