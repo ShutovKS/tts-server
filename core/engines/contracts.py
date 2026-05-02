@@ -1,7 +1,7 @@
 # FILE: core/engines/contracts.py
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Define the shared engine contracts and immutable DTOs that future engine registry, bridge, and scheduler layers will consume.
+#   PURPOSE: Define the shared engine contracts and immutable DTOs that future engine registry and scheduler layers will consume.
 #   SCOPE: TTSEngine abstract contract, model/audio/job DTOs, capability flags, and availability metadata
 #   DEPENDS: M-MODELS
 #   LINKS: M-ENGINE-CONTRACTS, M-BACKENDS, M-MODEL-FAMILY
@@ -115,9 +115,9 @@ class EngineAvailability:
 # START_CONTRACT: TTSEngine
 #   PURPOSE: Define the future engine-facing execution contract while keeping model loading explicitly separate from synthesis calls.
 #   INPUTS: { subclass - Concrete engine class declaring key and label }
-#   OUTPUTS: { instance - Abstract engine contract for registry and bridge layers }
+#   OUTPUTS: { instance - Abstract engine contract for registry layers }
 #   SIDE_EFFECTS: none
-#   LINKS: M-ENGINE-CONTRACTS, M-ENGINE-REGISTRY, M-ENGINE-BRIDGE
+#   LINKS: M-ENGINE-CONTRACTS, M-ENGINE-REGISTRY
 # END_CONTRACT: TTSEngine
 class TTSEngine(ABC):
     key: str

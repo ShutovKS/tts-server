@@ -51,10 +51,10 @@
       </required-signals>
     </VF-004>
     <VF-011 NAME="EnginePlanningReadiness" USE_CASES="UC-008" DATA_FLOW="DF-BACKEND-SELECTION,DF-REQUEST-TO-PLAN" PRIORITY="high">
-      <scenario>Engine planning surfaces can resolve a family, engine, and backend path without breaking current transport behavior.</scenario>
-      <expected-outcome>Engine registry and compatibility bridge evidence show the planned engine vocabulary, typed config, TTSEngine, and worker pool while current runtime paths remain intact.</expected-outcome>
+      <scenario>Engine planning surfaces can resolve a family, engine, and backend path through current registry, config, and scheduler layers without breaking transport behavior.</scenario>
+      <expected-outcome>Engine registry and typed config evidence show the planned engine vocabulary, TTSEngine, and worker pool while current runtime paths remain intact.</expected-outcome>
       <required-signals>
-        <trace-sequence>Discovery resolves engine-related modules -> engine config parses typed settings -> engine registry resolves engine strategy -> bridge adapts current family surfaces -> scheduler keeps worker pool dispatch explicit</trace-sequence>
+        <trace-sequence>Discovery resolves engine-related modules -> engine config parses typed settings -> engine registry resolves engine strategy -> scheduler keeps worker pool dispatch explicit</trace-sequence>
       </required-signals>
     </VF-011>
 
@@ -231,7 +231,7 @@
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Normalized synthesis capability and execution-plan contracts preserve enough information to drive planner, family, and backend execution.</scenario-1>
-        <scenario-2 kind="success">Compatibility wrappers from current command DTOs preserve existing transport-facing behavior.</scenario-2>
+        <scenario-2 kind="success">Normalized command DTOs preserve existing transport-facing behavior while planner and registry layers resolve execution paths.</scenario-2>
       </scenarios>
     </V-M-EXECUTION-PLAN>
 
@@ -325,7 +325,7 @@
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Engine handle, TTSEngine, EngineCapabilities, SynthesisJob, AudioBuffer, and EngineAvailability contracts stay explicit and reusable across family and backend planning surfaces.</scenario-1>
-        <scenario-2 kind="success">TTSEngine keeps `load_model(...) -&gt; ModelHandle` separate from `synthesize(handle, job)` so future registry and bridge work can layer on the contracts without changing current runtime paths yet.</scenario-2>
+        <scenario-2 kind="success">TTSEngine keeps `load_model(...) -&gt; ModelHandle` separate from `synthesize(handle, job)` so future registry, config, and scheduler work can layer on the contracts without changing current runtime paths yet.</scenario-2>
       </scenarios>
     </V-M-ENGINE-CONTRACTS>
 
@@ -369,25 +369,6 @@
       </required-log-markers>
     </V-M-ENGINE-REGISTRY>
 
-    <V-M-ENGINE-BRIDGE MODULE="M-ENGINE-BRIDGE" PRIORITY="medium">
-      <test-files>
-        <file>tests/unit/core/test_engine_bridge.py</file>
-        <file>tests/unit/core/test_tts_service.py</file>
-        <file>tests/unit/core/test_synthesis_planner.py</file>
-      </test-files>
-      <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_engine_bridge.py -m unit</check-1>
-        <check-2>python -m pytest tests/unit/core/test_tts_service.py tests/unit/core/test_synthesis_planner.py -m unit</check-2>
-      </module-checks>
-      <scenarios>
-        <scenario-1 kind="success">Compatibility bridge inventories the current legacy family-adapter and backend lanes into deterministic temporary `legacy-*` EngineRegistry entries with explicit deletion criteria for the post-migration cleanup.</scenario-1>
-        <scenario-2 kind="success">Bridge registry aliases and capability/family/backend matching expose current legacy metadata without activating engine-owned model loading or synthesis execution.</scenario-2>
-        <scenario-3 kind="success">Planner and TTSService continue to resolve and execute through the existing registry -> family adapter -> backend path while the temporary bridge coexists in-process.</scenario-3>
-      </scenarios>
-      <required-log-markers>
-        <marker-1>TEMPORARY compatibility bridge</marker-1>
-      </required-log-markers>
-    </V-M-ENGINE-BRIDGE>
     <V-M-ENGINE-PIPER MODULE="M-ENGINE-PIPER" PRIORITY="high">
       <test-files>
         <file>tests/unit/core/test_piper_engine.py</file>

@@ -1,10 +1,10 @@
 # FILE: core/engines/__init__.py
 # VERSION: 1.6.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Re-export the public engine contract, typed configuration, production engine implementations, scheduler surface, registry/discovery surfaces, and the temporary legacy compatibility bridge.
-#   SCOPE: barrel re-exports for engine DTOs, TTSEngine, discriminated engine config models, production engines, scheduler helpers, registry loader helpers, and temporary bridge helpers
-#   DEPENDS: M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-BACKENDS
-#   LINKS: M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-BACKENDS
+#   PURPOSE: Re-export the public engine contract, typed configuration, production engine implementations, scheduler surface, registry/discovery helpers.
+#   SCOPE: barrel re-exports for engine DTOs, TTSEngine, discriminated engine config models, production engines, scheduler helpers, and registry loader helpers
+#   DEPENDS: M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-BACKENDS
+#   LINKS: M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-BACKENDS
 #   ROLE: BARREL
 #   MAP_MODE: SUMMARY
 # END_MODULE_CONTRACT
@@ -15,11 +15,11 @@
 #   Production engine surface - Re-export the Piper ONNX engine, the Qwen3 Torch engine, and the OmniVoice Torch engine implementations.
 #   Scheduler surface - Re-export the worker-pool key/policy DTOs, scheduler facade, and shutdown error.
 #   Registry surface - Re-export EngineRegistry, its typed error, and the loader/entry-point helpers.
-#   Compatibility surface - Re-export the temporary legacy compatibility bridge and registry builder.
+#   Registry loader surface - Re-export registry loader helpers.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.6.0 - Task 16: re-exported the OmniVoice Torch engine alongside Piper and Qwen3 for generic runtime engine routing]
+#   LAST_CHANGE: [v1.7.0 - Task 17: removed temporary legacy registry-adapter exports after engine runtime migration made them obsolete]
 # END_CHANGE_SUMMARY
 
 from core.engines.config import (
@@ -40,11 +40,6 @@ from core.engines.contracts import (
     ModelHandle,
     SynthesisJob,
     TTSEngine,
-)
-from core.engines.compatibility import (
-    EngineCompatibilityBridge,
-    LegacyEngineRecord,
-    build_legacy_engine_registry,
 )
 from core.engines.omnivoice import OmniVoiceTorchEngine
 from core.engines.piper import PiperOnnxEngine
@@ -67,7 +62,6 @@ __all__ = [
     "AudioBuffer",
     "DisabledEngineConfig",
     "EngineAvailability",
-    "EngineCompatibilityBridge",
     "EngineCapabilities",
     "EngineConfig",
     "ENGINE_ENTRY_POINT_GROUP",
@@ -78,7 +72,6 @@ __all__ = [
     "EngineSettings",
     "EngineWorkerPoolKey",
     "EngineWorkerPoolPolicy",
-    "LegacyEngineRecord",
     "MlxEngineConfig",
     "ModelHandle",
     "OmniVoiceTorchEngine",
@@ -90,7 +83,6 @@ __all__ = [
     "TTSEngine",
     "TorchEngineConfig",
     "WorkerPool",
-    "build_legacy_engine_registry",
     "load_engine_registry",
     "parse_engine_config",
     "parse_engine_settings",

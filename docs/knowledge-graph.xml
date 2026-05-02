@@ -21,7 +21,7 @@
     </M-CONFIG>
 
     <M-ENGINE-CONTRACTS NAME="EngineContracts" TYPE="TYPES" STATUS="implemented">
-      <purpose>Define the shared engine contracts, handles, and immutable synthesis DTOs that future engine registry, bridge, and scheduler layers will consume.</purpose>
+      <purpose>Define the shared engine contracts, handles, and immutable synthesis DTOs that future engine registry and scheduler layers will consume.</purpose>
       <path>core/engines/contracts.py</path>
       <depends>M-MODELS</depends>
       <verification-ref>V-M-ENGINE-CONTRACTS</verification-ref>
@@ -79,22 +79,6 @@
       <CrossLink from="M-ENGINE-REGISTRY-TESTS" to="M-ENGINE-CONFIG" relation="verifies-typed-config-matching-and-invalid-config-rejection" />
     </M-ENGINE-REGISTRY-TESTS>
 
-    <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" STATUS="implemented">
-      <purpose>Expose the current legacy family-adapter and backend lanes as temporary engine-like metadata without changing planner or synthesis-service behavior.</purpose>
-      <path>core/engines/compatibility.py</path>
-      <depends>M-ENGINE-CONTRACTS, M-MODEL-FAMILY, M-BACKENDS, M-CONTRACTS</depends>
-      <verification-ref>V-M-ENGINE-BRIDGE</verification-ref>
-      <implementation-note>The Task 8 bridge is intentionally TEMPORARY and metadata-only: it inventories legacy family adapters plus current backend lanes into registry-visible `legacy-*` TTSEngine entries, preserves the existing planner -> family adapter -> backend execution path unchanged, and carries explicit deletion criteria for the later engine runtime migration.</implementation-note>
-      <annotations>
-        <class-LegacyEngineRecord PURPOSE="Immutable temporary ledger entry for one legacy family/backend lane" />
-        <class-EngineCompatibilityBridge PURPOSE="Temporary bridge that inventories and registers legacy family/backend lanes into EngineRegistry" />
-        <fn-build_legacy_engine_registry PURPOSE="Populate an EngineRegistry with temporary legacy compatibility entries" />
-      </annotations>
-      <CrossLink from="M-ENGINE-BRIDGE" to="M-ENGINE-CONTRACTS" relation="adapts-engine-types" />
-      <CrossLink from="M-ENGINE-BRIDGE" to="M-MODEL-FAMILY" relation="bridges-family-surface" />
-      <CrossLink from="M-ENGINE-BRIDGE" to="M-ENGINE-REGISTRY" relation="registers-temporary-legacy-engine-entries" />
-    </M-ENGINE-BRIDGE>
-
     <M-ENGINE-PIPER NAME="PiperOnnxEngine" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Provide the first production TTSEngine implementation for Piper custom synthesis on the ONNX lane behind an explicit runtime opt-in.</purpose>
       <path>core/engines/piper.py</path>
@@ -107,7 +91,6 @@
       <CrossLink from="M-ENGINE-PIPER" to="M-ENGINE-CONTRACTS" relation="implements-shared-engine-contract" />
       <CrossLink from="M-ENGINE-PIPER" to="M-BACKENDS" relation="preserves-onnx-artifact-and-runtime-compatibility" />
       <CrossLink from="M-ENGINE-PIPER" to="M-TTS-SERVICE" relation="enables-guarded-piper-engine-route" />
-      <CrossLink from="M-ENGINE-PIPER" to="M-ENGINE-BRIDGE" relation="coexists-with-temporary-legacy-bridge-during-migration" />
     </M-ENGINE-PIPER>
 
     <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" STATUS="implemented">
@@ -132,7 +115,7 @@
     <M-ENGINE-ROUTE-SPLIT NAME="EngineRouteSplit" TYPE="CORE_LOGIC" STATUS="planned">
       <purpose>Define the planned HTTP route split that keeps engine-owned planning separate from current transport adapters.</purpose>
       <path>core/engines/route_split.py</path>
-      <depends>M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-ENGINE-SCHEDULER</depends>
+      <depends>M-ENGINE-REGISTRY, M-ENGINE-SCHEDULER</depends>
       <verification-ref>V-M-ENGINE-ROUTE-SPLIT</verification-ref>
       <annotations>
         <class-RouteSplitPolicy PURPOSE="Policy object describing server and client route responsibilities" />

@@ -17,7 +17,7 @@
     <Glossary>
       <family>A runtime-facing model family such as qwen, omnivoice, or piper, used to select planner rules and backend strategy.</family>
       <backend>The execution implementation that performs inference work for a family, such as MLX, Torch, or ONNX.</backend>
-      <engine>The planned runtime assembly that combines contracts, config, registry, scheduler, and adapter bridges for model execution.</engine>
+      <engine>The planned runtime assembly that combines contracts, config, registry, and scheduler layers for model execution.</engine>
       <strategy>A family-specific decision object that maps a request to backend execution details without exposing transport concerns.</strategy>
       <model-handle>The loaded runtime object plus metadata that identifies a ready model instance for synthesis.</model-handle>
       <scheduler>The worker coordination layer that queues and dispatches engine work with bounded concurrency and explicit handoff points.</scheduler>
@@ -583,7 +583,7 @@
 
     <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" LAYER="2" ORDER="10" STATUS="planned">
       <contract>
-        <purpose>Parse and validate engine-specific typed config for registry, scheduler, and bridge behavior.</purpose>
+        <purpose>Parse and validate engine-specific typed config for registry and scheduler behavior.</purpose>
       </contract>
       <interface>
         <export-EngineConfig PURPOSE="Typed engine configuration settings" />
@@ -619,25 +619,6 @@
       <verification-ref>V-M-ENGINE-REGISTRY</verification-ref>
     </M-ENGINE-REGISTRY>
 
-    <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" LAYER="2" ORDER="12" STATUS="planned">
-      <contract>
-        <purpose>Translate the current model-family surfaces into the new engine contracts without changing transport behavior.</purpose>
-      </contract>
-      <interface>
-        <export-EngineCompatibilityBridge PURPOSE="Bridge from existing family surfaces into engine contracts" />
-        <export-adapt_family_request PURPOSE="Adapt a family request to engine inputs" />
-        <export-adapt_backend_result PURPOSE="Adapt backend results back to current runtime shapes" />
-      </interface>
-      <depends>M-ENGINE-CONTRACTS, M-MODEL-FAMILY, M-BACKENDS, M-CONTRACTS</depends>
-      <target>
-        <source>core/engines/compatibility.py</source>
-      </target>
-      <observability>
-        <log-prefix>[EngineBridge]</log-prefix>
-      </observability>
-      <verification-ref>V-M-ENGINE-BRIDGE</verification-ref>
-    </M-ENGINE-BRIDGE>
-
     <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" LAYER="2" ORDER="13" STATUS="implemented">
       <contract>
         <purpose>Coordinate bounded per-engine/per-device worker dispatch for engine requests and keep queueing behavior explicit.</purpose>
@@ -667,7 +648,7 @@
       <interface>
         <export-RouteSplitPolicy PURPOSE="Policy object describing server and client route responsibilities" />
       </interface>
-      <depends>M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-ENGINE-SCHEDULER</depends>
+      <depends>M-ENGINE-REGISTRY, M-ENGINE-SCHEDULER</depends>
       <target>
         <source>core/engines/route_split.py</source>
       </target>
