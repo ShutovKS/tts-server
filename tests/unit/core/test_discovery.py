@@ -293,3 +293,21 @@ def test_dedup_and_sort_is_stable() -> None:
 
     sorted_keys = [getattr(cls, "key", "") for cls in result]
     assert sorted_keys == sorted(sorted_keys)
+
+
+def test_builtin_backend_import_seed_is_failure_isolated(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.discovery import BUILTIN_BACKEND_MODULES, import_builtin_backend_modules
+
+    imported: list[str] = []
+
+    def fake_import_module(module_name: str):
+        imported.append(module_name)
+        if module_name.endswith("onnx_backend"):
+            raise RuntimeError("onnx unavailable")
+        return object()
+
+    monkeypatch.setattr("core.discovery.import_module", fake_import_module)
+
+    import_builtin_backend_modules()
+
+    assert imported == list(BUILTIN_BACKEND_MODULES)

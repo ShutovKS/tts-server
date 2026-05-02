@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -32,8 +33,10 @@ from core.bootstrap import (
     build_job_artifact_store,
     build_job_execution_backend,
     build_job_metadata_store,
+    build_backends,
     build_runtime,
 )
+from core.discovery import BUILTIN_BACKEND_MODULES
 from core.config import (
     DEFAULT_MODELS_DIR,
     DEFAULT_OUTPUTS_DIR,
@@ -216,7 +219,7 @@ def test_parse_core_settings_from_env_uses_only_tts_names_when_legacy_names_are_
 )
 def test_job_wiring_factories_reject_unknown_backend_ids(
     factory_name: str,
-    settings_overrides: dict[str, str],
+    settings_overrides: dict[str, Any],
     expected_message: str,
 ):
     settings = CoreSettings(
@@ -318,9 +321,9 @@ def test_build_runtime_passes_manifest_path_to_backend_registry(tmp_path: Path):
         runtime.backend_registry.model_specs[0].api_name == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     )
     assert runtime.backend_registry._model_manifest.metadata["catalog"] == "test"
-    assert runtime.backend_registry._backends["mlx"].models_dir == (tmp_path / "mlx-models")
-    assert runtime.backend_registry._backends["torch"].models_dir == (tmp_path / "models")
-    assert runtime.backend_registry._backends["qwen_fast"].enabled is True
+    assert cast(Any, runtime.backend_registry._backends["mlx"]).models_dir == (tmp_path / "mlx-models")
+    assert cast(Any, runtime.backend_registry._backends["torch"]).models_dir == (tmp_path / "models")
+    assert cast(Any, runtime.backend_registry._backends["qwen_fast"]).enabled is True
     assert runtime.settings.runtime_capability_map() == {
         "family": None,
         "custom_model": None,
@@ -366,16 +369,44 @@ def test_build_backends_auto_discovers_concrete_subclasses(tmp_path: Path):
     for backend in backends:
         assert isinstance(backend, TTSBackend)
     # MLXBackend overrides from_settings to use mlx_models_dir, not models_dir.
-    mlx_backend = next(b for b in backends if b.key == "mlx")
+    mlx_backend = cast(Any, next(b for b in backends if b.key == "mlx"))
     assert mlx_backend.models_dir == (tmp_path / "mlx-models")
     # QwenFastBackend overrides from_settings to thread qwen_fast_enabled.
-    qwen_fast_backend = next(b for b in backends if b.key == "qwen_fast")
+    qwen_fast_backend = cast(Any, next(b for b in backends if b.key == "qwen_fast"))
     assert qwen_fast_backend.enabled is True
     # Torch + ONNX use the default from_settings; both bind to settings.models_dir.
-    torch_backend = next(b for b in backends if b.key == "torch")
+    torch_backend = cast(Any, next(b for b in backends if b.key == "torch"))
     assert torch_backend.models_dir == (tmp_path / "models")
-    onnx_backend = next(b for b in backends if b.key == "onnx")
+    onnx_backend = cast(Any, next(b for b in backends if b.key == "onnx"))
     assert onnx_backend.models_dir == (tmp_path / "models")
+
+
+def test_build_backends_calls_discovery_seed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    calls: list[str] = []
+
+    def fake_seed() -> None:
+        calls.extend(BUILTIN_BACKEND_MODULES)
+
+    class _StubBackend:
+        key = "stub"
+        label = "Stub"
+
+        @classmethod
+        def from_settings(cls, settings, *, metrics):
+            return cls()
+
+    def fake_discover_backend_classes():
+        fake_seed()
+        return (_StubBackend,)
+
+    monkeypatch.setattr("core.bootstrap.discover_backend_classes", fake_discover_backend_classes)
+
+    settings = cast(Any, object())
+
+    backends = build_backends(settings, metrics=OperationalMetricsRegistry())
+
+    assert calls == list(BUILTIN_BACKEND_MODULES)
+    assert [backend.key for backend in backends] == ["stub"]
 
 
 def test_core_settings_resolve_runtime_model_binding_by_mode():

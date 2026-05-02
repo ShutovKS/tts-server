@@ -1,5 +1,5 @@
 # FILE: tests/unit/core/test_torch_backend_clone_guard.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Verify the Torch clone guard rejects implausibly short clone outputs instead of persisting misleading near-empty WAVs.
 #   SCOPE: clone-duration guard behavior for short and sufficient clone audio payloads
@@ -15,7 +15,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Added unit coverage for the Torch clone-duration guard]
+#   LAST_CHANGE: [v1.1.0 - Task 4 compatibility wiring: clone guard coverage remains intact while dispatcher strategy registration moved into strategy_registry]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations

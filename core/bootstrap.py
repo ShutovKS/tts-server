@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import cast
 
 from core.application import (
     InMemoryJobExecutor,
@@ -38,16 +39,8 @@ from core.application import (
     TTSApplicationService,
 )
 from core.backends.base import TTSBackend
-
-# The four built-in backend modules are imported here only to ensure their
-# subclasses are registered before discover_backend_classes() walks
-# TTSBackend.__subclasses__(). Their concrete classes are NOT referenced
-# directly by build_runtime.
-from core.backends.mlx_backend import MLXBackend  # noqa: F401
-from core.backends.onnx_backend import ONNXBackend  # noqa: F401
-from core.backends.qwen_fast_backend import QwenFastBackend  # noqa: F401
 from core.backends.registry import BackendRegistry
-from core.backends.torch_backend import TorchBackend  # noqa: F401
+from core.contracts import RuntimeExecutionRegistry
 from core.config import CoreSettings
 from core.discovery import discover_backend_classes
 from core.infrastructure import (
@@ -224,7 +217,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
     else:
         result_cache = NullResultCache()
     tts_service = TTSService(
-        registry=registry,
+        registry=cast(RuntimeExecutionRegistry, registry),
         settings=settings,
         inference_guard=inference_guard,
         result_cache=result_cache,

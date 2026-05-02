@@ -1,5 +1,5 @@
 # FILE: core/discovery.py
-# VERSION: 1.2.0
+# VERSION: 1.2.1
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide auto-discovery helpers that enumerate concrete TTSBackend, ModelFamilyAdapter, and ModelFamilyPlugin classes from in-process __subclasses__() recursion plus optional importlib.metadata entry points.
 #   SCOPE: discover_backend_classes, discover_family_adapter_classes, discover_family_plugin_classes, built-in adapter seeding for subclass discovery, test-local subclass filtering for normal family-adapter discovery, BACKEND_ENTRY_POINT_GROUP, FAMILY_PLUGIN_ENTRY_POINT_GROUP, FAMILY_ADAPTER_ENTRY_POINT_GROUP
@@ -14,13 +14,14 @@
 #   FAMILY_PLUGIN_ENTRY_POINT_GROUP - Importlib entry-point group for external ModelFamilyPlugin classes.
 #   FAMILY_ADAPTER_ENTRY_POINT_GROUP - Importlib entry-point group for external ModelFamilyAdapter classes.
 #   discover_backend_classes - Enumerate concrete TTSBackend subclasses (in-process) plus entry-point-declared classes.
+#   import_builtin_backend_modules - Seed built-in backend subclasses before backend discovery runs.
 #   discover_family_adapter_classes - Enumerate concrete ModelFamilyAdapter subclasses plus entry-point-declared classes after seeding built-in adapter modules, excluding test-local subclass leakage by default.
 #   _is_test_local_module_name - Identify test-local module names for family-adapter leakage filtering.
 #   discover_family_plugin_classes - Enumerate concrete ModelFamilyPlugin subclasses plus entry-point-declared classes.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.0 - Task 3 regression fix: normal family-adapter discovery now filters test-local subclasses from tests.* and pytest-imported test_* modules so duplicate test doubles do not leak into unrelated runtime construction while explicit class injection still exercises duplicate-key validation.]
+#   LAST_CHANGE: [v1.2.1 - Task 4/5 verification cleanup: kept built-in backend import seeding in core.discovery as the single canonical seam and removed the redundant core.backends.builtins helper surface]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -40,6 +41,12 @@ logger = logging.getLogger(__name__)
 BACKEND_ENTRY_POINT_GROUP = "tts_server.backends"
 FAMILY_PLUGIN_ENTRY_POINT_GROUP = "tts_server.model_families"
 FAMILY_ADAPTER_ENTRY_POINT_GROUP = "tts_server.family_adapters"
+BUILTIN_BACKEND_MODULES: tuple[str, ...] = (
+    "core.backends.mlx_backend",
+    "core.backends.onnx_backend",
+    "core.backends.qwen_fast_backend",
+    "core.backends.torch_backend",
+)
 
 T = TypeVar("T")
 
@@ -56,6 +63,7 @@ def discover_backend_classes(
     include_entry_points: bool = True,
     entry_points_loader: Callable[[], Iterable[EntryPoint]] | None = None,
 ) -> tuple[type[TTSBackend], ...]:
+    import_builtin_backend_modules()
     discovered: list[type[TTSBackend]] = list(_iter_concrete_subclasses(TTSBackend))
     if include_entry_points:
         for cls in _load_entry_point_classes(
@@ -65,6 +73,23 @@ def discover_backend_classes(
         ):
             discovered.append(cls)
     return _dedupe_and_sort(discovered)
+
+
+# START_CONTRACT: import_builtin_backend_modules
+#   PURPOSE: Import the built-in backend modules with per-module failure isolation so any importable backend still registers even if another optional backend fails to import.
+#   INPUTS: {}
+#   OUTPUTS: { None - Modules are imported for their TTSBackend subclass side effects }
+#   SIDE_EFFECTS: Imports built-in backend modules and logs a warning for each failed optional import
+#   LINKS: M-BACKENDS, M-DISCOVERY
+# END_CONTRACT: import_builtin_backend_modules
+def import_builtin_backend_modules() -> None:
+    # START_BLOCK_IMPORT_BUILTIN_BACKEND_MODULES
+    for module_name in BUILTIN_BACKEND_MODULES:
+        try:
+            import_module(module_name)
+        except Exception as exc:  # pragma: no cover - defensive import seeding path
+            logger.warning("discovery: failed to import built-in backend module %r: %s", module_name, exc)
+    # END_BLOCK_IMPORT_BUILTIN_BACKEND_MODULES
 
 
 # START_CONTRACT: discover_family_adapter_classes
@@ -271,9 +296,11 @@ def _dedupe_and_sort(classes: list[type[T]]) -> tuple[type[T], ...]:
 
 __all__ = [
     "BACKEND_ENTRY_POINT_GROUP",
+    "BUILTIN_BACKEND_MODULES",
     "FAMILY_ADAPTER_ENTRY_POINT_GROUP",
     "FAMILY_PLUGIN_ENTRY_POINT_GROUP",
     "discover_backend_classes",
     "discover_family_adapter_classes",
     "discover_family_plugin_classes",
+    "import_builtin_backend_modules",
 ]

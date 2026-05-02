@@ -1,8 +1,8 @@
 # FILE: core/backends/torch_backend/base_strategy.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Define the abstract contract every Torch family-specific execution strategy must implement.
-#   SCOPE: TorchFamilyStrategy ABC, lifecycle hooks for runtime-class loading, and per-mode generation entry points
+#   SCOPE: TorchFamilyStrategy ABC, lifecycle hooks for runtime-class loading, per-mode generation entry points, and deterministic built-in strategy registration helpers
 #   DEPENDS: M-MODELS
 #   LINKS: M-BACKENDS
 #   ROLE: TYPES
@@ -11,10 +11,12 @@
 #
 # START_MODULE_MAP
 #   TorchFamilyStrategy - Abstract strategy contract. Each Torch family (Qwen3, OmniVoice, ...) implements one.
+#   built_in_torch_family_strategies - Instantiates the built-in Qwen3 and OmniVoice Torch family strategies in deterministic order.
+#   build_torch_strategy_map - Builds the active {family_key -> strategy} map and rejects duplicate keys.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Extracted from monolithic torch_backend.py during Phase 1.4 strategy split]
+#   LAST_CHANGE: [v1.1.0 - Task 4 compatibility wiring: added deterministic built-in strategy registration helpers and duplicate-key validation for TorchBackend]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -119,6 +121,52 @@ class TorchFamilyStrategy(ABC):
     ) -> tuple[list[Any], int]: ...
 
 
+# START_CONTRACT: built_in_torch_family_strategies
+#   PURPOSE: Instantiate the built-in Torch family strategies in the canonical compatibility order.
+#   INPUTS: {}
+#   OUTPUTS: { tuple[TorchFamilyStrategy, ...] - Built-in strategy instances for the supported Torch families }
+#   SIDE_EFFECTS: none
+#   LINKS: M-BACKENDS
+# END_CONTRACT: built_in_torch_family_strategies
+def built_in_torch_family_strategies() -> tuple[TorchFamilyStrategy, ...]:
+    from core.backends.torch_backend.omnivoice_strategy import OmniVoiceStrategy
+    from core.backends.torch_backend.qwen3_strategy import Qwen3TTSStrategy
+
+    return (Qwen3TTSStrategy(), OmniVoiceStrategy())
+
+
+# START_CONTRACT: build_torch_strategy_map
+#   PURPOSE: Build the active Torch family strategy map from built-ins plus optional injected strategies, rejecting duplicate family keys deterministically.
+#   INPUTS: { strategies: tuple[TorchFamilyStrategy, ...] | None - Optional additional strategies to register alongside the built-in families }
+#   OUTPUTS: { dict[str, TorchFamilyStrategy] - Active strategy registry keyed by family_key }
+#   SIDE_EFFECTS: none
+#   LINKS: M-BACKENDS
+# END_CONTRACT: build_torch_strategy_map
+def build_torch_strategy_map(
+    strategies: tuple[TorchFamilyStrategy, ...] | None = None,
+) -> dict[str, TorchFamilyStrategy]:
+    registry: dict[str, TorchFamilyStrategy] = {}
+
+    # START_BLOCK_REGISTER_BUILTINS
+    for strategy in built_in_torch_family_strategies():
+        registry[strategy.family_key] = strategy
+    # END_BLOCK_REGISTER_BUILTINS
+
+    # START_BLOCK_REGISTER_INJECTED
+    for strategy in strategies or ():
+        duplicate_key = strategy.family_key
+        if duplicate_key in registry:
+            raise ValueError(
+                f"Duplicate Torch family strategy registration for family '{duplicate_key}'"
+            )
+        registry[duplicate_key] = strategy
+    # END_BLOCK_REGISTER_INJECTED
+
+    return registry
+
+
 __all__ = [
     "TorchFamilyStrategy",
+    "build_torch_strategy_map",
+    "built_in_torch_family_strategies",
 ]

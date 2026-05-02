@@ -1,5 +1,5 @@
 # FILE: core/backends/torch_backend/dispatcher.py
-# VERSION: 2.0.0
+# VERSION: 2.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Implement the thin TorchBackend dispatcher that routes requests to family-specific strategies.
 #   SCOPE: TorchBackend execution, model-path resolution, runtime loading, inspection, diagnostics, preload management; family generation logic now lives in TorchFamilyStrategy implementations.
@@ -14,7 +14,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v2.0.0 - Phase 1.4 strategy split: TorchBackend reduced to a dispatcher; family generation logic moved into TorchFamilyStrategy implementations under core/backends/torch_backend/]
+#   LAST_CHANGE: [v2.1.0 - Task 4 compatibility wiring: TorchBackend now sources built-in family strategies from strategy_registry and rejects duplicate injected family keys deterministically]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -38,15 +38,16 @@ from core.backends.torch_backend.audio_io import (
     assert_clone_audio_duration,
     persist_first_wav,
 )
-from core.backends.torch_backend.base_strategy import TorchFamilyStrategy
+from core.backends.torch_backend.base_strategy import (
+    TorchFamilyStrategy,
+    build_torch_strategy_map,
+)
 from core.backends.torch_backend.omnivoice_strategy import (
     OMNIVOICE_IMPORT_ERROR,
-    OmniVoiceStrategy,
     load_omnivoice_model_cls,
 )
 from core.backends.torch_backend.qwen3_strategy import (
     QWEN_MODEL_IMPORT_ERROR,
-    Qwen3TTSStrategy,
     load_qwen_tts_model_cls,
 )
 from core.errors import ModelLoadError, TTSGenerationError
@@ -56,7 +57,7 @@ from core.models.catalog import ModelSpec
 
 # START_CONTRACT: TorchBackend
 #   PURPOSE: Provide the PyTorch implementation of the shared TTS backend contract by dispatching to per-family strategies.
-#   INPUTS: { models_dir: Path - Root directory containing Torch model folders, metrics: OperationalMetricsRegistry | None - Optional metrics facade, strategies: tuple[TorchFamilyStrategy, ...] | None - Optional override of registered family strategies (defaults to Qwen3 + OmniVoice) }
+#   INPUTS: { models_dir: Path - Root directory containing Torch model folders, metrics: OperationalMetricsRegistry | None - Optional metrics facade, strategies: tuple[TorchFamilyStrategy, ...] | None - Optional additional strategy registrations layered onto the built-in Qwen3 + OmniVoice registry }
 #   OUTPUTS: { instance - Torch backend with process-local model cache and family strategy registry }
 #   SIDE_EFFECTS: none
 #   LINKS: M-BACKENDS
@@ -67,7 +68,7 @@ class TorchBackend(TTSBackend):
 
     # START_CONTRACT: __init__
     #   PURPOSE: Initialize the dispatcher with models root, metrics, and the registry of family strategies.
-    #   INPUTS: { models_dir: Path - Root directory containing backend-loadable model folders, metrics: OperationalMetricsRegistry | None - Optional metrics facade, strategies: tuple[TorchFamilyStrategy, ...] | None - Optional strategy override }
+    #   INPUTS: { models_dir: Path - Root directory containing backend-loadable model folders, metrics: OperationalMetricsRegistry | None - Optional metrics facade, strategies: tuple[TorchFamilyStrategy, ...] | None - Optional additional strategy registrations }
     #   OUTPUTS: { TorchBackend - Dispatcher ready for readiness checks, model loading, and execution }
     #   SIDE_EFFECTS: Allocates in-memory cache, lock primitives, and the {family_key -> strategy} mapping
     #   LINKS: M-BACKENDS
@@ -83,10 +84,7 @@ class TorchBackend(TTSBackend):
         self._cache: dict[str, Any] = {}
         self._lock = Lock()
         self._metrics = metrics or OperationalMetricsRegistry()
-        active_strategies = strategies or (Qwen3TTSStrategy(), OmniVoiceStrategy())
-        self._strategies: dict[str, TorchFamilyStrategy] = {
-            strategy.family_key: strategy for strategy in active_strategies
-        }
+        self._strategies = build_torch_strategy_map(strategies)
 
     # START_CONTRACT: execute
     #   PURPOSE: Dispatch a prepared execution request to the matching family strategy.
