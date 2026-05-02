@@ -260,7 +260,7 @@
 
     <M-TTS-SERVICE NAME="TTSService" TYPE="CORE_LOGIC" LAYER="2" ORDER="2" STATUS="implemented">
       <contract>
-        <purpose>Coordinate inference for custom, design, and clone synthesis modes.</purpose>
+        <purpose>Coordinate inference for custom, design, and clone synthesis modes via SynthesisRouter while routing legacy and engine-backed execution through the scheduler gateway.</purpose>
         <inputs>
           <param name="command" type="CustomVoiceCommand | VoiceDesignCommand | VoiceCloneCommand" />
         </inputs>
@@ -274,9 +274,9 @@
         </errors>
       </contract>
       <interface>
-        <export-TTSService PURPOSE="Core synthesis coordinator with scheduler-gated runtime execution and a temporary inference-guard compatibility seam" />
+        <export-TTSService PURPOSE="Core synthesis facade that delegates through SynthesisRouter and a scheduler-gated synthesis coordinator for legacy plus engine-backed execution" />
       </interface>
-      <depends>M-MODEL-REGISTRY, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-ENGINE-SCHEDULER</depends>
+      <depends>M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS, M-ENGINE-SCHEDULER</depends>
       <target>
         <source>core/services/tts_service.py</source>
       </target>
@@ -543,6 +543,19 @@
       </target>
       <verification-ref>V-M-ENGINE-OMNIVOICE</verification-ref>
     </M-ENGINE-OMNIVOICE>
+    <M-ENGINE-PIPER NAME="PiperOnnxEngine" TYPE="CORE_LOGIC" LAYER="2" ORDER="8B" STATUS="implemented">
+      <contract>
+        <purpose>Provide the production TTSEngine implementation for Piper custom synthesis on the ONNX lane behind the explicit runtime opt-in.</purpose>
+      </contract>
+      <interface>
+        <export-PiperOnnxEngine PURPOSE="Production TTSEngine for Piper custom synthesis via the ONNX runtime" />
+      </interface>
+      <depends>M-ENGINE-CONTRACTS, M-ENGINE-REGISTRY, M-BACKENDS, M-ERRORS, M-METRICS, M-TTS-SERVICE</depends>
+      <target>
+        <source>core/engines/piper.py</source>
+      </target>
+      <verification-ref>V-M-ENGINE-PIPER</verification-ref>
+    </M-ENGINE-PIPER>
 
     <M-OMNIVOICE-FAMILY NAME="OmniVoiceFamilyAdapter" TYPE="CORE_LOGIC" LAYER="1" ORDER="5" STATUS="implemented">
       <contract>
@@ -557,21 +570,19 @@
       </target>
       <verification-ref>V-M-OMNIVOICE-FAMILY</verification-ref>
     </M-OMNIVOICE-FAMILY>
-    <M-ENGINE-CONTRACTS NAME="EngineContracts" TYPE="TYPES" LAYER="2" ORDER="9" STATUS="planned">
+    <M-ENGINE-CONTRACTS NAME="EngineContracts" TYPE="TYPES" LAYER="2" ORDER="9" STATUS="implemented">
       <contract>
-        <purpose>Define the shared engine contracts, handles, strategies, and registration payloads that the planned runtime engine uses.</purpose>
+        <purpose>Define the shared engine contracts and immutable DTOs consumed by the live registry, scheduler, and production engine implementations.</purpose>
       </contract>
       <interface>
         <export-ModelHandle PURPOSE="Loaded model handle plus metadata for ready synthesis targets" />
-        <export-TTSEngine PURPOSE="Planned engine facade for synthesis orchestration" />
+        <export-TTSEngine PURPOSE="Abstract engine facade that separates model loading from synthesis execution" />
         <export-EngineCapabilities PURPOSE="Typed capability set describing what an engine can execute" />
-        <export-SynthesisJob PURPOSE="Queued synthesis job request owned by the engine scheduler" />
+        <export-SynthesisJob PURPOSE="Normalized synthesis request owned by TTSEngine execution" />
         <export-AudioBuffer PURPOSE="In-memory audio payload produced by synthesis execution" />
-        <export-EngineAvailability PURPOSE="Structured readiness and availability state for the engine registry" />
-        <export-EngineStrategy PURPOSE="Request-to-backend execution strategy contract" />
-        <export-EngineRegistration PURPOSE="Registration payload for backend and family engine wiring" />
+        <export-EngineAvailability PURPOSE="Structured readiness and availability state for engine selection and filtering" />
       </interface>
-      <depends>M-CONTRACTS, M-ERRORS</depends>
+      <depends>M-MODELS</depends>
       <target>
         <source>core/engines/contracts.py</source>
       </target>
@@ -581,15 +592,22 @@
       <verification-ref>V-M-ENGINE-CONTRACTS</verification-ref>
     </M-ENGINE-CONTRACTS>
 
-    <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" LAYER="2" ORDER="10" STATUS="planned">
+    <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" LAYER="2" ORDER="10" STATUS="implemented">
       <contract>
-        <purpose>Parse and validate engine-specific typed config for registry and scheduler behavior.</purpose>
+        <purpose>Parse and validate discriminated engine config models for registry filtering, alias matching, and deterministic disabled-engine handling.</purpose>
       </contract>
       <interface>
-        <export-EngineConfig PURPOSE="Typed engine configuration settings" />
-        <export-parse_engine_config_from_env PURPOSE="Parse engine-related environment variables into typed settings" />
+        <export-DisabledEngineConfig PURPOSE="Explicit disabled-engine config shape that still parses deterministically" />
+        <export-TorchEngineConfig PURPOSE="Typed enabled config for torch-routed engines" />
+        <export-MlxEngineConfig PURPOSE="Typed enabled config for mlx-routed engines" />
+        <export-OnnxEngineConfig PURPOSE="Typed enabled config for onnx-routed engines" />
+        <export-QwenFastEngineConfig PURPOSE="Typed enabled config for qwen_fast-routed engines" />
+        <export-EngineConfig PURPOSE="Discriminated union over all supported engine config settings" />
+        <export-EngineSettings PURPOSE="Validated collection of engine configs with duplicate alias protection" />
+        <export-parse_engine_config PURPOSE="Parse one engine config payload into a typed variant" />
+        <export-parse_engine_settings PURPOSE="Parse a collection of engine configs and reject duplicate aliases deterministically" />
       </interface>
-      <depends>M-CONFIG</depends>
+      <depends>M-ENGINE-CONTRACTS</depends>
       <target>
         <source>core/engines/config.py</source>
       </target>
@@ -599,14 +617,14 @@
       <verification-ref>V-M-ENGINE-CONFIG</verification-ref>
     </M-ENGINE-CONFIG>
 
-    <M-ENGINE-REGISTRY NAME="EngineRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="11" STATUS="planned">
+    <M-ENGINE-REGISTRY NAME="EngineRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="11" STATUS="implemented">
       <contract>
-        <purpose>Register engines, resolve compatible strategies, and expose the active engine selection for each runtime family through the engine registry.</purpose>
+        <purpose>Register TTSEngine implementations, optionally load them from entry points, and resolve deterministic engine selections by key or capability/family/backend/language constraints.</purpose>
       </contract>
       <interface>
-        <export-EngineRegistry PURPOSE="Registry for engine discovery and selection" />
-        <export-register_engine PURPOSE="Register an engine implementation with metadata" />
-        <export-resolve_engine PURPOSE="Resolve the best matching engine for a requested family or backend" />
+        <export-EngineRegistry PURPOSE="Process-local registry for TTSEngine registration, alias lookup, and deterministic selection" />
+        <export-EngineRegistryError PURPOSE="Typed registry failure for duplicate keys and unresolved selection paths" />
+        <export-load_engine_registry PURPOSE="Build the registry from explicit engines, typed config, and optional entry points" />
       </interface>
       <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ERRORS, M-OBSERVABILITY</depends>
       <target>
@@ -641,22 +659,6 @@
       <verification-ref>V-M-ENGINE-SCHEDULER</verification-ref>
     </M-ENGINE-SCHEDULER>
 
-    <M-ENGINE-ROUTE-SPLIT NAME="EngineRouteSplit" TYPE="CORE_LOGIC" LAYER="2" ORDER="14" STATUS="planned">
-      <contract>
-        <purpose>Define the planned HTTP route split that keeps engine-owned planning separate from current transport adapters.</purpose>
-      </contract>
-      <interface>
-        <export-RouteSplitPolicy PURPOSE="Policy object describing server and client route responsibilities" />
-      </interface>
-      <depends>M-ENGINE-REGISTRY, M-ENGINE-SCHEDULER</depends>
-      <target>
-        <source>core/engines/route_split.py</source>
-      </target>
-      <observability>
-        <log-prefix>[EngineRouteSplit]</log-prefix>
-      </observability>
-      <verification-ref>V-M-ENGINE-ROUTE-SPLIT</verification-ref>
-    </M-ENGINE-ROUTE-SPLIT>
 
     <M-MODEL-CATALOG NAME="ModelCatalogRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="4" STATUS="implemented">
       <contract>
