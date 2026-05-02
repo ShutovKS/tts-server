@@ -67,18 +67,20 @@
       <CrossLink from="M-ENGINE-REGISTRY" to="M-OBSERVABILITY" relation="emits-loader-warning-events" />
     </M-ENGINE-REGISTRY>
 
-    <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" STATUS="planned">
-      <purpose>Translate the current model-family surfaces into the new engine contracts without changing transport behavior.</purpose>
+    <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" STATUS="implemented">
+      <purpose>Expose the current legacy family-adapter and backend lanes as temporary engine-like metadata without changing planner or synthesis-service behavior.</purpose>
       <path>core/engines/compatibility.py</path>
       <depends>M-ENGINE-CONTRACTS, M-MODEL-FAMILY, M-BACKENDS, M-CONTRACTS</depends>
       <verification-ref>V-M-ENGINE-BRIDGE</verification-ref>
+      <implementation-note>The Task 8 bridge is intentionally TEMPORARY and metadata-only: it inventories legacy family adapters plus current backend lanes into registry-visible `legacy-*` TTSEngine entries, preserves the existing planner -> family adapter -> backend execution path unchanged, and carries explicit deletion criteria for the later engine runtime migration.</implementation-note>
       <annotations>
-        <class-EngineCompatibilityBridge PURPOSE="Bridge from existing family surfaces into engine contracts" />
-        <fn-adapt_family_request PURPOSE="Adapt a family request to engine inputs" />
-        <fn-adapt_backend_result PURPOSE="Adapt backend results back to current runtime shapes" />
+        <class-LegacyEngineRecord PURPOSE="Immutable temporary ledger entry for one legacy family/backend lane" />
+        <class-EngineCompatibilityBridge PURPOSE="Temporary bridge that inventories and registers legacy family/backend lanes into EngineRegistry" />
+        <fn-build_legacy_engine_registry PURPOSE="Populate an EngineRegistry with temporary legacy compatibility entries" />
       </annotations>
       <CrossLink from="M-ENGINE-BRIDGE" to="M-ENGINE-CONTRACTS" relation="adapts-engine-types" />
       <CrossLink from="M-ENGINE-BRIDGE" to="M-MODEL-FAMILY" relation="bridges-family-surface" />
+      <CrossLink from="M-ENGINE-BRIDGE" to="M-ENGINE-REGISTRY" relation="registers-temporary-legacy-engine-entries" />
     </M-ENGINE-BRIDGE>
 
     <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" STATUS="planned">
