@@ -1,5 +1,5 @@
 # FILE: core/engines/__init__.py
-# VERSION: 1.4.0
+# VERSION: 1.5.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Re-export the public engine contract, typed configuration, production engine implementations, scheduler surface, registry/discovery surfaces, and the temporary legacy compatibility bridge.
 #   SCOPE: barrel re-exports for engine DTOs, TTSEngine, discriminated engine config models, production engines, scheduler helpers, registry loader helpers, and temporary bridge helpers
@@ -12,14 +12,14 @@
 # START_MODULE_MAP
 #   Contract surface - Re-export TTSEngine, model/audio/job DTOs, and availability/capability types.
 #   Config surface - Re-export discriminated engine config models, parsing helpers, and collection settings.
-#   Production engine surface - Re-export the first real Piper ONNX engine implementation.
+#   Production engine surface - Re-export the Piper ONNX engine and the Qwen3 Torch engine implementations.
 #   Scheduler surface - Re-export the worker-pool key/policy DTOs, scheduler facade, and shutdown error.
 #   Registry surface - Re-export EngineRegistry, its typed error, and the loader/entry-point helpers.
 #   Compatibility surface - Re-export the temporary legacy compatibility bridge and registry builder.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.4.0 - Task 11: re-exported the standalone engine scheduler surface for later runtime integration while preserving existing TTSService wiring]
+#   LAST_CHANGE: [v1.5.0 - Task 15: re-exported the Qwen3 Torch engine alongside the existing Piper engine for generic runtime engine routing]
 # END_CHANGE_SUMMARY
 
 from core.engines.config import (
@@ -47,6 +47,7 @@ from core.engines.compatibility import (
     build_legacy_engine_registry,
 )
 from core.engines.piper import PiperOnnxEngine
+from core.engines.qwen3 import Qwen3TorchEngine
 from core.engines.registry import (
     ENGINE_ENTRY_POINT_GROUP,
     EngineRegistry,
@@ -81,6 +82,7 @@ __all__ = [
     "ModelHandle",
     "OnnxEngineConfig",
     "PiperOnnxEngine",
+    "Qwen3TorchEngine",
     "QwenFastEngineConfig",
     "SynthesisJob",
     "TTSEngine",

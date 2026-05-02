@@ -517,6 +517,19 @@
       </target>
       <verification-ref>V-M-QWEN3-FAMILY</verification-ref>
     </M-QWEN3-FAMILY>
+    <M-ENGINE-QWEN3 NAME="Qwen3TorchEngine" TYPE="CORE_LOGIC" LAYER="2" ORDER="8" STATUS="implemented">
+      <contract>
+        <purpose>Provide the production TTSEngine implementation for Qwen3 custom, design, and clone synthesis on the Torch lane.</purpose>
+      </contract>
+      <interface>
+        <export-Qwen3TorchEngine PURPOSE="Production TTSEngine for Qwen3 synthesis via the Torch runtime" />
+      </interface>
+      <depends>M-ENGINE-CONTRACTS, M-ENGINE-REGISTRY, M-BACKENDS, M-ERRORS, M-METRICS, M-TTS-SERVICE, M-QWEN3-FAMILY</depends>
+      <target>
+        <source>core/engines/qwen3.py</source>
+      </target>
+      <verification-ref>V-M-ENGINE-QWEN3</verification-ref>
+    </M-ENGINE-QWEN3>
 
     <M-OMNIVOICE-FAMILY NAME="OmniVoiceFamilyAdapter" TYPE="CORE_LOGIC" LAYER="1" ORDER="5" STATUS="implemented">
       <contract>
@@ -531,7 +544,7 @@
       </target>
       <verification-ref>V-M-OMNIVOICE-FAMILY</verification-ref>
     </M-OMNIVOICE-FAMILY>
-    <M-ENGINE-CONTRACTS NAME="EngineContracts" TYPE="TYPES" LAYER="2" ORDER="8" STATUS="planned">
+    <M-ENGINE-CONTRACTS NAME="EngineContracts" TYPE="TYPES" LAYER="2" ORDER="9" STATUS="planned">
       <contract>
         <purpose>Define the shared engine contracts, handles, strategies, and registration payloads that the planned runtime engine uses.</purpose>
       </contract>
@@ -555,7 +568,7 @@
       <verification-ref>V-M-ENGINE-CONTRACTS</verification-ref>
     </M-ENGINE-CONTRACTS>
 
-    <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" LAYER="2" ORDER="9" STATUS="planned">
+    <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" LAYER="2" ORDER="10" STATUS="planned">
       <contract>
         <purpose>Parse and validate engine-specific typed config for registry, scheduler, and bridge behavior.</purpose>
       </contract>
@@ -573,7 +586,7 @@
       <verification-ref>V-M-ENGINE-CONFIG</verification-ref>
     </M-ENGINE-CONFIG>
 
-    <M-ENGINE-REGISTRY NAME="EngineRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="10" STATUS="planned">
+    <M-ENGINE-REGISTRY NAME="EngineRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="11" STATUS="planned">
       <contract>
         <purpose>Register engines, resolve compatible strategies, and expose the active engine selection for each runtime family through the engine registry.</purpose>
       </contract>
@@ -593,7 +606,7 @@
       <verification-ref>V-M-ENGINE-REGISTRY</verification-ref>
     </M-ENGINE-REGISTRY>
 
-    <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" LAYER="2" ORDER="11" STATUS="planned">
+    <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" LAYER="2" ORDER="12" STATUS="planned">
       <contract>
         <purpose>Translate the current model-family surfaces into the new engine contracts without changing transport behavior.</purpose>
       </contract>
@@ -612,7 +625,7 @@
       <verification-ref>V-M-ENGINE-BRIDGE</verification-ref>
     </M-ENGINE-BRIDGE>
 
-    <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" LAYER="2" ORDER="12" STATUS="implemented">
+    <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" LAYER="2" ORDER="13" STATUS="implemented">
       <contract>
         <purpose>Coordinate bounded per-engine/per-device worker dispatch for engine requests and keep queueing behavior explicit.</purpose>
       </contract>
@@ -634,7 +647,7 @@
       <verification-ref>V-M-ENGINE-SCHEDULER</verification-ref>
     </M-ENGINE-SCHEDULER>
 
-    <M-ENGINE-ROUTE-SPLIT NAME="EngineRouteSplit" TYPE="CORE_LOGIC" LAYER="2" ORDER="13" STATUS="planned">
+    <M-ENGINE-ROUTE-SPLIT NAME="EngineRouteSplit" TYPE="CORE_LOGIC" LAYER="2" ORDER="14" STATUS="planned">
       <contract>
         <purpose>Define the planned HTTP route split that keeps engine-owned planning separate from current transport adapters.</purpose>
       </contract>

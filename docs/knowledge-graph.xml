@@ -339,6 +339,20 @@
       </annotations>
       <CrossLink from="M-QWEN3-FAMILY" to="M-MODEL-FAMILY" relation="implements-base-contract" />
     </M-QWEN3-FAMILY>
+    <M-ENGINE-QWEN3 NAME="Qwen3TorchEngine" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Provide the production TTSEngine implementation for Qwen3 custom, design, and clone synthesis on the Torch lane.</purpose>
+      <path>core/engines/qwen3.py</path>
+      <depends>M-ENGINE-CONTRACTS, M-ENGINE-REGISTRY, M-BACKENDS, M-ERRORS, M-METRICS, M-TTS-SERVICE, M-QWEN3-FAMILY</depends>
+      <verification-ref>V-M-ENGINE-QWEN3</verification-ref>
+      <implementation-note>Task 15 migrates the real Qwen3 Torch runtime path into a production TTSEngine so TTSService can route custom, design, and clone requests through the same scheduler-gated engine seam without keeping Qwen3-specific service branching.</implementation-note>
+      <annotations>
+        <class-Qwen3TorchEngine PURPOSE="Production TTSEngine for Qwen3 synthesis via the qwen_tts Torch runtime" />
+      </annotations>
+      <CrossLink from="M-ENGINE-QWEN3" to="M-ENGINE-CONTRACTS" relation="implements-shared-engine-contract" />
+      <CrossLink from="M-ENGINE-QWEN3" to="M-BACKENDS" relation="preserves-torch-runtime-and-clone-guard-compatibility" />
+      <CrossLink from="M-ENGINE-QWEN3" to="M-TTS-SERVICE" relation="enables-generic-qwen3-engine-routing" />
+      <CrossLink from="M-ENGINE-QWEN3" to="M-QWEN3-FAMILY" relation="consumes-family-prepared-qwen3-payloads" />
+    </M-ENGINE-QWEN3>
 
     <M-OMNIVOICE-FAMILY NAME="OmniVoiceFamilyAdapter" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Adapt OmniVoice custom, design, and clone semantics into planner-prepared backend execution inputs.</purpose>
@@ -464,18 +478,19 @@
       <path>core/services/tts_service.py, core/services/synthesis_router.py</path>
       <depends>M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS</depends>
       <verification-ref>V-M-TTS-SERVICE</verification-ref>
-      <implementation-note>Phase 3.9 introduces `core/services/synthesis_router.py::SynthesisRouter` as the unified Command -&gt; backend seam. `TTSService.__init__` now builds a `SynthesisRouter(coordinator=...)` and `synthesize_custom`, `synthesize_design`, and `synthesize_clone` all delegate through `self.router.route_custom/_design/_clone(...)`. The router exposes a single public `route(command: GenerationCommand) -&gt; GenerationResult` entry-point that dispatches by `isinstance(command, ...)`, raising `TTSGenerationError` with structured details when the command type is unsupported. Phase 3.11 then collapses the historic `generate_audio` free function: `SynthesisCoordinator._run_generation` now calls `backend.execute(ExecutionRequest(...))` directly inside a `START_BLOCK_DISPATCH_TO_BACKEND` block, the module-level `generate_audio(*args, **kwargs)` shim is deleted, and tests now substitute behaviour by overriding `registry.backend.execute` on a stable `_StubBackend` instead of monkeypatching `core.services.tts_service.generate_audio`. Task 3 then replaces direct `Qwen3FamilyAdapter()` / `OmniVoiceFamilyAdapter()` / `PiperFamilyAdapter()` construction inside `TTSService` with a discovery-driven `_build_family_adapter_map()` seam that instantiates discovered adapter classes and raises a deterministic duplicate-key error before startup proceeds. Task 12 moves runtime execution ownership from direct `InferenceGuard.acquire()/release()` calls to `EngineScheduler.submit_engine_task(...)` while preserving the current single-slot default behavior, sync timeout mapping, and async timeout lifecycle; `InferenceGuard` remains only as a temporary compatibility seam pending later deletion-stage cleanup.</implementation-note>
+      <implementation-note>Phase 3.9 introduces `core/services/synthesis_router.py::SynthesisRouter` as the unified Command -&gt; backend seam. `TTSService.__init__` now builds a `SynthesisRouter(coordinator=...)` and `synthesize_custom`, `synthesize_design`, and `synthesize_clone` all delegate through `self.router.route_custom/_design/_clone(...)`. The router exposes a single public `route(command: GenerationCommand) -&gt; GenerationResult` entry-point that dispatches by `isinstance(command, ...)`, raising `TTSGenerationError` with structured details when the command type is unsupported. Phase 3.11 then collapses the historic `generate_audio` free function: `SynthesisCoordinator._run_generation` now calls `backend.execute(ExecutionRequest(...))` directly inside a `START_BLOCK_DISPATCH_TO_BACKEND` block, the module-level `generate_audio(*args, **kwargs)` shim is deleted, and tests now substitute behaviour by overriding `registry.backend.execute` on a stable `_StubBackend` instead of monkeypatching `core.services.tts_service.generate_audio`. Task 3 then replaces direct `Qwen3FamilyAdapter()` / `OmniVoiceFamilyAdapter()` / `PiperFamilyAdapter()` construction inside `TTSService` with a discovery-driven `_build_family_adapter_map()` seam that instantiates discovered adapter classes and raises a deterministic duplicate-key error before startup proceeds. Task 12 moves runtime execution ownership from direct `InferenceGuard.acquire()/release()` calls to `EngineScheduler.submit_engine_task(...)` while preserving the current single-slot default behavior, sync timeout mapping, and async timeout lifecycle; `InferenceGuard` remains only as a temporary compatibility seam pending later deletion-stage cleanup. Task 15 then generalizes engine routing so the production `Qwen3TorchEngine` handles Qwen3 custom, design, and clone execution through the same scheduler-gated engine seam, leaving legacy backend execution as the fallback for still-unmigrated paths.</implementation-note>
       <annotations>
         <class-TTSService PURPOSE="Core synthesis coordinator with scheduler-gated runtime execution; delegates each synthesize_X call through SynthesisRouter while retaining a temporary inference-guard compatibility seam" />
         <fn-_build_family_adapter_map PURPOSE="Instantiate a deterministic family-keyed adapter map from discovery results while rejecting duplicate keys" />
         <class-SynthesisRouter PURPOSE="Phase 3.9 unified Command -&gt; backend routing seam exposing route(command) plus per-mode helpers" />
-        <class-SynthesisCoordinator PURPOSE="Per-mode worker invoked by SynthesisRouter; submits legacy backend and Piper engine work through EngineScheduler while preserving existing generation/error handling" />
+        <class-SynthesisCoordinator PURPOSE="Per-mode worker invoked by SynthesisRouter; submits legacy backend plus Piper and Qwen3 engine work through EngineScheduler while preserving existing generation/error handling" />
       </annotations>
       <CrossLink from="M-TTS-SERVICE" to="M-DISCOVERY" relation="builds-family-adapter-map-from-discovery" />
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-REGISTRY" relation="resolves-models" />
       <CrossLink from="M-TTS-SERVICE" to="M-INFRASTRUCTURE" relation="uses-audio-io" />
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-FAMILY" relation="prepares-execution" />
       <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-SCHEDULER" relation="routes-runtime-execution-through-scheduler-gateway" />
+      <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-QWEN3" relation="routes-qwen3-through-production-engine-seam" />
     </M-TTS-SERVICE>
 
     <M-TELEMETRY NAME="Telemetry" TYPE="CORE_LOGIC" STATUS="implemented">
