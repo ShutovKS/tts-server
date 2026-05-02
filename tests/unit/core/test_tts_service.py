@@ -1,8 +1,8 @@
 # FILE: tests/unit/core/test_tts_service.py
-# VERSION: 1.4.0
+# VERSION: 1.5.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for the core TTS service orchestration and logging.
-#   SCOPE: Clone synthesis, family-adapter discovery wiring, duplicate-key validation, language normalization, structured log emission, and guarded engine-route fallback behavior
+#   SCOPE: Clone synthesis, family-adapter discovery wiring, duplicate-key validation, language normalization, structured log emission, guarded engine-route fallback behavior, and scheduler gateway execution coverage
 #   DEPENDS: M-CORE
 #   LINKS: V-M-CORE
 #   ROLE: TEST
@@ -27,10 +27,12 @@
 #   test_tts_service_emits_structured_logs - Verifies structured synthesis logs include mode and language context
 #   test_tts_service_routes_omnivoice_family_payload_to_backend - Verifies the OmniVoice family routes its payload through the backend execution contract
 #   test_build_engine_registry_returns_none_when_flag_is_disabled - Verifies engine wiring stays absent unless the explicit runtime flag is enabled
+#   test_tts_service_routes_legacy_backend_execution_through_scheduler_gateway - Verifies the legacy backend lane executes through EngineScheduler instead of direct InferenceGuard acquire/release
+#   test_tts_service_routes_piper_engine_execution_through_scheduler_gateway - Verifies the Piper engine lane executes through EngineScheduler when the explicit engine path is enabled
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.4.0 - Task 10: added a guardrail test proving runtime engine wiring stays disabled unless the explicit Piper engine flag is enabled]
+#   LAST_CHANGE: [v1.5.0 - Task 12: added scheduler gateway coverage for both the legacy backend lane and the Piper engine lane while preserving existing service behavior assertions]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -44,9 +46,10 @@ import pytest
 from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.config import CoreSettings
 from core.contracts import BackendRouteInfo
-from core.contracts.commands import VoiceCloneCommand, VoiceDesignCommand
+from core.contracts.commands import CustomVoiceCommand, VoiceCloneCommand, VoiceDesignCommand
 from core.contracts.synthesis import ExecutionPlan
 from core.discovery import discover_family_adapter_classes
+from core.engines import EngineScheduler
 from core.model_families.base import FamilyPreparedExecution, ModelFamilyAdapter
 from core.models.catalog import MODEL_SPECS, ModelSpec
 from core.services.tts_service import TTSService, _build_engine_registry, _build_family_adapter_map
@@ -413,3 +416,90 @@ def test_build_engine_registry_returns_none_when_flag_is_disabled(tmp_path: Path
     settings = _make_core_settings(tmp_path)
 
     assert _build_engine_registry(settings) is None
+
+
+def test_tts_service_routes_legacy_backend_execution_through_scheduler_gateway(tmp_path: Path):
+    settings = _make_core_settings(tmp_path)
+    registry = StubRegistry()
+    scheduler = EngineScheduler()
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        scheduler=scheduler,
+    )
+    captured_kwargs: dict = {}
+    scheduler_calls: list[dict[str, object]] = []
+    original_submit = scheduler.submit_engine_task
+
+    def record_submit(**kwargs):
+        scheduler_calls.append(
+            {
+                "engine_key": kwargs["engine_key"],
+                "device_key": kwargs.get("device_key"),
+            }
+        )
+        return original_submit(**kwargs)
+
+    scheduler.submit_engine_task = record_submit  # type: ignore[method-assign]
+    registry.backend.execute = _capture_execute(captured_kwargs)
+
+    result = service.synthesize_design(
+        VoiceDesignCommand(text="Hello", model="omnivoice-design-1", voice_description="Warm")
+    )
+
+    assert result.mode == "design"
+    assert captured_kwargs["mode"] == "design"
+    assert scheduler_calls == [{"engine_key": "tts-service-compat", "device_key": None}]
+
+
+def test_tts_service_routes_piper_engine_execution_through_scheduler_gateway(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from types import SimpleNamespace
+
+    from tests.unit.core.test_piper_engine import _EngineAwareRegistry, _make_settings, _write_piper_artifacts
+
+    settings = _make_settings(tmp_path, piper_engine_enabled=True)
+    registry = _EngineAwareRegistry(settings.models_dir)
+    spec = MODEL_SPECS["piper-1"]
+    _write_piper_artifacts(settings.models_dir / spec.folder)
+    scheduler = EngineScheduler()
+    scheduler_calls: list[dict[str, object]] = []
+    original_submit = scheduler.submit_engine_task
+
+    def record_submit(**kwargs):
+        scheduler_calls.append(
+            {
+                "engine_key": kwargs["engine_key"],
+                "device_key": kwargs.get("device_key"),
+            }
+        )
+        return original_submit(**kwargs)
+
+    scheduler.submit_engine_task = record_submit  # type: ignore[method-assign]
+
+    class _FakeVoice:
+        def synthesize_wav(self, text: str, wav_file) -> None:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
+            wav_file.writeframes(b"\x11\x22\x33\x44")
+
+    monkeypatch.setattr(
+        "core.engines.piper.PiperVoice",
+        SimpleNamespace(load=lambda model_path, config_path, use_cuda=False: _FakeVoice()),
+    )
+
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        scheduler=scheduler,
+    )
+
+    result = service.synthesize_custom(
+        CustomVoiceCommand(text="Hello Piper", model=spec.model_id, speaker="ignored")
+    )
+
+    assert result.backend == "onnx"
+    assert result.audio.bytes_data.startswith(b"RIFF")
+    assert scheduler_calls == [{"engine_key": "piper-onnx", "device_key": None}]

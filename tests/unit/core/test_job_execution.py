@@ -1,5 +1,5 @@
 # FILE: tests/unit/core/test_job_execution.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for core job execution, storage, and lifecycle management.
 #   SCOPE: Submission, execution, cancellation, artifacts, snapshots
@@ -43,7 +43,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT and MODULE_MAP]
+#   LAST_CHANGE: [v1.1.0 - Task 12: extended bootstrap assertions to verify the shared EngineScheduler is exposed alongside the temporary InferenceGuard compatibility seam]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -91,6 +91,7 @@ from core.contracts.jobs import (
 )
 from core.contracts.results import AudioResult, GenerationResult
 from core.errors import JobIdempotencyConflictError
+from core.engines import EngineScheduler
 from core.infrastructure.job_execution_local import (
     LocalBoundedExecutionManager,
     LocalInMemoryJobStore,
@@ -742,7 +743,9 @@ def test_build_runtime_uses_local_job_ports_by_default(tmp_path: Path):
     assert isinstance(runtime.job_artifact_store, LocalJobArtifactStore)
     assert isinstance(runtime.job_store, LocalInMemoryJobStore)
     assert isinstance(runtime.job_manager, LocalBoundedExecutionManager)
+    assert isinstance(runtime.scheduler, EngineScheduler)
     assert runtime.job_store.artifact_store is runtime.job_artifact_store
     assert runtime.job_manager.store is runtime.job_store
+    assert runtime.tts_service.scheduler is runtime.scheduler
 
     runtime.job_manager.stop()

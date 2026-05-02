@@ -584,7 +584,8 @@
         <file>tests/unit/core/test_tts_service.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_discovery.py tests/unit/core/test_tts_service.py -m unit</check-1>
+        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_discovery.py tests/unit/core/test_tts_service.py -m unit</check-1>
+        <check-2>.venv311/bin/python -m pytest tests/unit/core/test_tts_service.py -m unit -k "scheduler_gateway or piper_engine_execution"</check-2>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Clone synthesis passes the reference audio path to backend generation as a normalized string.</scenario-1>
@@ -592,6 +593,8 @@
         <scenario-3 kind="success">Structured clone logs include the entry marker and persistence marker with mode, model, and language context.</scenario-3>
         <scenario-4 kind="success">TTSService builds its family adapter map from discover_family_adapter_classes() so built-in families remain available without direct constructor wiring in the service.</scenario-4>
         <scenario-5 kind="success">Default TTSService construction ignores leaked tests.* family adapter subclasses while still honoring explicit duplicate-key validation when classes are passed directly to _build_family_adapter_map().</scenario-5>
+        <scenario-6 kind="success">Legacy backend execution routes through EngineScheduler with the current single-slot default behavior instead of direct InferenceGuard acquire/release calls.</scenario-6>
+        <scenario-7 kind="success">The explicit Piper engine route also submits work through EngineScheduler so both migrated execution lanes share the same busy and timeout gateway.</scenario-7>
       </scenarios>
       <required-log-markers>
         <marker-1>[TTSService][synthesize_clone][SYNTHESIZE_CLONE]</marker-1>
@@ -606,11 +609,14 @@
         <file>tests/integration/test_api.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_tts_service.py tests/integration/test_api.py -m "unit or integration"</check-1>
+        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_tts_service.py tests/integration/test_api.py -m "unit or integration"</check-1>
+        <check-2>.venv311/bin/python -m pytest tests/integration/test_api.py -m integration -k "request_timeout_returns_unified_error_response or async_timeout_is_reported_as_failed_public_state"</check-2>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">Coordinator-shaped service preserves inference guard, persistence, and logging while delegating planning and family semantics.</scenario-1>
-        <scenario-2 kind="success">Current transport-facing flows remain behaviorally compatible after coordinator refactor.</scenario-2>
+        <scenario-1 kind="success">Coordinator-shaped service preserves scheduler-gated execution, persistence, and logging while delegating planning and family semantics.</scenario-1>
+        <scenario-2 kind="success">Current transport-facing flows remain behaviorally compatible after the scheduler-gateway refactor.</scenario-2>
+        <scenario-3 kind="failure">Synchronous timeout handling still returns HTTP 504 with `request_timeout` even though the underlying execution ownership moved from direct guard calls to the scheduler gateway.</scenario-3>
+        <scenario-4 kind="failure">Async timeout handling still ends in the existing public `failed` lifecycle with terminal error code `job_execution_timeout` instead of exposing a new public state.</scenario-4>
       </scenarios>
     </V-M-TTS-COORDINATOR>
 

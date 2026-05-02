@@ -1,5 +1,5 @@
 # FILE: tests/integration/test_api.py
-# VERSION: 1.0.1
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Integration tests for HTTP API behavior and endpoint responses.
 #   SCOPE: Health checks, model listing, speech endpoints, request handling
@@ -23,12 +23,13 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Added coverage for configurable server CORS origins so forwarded browser hosts can access readiness without hardcoded source edits]
+#   LAST_CHANGE: [v1.1.0 - Task 12: added explicit sync-timeout and async-timeout evidence writers for the scheduler gateway migration while preserving public API semantics]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event, Lock
@@ -37,9 +38,10 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # pyright: ignore[reportMissingImports]
 
 from core.application import TTSApplicationService
+from core.contracts import RuntimeExecutionRegistry
 from core.infrastructure.admission_control_local import (
     build_quota_guard,
     build_rate_limiter,
@@ -61,6 +63,13 @@ from tests.support.api_fakes import (
 )
 
 pytestmark = pytest.mark.integration
+_TASK_12_SYNC_TIMEOUT_EVIDENCE = Path(".sisyphus/evidence/task-12-sync-timeout-scheduler.txt")
+_TASK_12_ASYNC_LIFECYCLE_EVIDENCE = Path(".sisyphus/evidence/task-12-async-scheduler-lifecycle.txt")
+
+
+def _write_task_12_evidence(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
 def _state(client: TestClient) -> Any:
@@ -391,7 +400,8 @@ def test_openai_speech_uses_runtime_binding_when_model_is_omitted(client: TestCl
 def test_clone_endpoint_rejects_when_runtime_clone_capability_is_unbound(client: TestClient):
     object.__setattr__(_state(client).settings, "default_clone_model", None)
     _state(client).tts_service = TTSService(
-        registry=StubRegistry(), settings=_state(client).settings
+        registry=cast(RuntimeExecutionRegistry, StubRegistry()),
+        settings=_state(client).settings,
     )
     _state(client).application = TTSApplicationService(tts_service=_state(client).tts_service)
     object.__setattr__(
@@ -908,6 +918,22 @@ def test_request_timeout_returns_unified_error_response(
     assert payload["details"]["operation"] == "synthesize_custom"
     assert payload["details"]["timeout_seconds"] == 0
     assert payload["request_id"]
+    _write_task_12_evidence(
+        _TASK_12_SYNC_TIMEOUT_EVIDENCE,
+        "\n".join(
+            [
+                "task=T12 sync timeout through scheduler gateway",
+                f"status_code={response.status_code}",
+                f"code={payload['code']}",
+                f"message={payload['message']}",
+                f"operation={payload['details']['operation']}",
+                f"timeout_seconds={payload['details']['timeout_seconds']}",
+                f"request_id={payload['request_id']}",
+                f"pid={os.getpid()}",
+            ]
+        )
+        + "\n",
+    )
 
 
 def test_async_custom_job_submit_status_result_flow(client: TestClient):
@@ -1639,6 +1665,24 @@ def test_async_timeout_is_reported_as_failed_public_state(
         assert result_payload["code"] == "job_not_succeeded"
         assert result_payload["details"]["status"] == "failed"
         assert result_payload["details"]["terminal_error"]["code"] == "job_execution_timeout"
+        _write_task_12_evidence(
+            _TASK_12_ASYNC_LIFECYCLE_EVIDENCE,
+            "\n".join(
+                [
+                    "task=T12 async timeout through scheduler gateway",
+                    f"submit_status={submit.status_code}",
+                    f"job_id={job_id}",
+                    f"final_public_status={final_snapshot['status']}",
+                    f"terminal_error_code={final_snapshot['terminal_error']['code']}",
+                    f"terminal_timeout_seconds={final_snapshot['terminal_error']['details']['timeout_seconds']}",
+                    f"result_status={result.status_code}",
+                    f"result_code={result_payload['code']}",
+                    f"result_terminal_error_code={result_payload['details']['terminal_error']['code']}",
+                    f"pid={os.getpid()}",
+                ]
+            )
+            + "\n",
+        )
 
 
 def test_async_job_endpoints_handle_concurrent_reads_and_cancel_deterministically(
@@ -2146,7 +2190,9 @@ def test_clone_endpoint_returns_controlled_error_when_generation_artifact_missin
     app.state.registry = StubRegistry()
     tts_registry = StubRegistry()
     tts_registry.backend.execute = lambda request: None
-    app.state.tts_service = TTSService(registry=tts_registry, settings=settings)
+    app.state.tts_service = TTSService(
+        registry=cast(RuntimeExecutionRegistry, tts_registry), settings=settings
+    )
     app.state.application = TTSApplicationService(tts_service=app.state.tts_service)
     object.__setattr__(
         app.state.job_execution.manager.executor,

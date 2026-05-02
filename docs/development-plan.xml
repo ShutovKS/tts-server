@@ -3,7 +3,7 @@
     <objective>Clean layered architecture with a single Phase 1 runtime host: transport adapters depend on shared core, and only the HTTP server owns local runtime and model execution.</objective>
     <non-goal>No distributed or multi-node execution patterns.</non-goal>
     <risk-1>Backend selection at startup must fail fast with explicit diagnostics when no registered backend is actually ready.</risk-1>
-    <risk-2>Single inference guard serializes all generation requests across adapters.</risk-2>
+    <risk-2>Scheduler gateway preserves the current single-slot default behavior during migration, while the temporary inference guard compatibility seam must not drift from that bounded execution contract.</risk-2>
     <risk-3>Additional Torch-backed families must isolate family semantics from backend loading so OmniVoice does not regress Qwen3 transport behavior.</risk-3>
     <runtime-objective>Maintain the current multi-platform, multi-backend, multi-model runtime without regressing the Phase 1 server host or the Telegram remote client boundary.</runtime-objective>
     <runtime-invariants>
@@ -274,9 +274,9 @@
         </errors>
       </contract>
       <interface>
-        <export-TTSService PURPOSE="Core synthesis coordinator with inference guard" />
+        <export-TTSService PURPOSE="Core synthesis coordinator with scheduler-gated runtime execution and a temporary inference-guard compatibility seam" />
       </interface>
-      <depends>M-MODEL-REGISTRY, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE</depends>
+      <depends>M-MODEL-REGISTRY, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-ENGINE-SCHEDULER</depends>
       <target>
         <source>core/services/tts_service.py</source>
       </target>

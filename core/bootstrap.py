@@ -1,9 +1,9 @@
 # FILE: core/bootstrap.py
-# VERSION: 1.1.1
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Assemble the full CoreRuntime from settings by wiring all components together via auto-discovery (backend classes via discover_backend_classes(), manifest via load_composite_manifest(), TTSBackend.from_settings() factory) so adding a new backend or model does not require editing this file.
-#   SCOPE: CoreRuntime dataclass, build_runtime factory, sub-component factory helpers, build_backends helper that drives auto-discovery of TTSBackend subclasses
-#   DEPENDS: M-CONFIG, M-BACKENDS, M-MODELS, M-DISCOVERY, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS
+#   SCOPE: CoreRuntime dataclass, build_runtime factory, sub-component factory helpers, build_backends helper that drives auto-discovery of TTSBackend subclasses, and scheduler wiring for TTS runtime execution
+#   DEPENDS: M-CONFIG, M-BACKENDS, M-MODELS, M-DISCOVERY, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-ENGINE-SCHEDULER
 #   LINKS: M-BOOTSTRAP
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -19,7 +19,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.1 - Allowed degraded runtime assembly when no backend is ready so readiness and validation flows can report host limitations without failing bootstrap]
+#   LAST_CHANGE: [v1.2.0 - Task 12: added explicit EngineScheduler wiring for TTSService while preserving the temporary InferenceGuard compatibility seam in the runtime composition]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from core.backends.registry import BackendRegistry
 from core.contracts import RuntimeExecutionRegistry
 from core.config import CoreSettings
 from core.discovery import discover_backend_classes
+from core.engines import EngineScheduler
 from core.infrastructure import (
     InferenceGuard,
     LocalBoundedExecutionManager,
@@ -68,7 +69,7 @@ logger = logging.getLogger(__name__)
 
 # START_CONTRACT: CoreRuntime
 #   PURPOSE: Hold the fully assembled shared runtime components for transport adapters.
-#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, registry: ModelRegistry - Model discovery and loading service, model_lifecycle: ModelLifecycleService - Lifecycle facade for delete/refresh/download submissions, result_cache: ResultCache - Process-wide synthesis result cache (NullResultCache when disabled), telemetry: TelemetryState - Active OpenTelemetry runtime state (disabled when otel_enabled is false), tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, inference_guard: InferenceGuard - Shared inference concurrency guard, metrics: OperationalMetricsRegistry - Operational metrics facade }
+#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, registry: ModelRegistry - Model discovery and loading service, model_lifecycle: ModelLifecycleService - Lifecycle facade for delete/refresh/download submissions, result_cache: ResultCache - Process-wide synthesis result cache (NullResultCache when disabled), telemetry: TelemetryState - Active OpenTelemetry runtime state (disabled when otel_enabled is false), tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, inference_guard: InferenceGuard - Temporary shared inference compatibility guard, scheduler: EngineScheduler - Shared scheduler gateway for runtime synthesis execution, metrics: OperationalMetricsRegistry - Operational metrics facade }
 #   OUTPUTS: { instance - Immutable runtime composition root }
 #   SIDE_EFFECTS: none
 #   LINKS: M-BOOTSTRAP
@@ -91,6 +92,7 @@ class CoreRuntime:
     rate_limiter: RateLimiter
     quota_guard: QuotaGuard
     inference_guard: InferenceGuard
+    scheduler: EngineScheduler
     metrics: OperationalMetricsRegistry
 
 
@@ -180,6 +182,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
     settings.ensure_directories()
     telemetry = configure_telemetry(settings)
     inference_guard = InferenceGuard()
+    scheduler = EngineScheduler()
     metrics = OperationalMetricsRegistry()
     # END_BLOCK_INIT_INFRASTRUCTURE
     # START_BLOCK_INIT_BACKENDS
@@ -220,6 +223,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         registry=cast(RuntimeExecutionRegistry, registry),
         settings=settings,
         inference_guard=inference_guard,
+        scheduler=scheduler,
         result_cache=result_cache,
     )
     application = TTSApplicationService(tts_service=tts_service)
@@ -257,6 +261,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         rate_limiter=rate_limiter,
         quota_guard=quota_guard,
         inference_guard=inference_guard,
+        scheduler=scheduler,
         metrics=metrics,
     )
     # END_BLOCK_ASSEMBLE_RUNTIME

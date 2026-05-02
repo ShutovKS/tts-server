@@ -1,9 +1,9 @@
 # FILE: core/services/tts_service.py
-# VERSION: 1.5.0
+# VERSION: 1.6.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Coordinate inference for custom, design, and clone synthesis modes via the SynthesisRouter unified seam, while preserving the transport-facing TTSService.synthesize_X(...) facade for backwards compatibility and allowing a guarded Piper engine route.
-#   SCOPE: TTSService class with synthesize_custom/design/clone delegating through SynthesisRouter, SynthesisCoordinator (kept as the per-mode worker; now invokes backend.execute directly by default and can opt Piper custom synthesis into a TTSEngine registry path).
-#   DEPENDS: M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS
+#   PURPOSE: Coordinate inference for custom, design, and clone synthesis modes via the SynthesisRouter unified seam, while preserving the transport-facing TTSService.synthesize_X(...) facade for backwards compatibility and routing runtime execution through the scheduler gateway.
+#   SCOPE: TTSService class with synthesize_custom/design/clone delegating through SynthesisRouter, SynthesisCoordinator (kept as the per-mode worker; now routes legacy backend and Piper engine execution through an EngineScheduler gateway while keeping an explicit temporary InferenceGuard compatibility shim for deletion-stage wiring).
+#   DEPENDS: M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS, M-ENGINE-SCHEDULER
 #   LINKS: M-TTS-SERVICE
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -11,14 +11,14 @@
 #
 # START_MODULE_MAP
 #   LOGGER - Module logger for synthesis service events
-#   SynthesisCoordinator - Internal coordinator over planning, family preparation, and guarded generation; the per-mode worker invoked by SynthesisRouter; invokes backend.execute(ExecutionRequest(...)) by default and can route Piper custom synthesis through EngineRegistry when explicitly enabled.
+#   SynthesisCoordinator - Internal coordinator over planning, family preparation, and scheduler-gated generation; the per-mode worker invoked by SynthesisRouter; routes legacy backend execution and optional Piper engine execution through EngineScheduler.
 #   _build_family_adapter_map - Instantiate a deterministic family-keyed adapter map from discovery results while rejecting duplicate keys
 #   _build_engine_registry - Build the explicit process-local engine registry used by the guarded Piper engine seam
-#   TTSService - Public synthesis facade preserving transport-facing command methods; delegates each call through SynthesisRouter to keep the public pipeline at three layers (TTSService -> SynthesisRouter -> backend)
+#   TTSService - Public synthesis facade preserving transport-facing command methods; delegates each call through SynthesisRouter to keep the public pipeline at three layers (TTSService -> SynthesisRouter -> scheduler-gated runtime execution)
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.5.0 - Task 10: added an explicit Piper-only TTSEngine route behind a runtime flag while keeping the legacy backend execution path as the default fallback]
+#   LAST_CHANGE: [v1.6.0 - Task 12: replaced direct InferenceGuard acquire/release calls with the EngineScheduler gateway while preserving current timeout and async lifecycle behavior; InferenceGuard remains a temporary compatibility shim]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -42,7 +42,13 @@ from core.contracts.commands import (
 )
 from core.contracts.synthesis import SynthesisRequest
 from core.discovery import discover_family_adapter_classes
-from core.engines import EngineRegistry, EngineRegistryError, SynthesisJob, load_engine_registry
+from core.engines import (
+    EngineRegistry,
+    EngineRegistryError,
+    EngineScheduler,
+    SynthesisJob,
+    load_engine_registry,
+)
 from core.engines.piper import PiperOnnxEngine
 from core.errors import AudioArtifactNotFoundError, TTSGenerationError
 from core.model_families import ModelFamilyAdapter
@@ -51,6 +57,7 @@ from core.observability import Timer, get_logger, log_event, operation_scope
 from core.planning import SynthesisPlanner
 
 LOGGER = get_logger(__name__)
+_COMPAT_SCHEDULER_ENGINE_KEY = "tts-service-compat"
 
 
 # START_CONTRACT: _build_family_adapter_map
@@ -105,6 +112,7 @@ class SynthesisCoordinator:
         registry: RuntimeExecutionRegistry,
         settings: CoreSettings,
         inference_guard: InferenceGuard,
+        scheduler: EngineScheduler,
         planner: SynthesisPlanner,
         family_adapters: dict[str, ModelFamilyAdapter],
         engine_registry: EngineRegistry | None = None,
@@ -112,9 +120,18 @@ class SynthesisCoordinator:
         self.registry = registry
         self.settings = settings
         self.inference_guard = inference_guard
+        self.scheduler = scheduler
         self.planner = planner
         self._family_adapters = family_adapters
         self._engine_registry = engine_registry
+
+    def _scheduler_submit(self, *, spec: ModelSpec, backend_key: str, call, engine_key: str | None = None):
+        resolved_engine_key = engine_key or _COMPAT_SCHEDULER_ENGINE_KEY
+        return self.scheduler.submit_engine_task(
+            engine_key=resolved_engine_key,
+            device_key=None,
+            call=call,
+        )
 
     def _selected_backend_key(self) -> str:
         return self.registry.backend.key
@@ -186,95 +203,101 @@ class SynthesisCoordinator:
     ) -> GenerationResult:
         timer = Timer()
         backend = self.registry.backend_for_spec(spec)
-        self.inference_guard.acquire()
-        log_event(
-            LOGGER,
-            level=20,
-            event="[TTSService][_run_engine_generation][BLOCK_ACQUIRE_INFERENCE]",
-            message="Inference slot acquired for engine synthesis",
-            model=spec.api_name,
-            mode=spec.mode,
-            save_output=save_output,
-            text_length=len(text),
-            language=language,
-            backend=backend.key,
-            engine=engine_key,
-        )
-        try:
-            from core.infrastructure.audio_io import persist_output, temporary_output_dir
-
-            engine = self._resolve_runtime_engine(
-                family_key=spec.family_key,
-                capability=capability,
-                backend_key=backend.key,
-            )
-            if engine is None:
-                raise TTSGenerationError(
-                    "No runtime engine is registered for the requested execution path",
-                    details={
-                        "model": spec.api_name,
-                        "family": spec.family_key,
-                        "capability": capability,
-                        "backend": backend.key,
-                    },
-                )
-
-            with temporary_output_dir(prefix="qwen3_tts_output_") as output_dir:
-                model_path = backend.resolve_model_path(spec.folder)
-                handle = engine.load_model(spec=spec, backend_key=backend.key, model_path=model_path)
-                audio_buffer = engine.synthesize(
-                    handle,
-                    SynthesisJob(
-                        capability=capability,
-                        execution_mode=execution_mode,
-                        text=text,
-                        language=language,
-                        output_dir=Path(output_dir),
-                        payload=dict(generation_kwargs),
-                    ),
-                )
-                output_path = Path(output_dir) / "audio_0001.wav"
-                output_path.write_bytes(bytes(audio_buffer.waveform))
-                audio = AudioResult(path=output_path, bytes_data=bytes(audio_buffer.waveform))
-                saved_path = None
-                if save_output:
-                    saved_path = persist_output(audio, spec.output_subfolder, text, self.settings)
-                result = GenerationResult(
-                    audio=audio,
-                    saved_path=saved_path,
-                    model=spec.model_id,
-                    mode=spec.mode,
-                    backend=backend.key,
-                )
-                log_event(
-                    LOGGER,
-                    level=20,
-                    event="[TTSService][_run_engine_generation][BLOCK_PERSIST_OUTPUT]",
-                    message="Engine generation completed successfully",
-                    model=result.model,
-                    mode=result.mode,
-                    duration_ms=timer.elapsed_ms,
-                    language=language,
-                    saved_path=str(result.saved_path) if result.saved_path else None,
-                    audio_path=str(result.audio.path),
-                    backend=result.backend,
-                    engine=engine.key,
-                )
-                return result
-        finally:
-            self.inference_guard.release()
+        def execute_generation() -> GenerationResult:
             log_event(
                 LOGGER,
                 level=20,
-                event="[TTSService][_run_engine_generation][BLOCK_RELEASE_INFERENCE]",
-                message="Inference slot released after engine synthesis",
+                event="[TTSService][_run_engine_generation][BLOCK_ACQUIRE_INFERENCE]",
+                message="Inference slot acquired for engine synthesis",
                 model=spec.api_name,
                 mode=spec.mode,
-                duration_ms=timer.elapsed_ms,
+                save_output=save_output,
+                text_length=len(text),
                 language=language,
                 backend=backend.key,
                 engine=engine_key,
             )
+            try:
+                from core.infrastructure.audio_io import persist_output, temporary_output_dir
+
+                engine = self._resolve_runtime_engine(
+                    family_key=spec.family_key,
+                    capability=capability,
+                    backend_key=backend.key,
+                )
+                if engine is None:
+                    raise TTSGenerationError(
+                        "No runtime engine is registered for the requested execution path",
+                        details={
+                            "model": spec.api_name,
+                            "family": spec.family_key,
+                            "capability": capability,
+                            "backend": backend.key,
+                        },
+                    )
+
+                with temporary_output_dir(prefix="qwen3_tts_output_") as output_dir:
+                    model_path = backend.resolve_model_path(spec.folder)
+                    handle = engine.load_model(spec=spec, backend_key=backend.key, model_path=model_path)
+                    audio_buffer = engine.synthesize(
+                        handle,
+                        SynthesisJob(
+                            capability=capability,
+                            execution_mode=execution_mode,
+                            text=text,
+                            language=language,
+                            output_dir=Path(output_dir),
+                            payload=dict(generation_kwargs),
+                        ),
+                    )
+                    output_path = Path(output_dir) / "audio_0001.wav"
+                    output_path.write_bytes(bytes(audio_buffer.waveform))
+                    audio = AudioResult(path=output_path, bytes_data=bytes(audio_buffer.waveform))
+                    saved_path = None
+                    if save_output:
+                        saved_path = persist_output(audio, spec.output_subfolder, text, self.settings)
+                    result = GenerationResult(
+                        audio=audio,
+                        saved_path=saved_path,
+                        model=spec.model_id,
+                        mode=spec.mode,
+                        backend=backend.key,
+                    )
+                    log_event(
+                        LOGGER,
+                        level=20,
+                        event="[TTSService][_run_engine_generation][BLOCK_PERSIST_OUTPUT]",
+                        message="Engine generation completed successfully",
+                        model=result.model,
+                        mode=result.mode,
+                        duration_ms=timer.elapsed_ms,
+                        language=language,
+                        saved_path=str(result.saved_path) if result.saved_path else None,
+                        audio_path=str(result.audio.path),
+                        backend=result.backend,
+                        engine=engine_key,
+                    )
+                    return result
+            finally:
+                log_event(
+                    LOGGER,
+                    level=20,
+                    event="[TTSService][_run_engine_generation][BLOCK_RELEASE_INFERENCE]",
+                    message="Inference slot released after engine synthesis",
+                    model=spec.api_name,
+                    mode=spec.mode,
+                    duration_ms=timer.elapsed_ms,
+                    language=language,
+                    backend=backend.key,
+                    engine=engine_key,
+                )
+
+        return self._scheduler_submit(
+            spec=spec,
+            backend_key=backend.key,
+            call=execute_generation,
+            engine_key=engine_key,
+        )
 
     def synthesize_design(self, command: VoiceDesignCommand) -> GenerationResult:
         plan = self.planner.plan_command(command)
@@ -387,138 +410,139 @@ class SynthesisCoordinator:
         generation_kwargs = dict(generation_kwargs)
         language = generation_kwargs.pop("language", "auto")
         backend = self.registry.backend_for_spec(spec)
-        self.inference_guard.acquire()
-        log_event(
-            LOGGER,
-            level=20,
-            event="[TTSService][_run_generation][BLOCK_ACQUIRE_INFERENCE]",
-            message="Inference slot acquired",
-            model=spec.api_name,
-            mode=spec.mode,
-            save_output=save_output,
-            text_length=len(text),
-            language=language,
-            backend=backend.key,
-        )
-        try:
-            from core.infrastructure.audio_io import persist_output, read_generated_wav, temporary_output_dir
-
-            with temporary_output_dir(prefix="qwen3_tts_output_") as output_dir:
-                try:
-                    # START_BLOCK_DISPATCH_TO_BACKEND
-                    backend.execute(
-                        ExecutionRequest(
-                            handle=handle,
-                            text=text,
-                            output_dir=Path(output_dir),
-                            language=language,
-                            execution_mode=spec.mode,
-                            generation_kwargs=dict(generation_kwargs),
-                        )
-                    )
-                    # END_BLOCK_DISPATCH_TO_BACKEND
-                    audio = read_generated_wav(output_dir)
-                except AudioArtifactNotFoundError as exc:
-                    log_event(
-                        LOGGER,
-                        level=40,
-                        event="[TTSService][_run_generation][BLOCK_HANDLE_GENERATION_ERRORS]",
-                        message="Generation finished without output artifact",
-                        model=spec.api_name,
-                        mode=spec.mode,
-                        duration_ms=timer.elapsed_ms,
-                        language=language,
-                        error=str(exc),
-                        backend=backend.key,
-                    )
-                    raise TTSGenerationError(
-                        str(exc),
-                        details={
-                            "model": spec.api_name,
-                            "mode": spec.mode,
-                            "failure_kind": "missing_artifact",
-                            "backend": backend.key,
-                        },
-                    ) from exc
-                except TTSGenerationError as exc:
-                    log_event(
-                        LOGGER,
-                        level=40,
-                        event="[TTSService][_run_generation][BLOCK_HANDLE_GENERATION_ERRORS]",
-                        message="Generation failed with controlled error",
-                        model=spec.api_name,
-                        mode=spec.mode,
-                        language=language,
-                        duration_ms=timer.elapsed_ms,
-                        error=str(exc),
-                        backend=backend.key,
-                    )
-                    raise
-                except Exception as exc:  # pragma: no cover
-                    log_event(
-                        LOGGER,
-                        level=40,
-                        event="[TTSService][_run_generation][BLOCK_HANDLE_GENERATION_ERRORS]",
-                        message="Generation failed with unexpected error",
-                        model=spec.api_name,
-                        mode=spec.mode,
-                        language=language,
-                        duration_ms=timer.elapsed_ms,
-                        error=str(exc),
-                        backend=backend.key,
-                    )
-                    raise TTSGenerationError(
-                        str(exc),
-                        details={
-                            "model": spec.api_name,
-                            "mode": spec.mode,
-                            "backend": backend.key,
-                        },
-                    ) from exc
-
-                saved_path = None
-                if save_output:
-                    saved_path = persist_output(audio, spec.output_subfolder, text, self.settings)
-
-                result = GenerationResult(
-                    audio=audio,
-                    saved_path=saved_path,
-                    model=spec.model_id,
-                    mode=spec.mode,
-                    backend=backend.key,
-                )
-                log_event(
-                    LOGGER,
-                    level=20,
-                    event="[TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]",
-                    message="Generation completed successfully",
-                    model=result.model,
-                    mode=result.mode,
-                    duration_ms=timer.elapsed_ms,
-                    language=language,
-                    saved_path=str(result.saved_path) if result.saved_path else None,
-                    audio_path=str(result.audio.path),
-                    backend=result.backend,
-                )
-                return result
-        finally:
-            self.inference_guard.release()
+        def execute_generation() -> GenerationResult:
             log_event(
                 LOGGER,
                 level=20,
-                event="[TTSService][_run_generation][BLOCK_RELEASE_INFERENCE]",
-                message="Inference slot released",
+                event="[TTSService][_run_generation][BLOCK_ACQUIRE_INFERENCE]",
+                message="Inference slot acquired",
                 model=spec.api_name,
                 mode=spec.mode,
-                duration_ms=timer.elapsed_ms,
+                save_output=save_output,
+                text_length=len(text),
                 language=language,
                 backend=backend.key,
             )
+            try:
+                from core.infrastructure.audio_io import persist_output, read_generated_wav, temporary_output_dir
+
+                with temporary_output_dir(prefix="qwen3_tts_output_") as output_dir:
+                    try:
+                        # START_BLOCK_DISPATCH_TO_BACKEND
+                        backend.execute(
+                            ExecutionRequest(
+                                handle=handle,
+                                text=text,
+                                output_dir=Path(output_dir),
+                                language=language,
+                                execution_mode=spec.mode,
+                                generation_kwargs=dict(generation_kwargs),
+                            )
+                        )
+                        # END_BLOCK_DISPATCH_TO_BACKEND
+                        audio = read_generated_wav(output_dir)
+                    except AudioArtifactNotFoundError as exc:
+                        log_event(
+                            LOGGER,
+                            level=40,
+                            event="[TTSService][_run_generation][BLOCK_HANDLE_GENERATION_ERRORS]",
+                            message="Generation finished without output artifact",
+                            model=spec.api_name,
+                            mode=spec.mode,
+                            duration_ms=timer.elapsed_ms,
+                            language=language,
+                            error=str(exc),
+                            backend=backend.key,
+                        )
+                        raise TTSGenerationError(
+                            str(exc),
+                            details={
+                                "model": spec.api_name,
+                                "mode": spec.mode,
+                                "failure_kind": "missing_artifact",
+                                "backend": backend.key,
+                            },
+                        ) from exc
+                    except TTSGenerationError as exc:
+                        log_event(
+                            LOGGER,
+                            level=40,
+                            event="[TTSService][_run_generation][BLOCK_HANDLE_GENERATION_ERRORS]",
+                            message="Generation failed with controlled error",
+                            model=spec.api_name,
+                            mode=spec.mode,
+                            language=language,
+                            duration_ms=timer.elapsed_ms,
+                            error=str(exc),
+                            backend=backend.key,
+                        )
+                        raise
+                    except Exception as exc:  # pragma: no cover
+                        log_event(
+                            LOGGER,
+                            level=40,
+                            event="[TTSService][_run_generation][BLOCK_HANDLE_GENERATION_ERRORS]",
+                            message="Generation failed with unexpected error",
+                            model=spec.api_name,
+                            mode=spec.mode,
+                            language=language,
+                            duration_ms=timer.elapsed_ms,
+                            error=str(exc),
+                            backend=backend.key,
+                        )
+                        raise TTSGenerationError(
+                            str(exc),
+                            details={
+                                "model": spec.api_name,
+                                "mode": spec.mode,
+                                "backend": backend.key,
+                            },
+                        ) from exc
+
+                    saved_path = None
+                    if save_output:
+                        saved_path = persist_output(audio, spec.output_subfolder, text, self.settings)
+
+                    result = GenerationResult(
+                        audio=audio,
+                        saved_path=saved_path,
+                        model=spec.model_id,
+                        mode=spec.mode,
+                        backend=backend.key,
+                    )
+                    log_event(
+                        LOGGER,
+                        level=20,
+                        event="[TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]",
+                        message="Generation completed successfully",
+                        model=result.model,
+                        mode=result.mode,
+                        duration_ms=timer.elapsed_ms,
+                        language=language,
+                        saved_path=str(result.saved_path) if result.saved_path else None,
+                        audio_path=str(result.audio.path),
+                        backend=result.backend,
+                    )
+                    return result
+            finally:
+                log_event(
+                    LOGGER,
+                    level=20,
+                    event="[TTSService][_run_generation][BLOCK_RELEASE_INFERENCE]",
+                    message="Inference slot released",
+                    model=spec.api_name,
+                    mode=spec.mode,
+                    duration_ms=timer.elapsed_ms,
+                    language=language,
+                    backend=backend.key,
+                )
+
+        return self._scheduler_submit(spec=spec, backend_key=backend.key, call=execute_generation)
 
 
 # START_CONTRACT: TTSService
-#   PURPOSE: Coordinate model resolution, guarded inference execution, and output persistence for TTS requests.
-#   INPUTS: { registry: ModelRegistry - Model registry used to resolve and load models, settings: CoreSettings - Shared runtime settings controlling audio handling and persistence, inference_guard: InferenceGuard | None - Optional shared inference concurrency guard, result_cache: ResultCache | None - Optional cache for repeat-result short-circuiting }
+#   PURPOSE: Coordinate model resolution, scheduler-gated inference execution, and output persistence for TTS requests.
+#   INPUTS: { registry: ModelRegistry - Model registry used to resolve and load models, settings: CoreSettings - Shared runtime settings controlling audio handling and persistence, inference_guard: InferenceGuard | None - Optional shared inference compatibility shim retained temporarily for deletion-stage wiring, scheduler: EngineScheduler | None - Optional shared engine scheduler gateway, result_cache: ResultCache | None - Optional cache for repeat-result short-circuiting }
 #   OUTPUTS: { instance - TTS synthesis service for custom, design, and clone modes }
 #   SIDE_EFFECTS: none
 #   LINKS: M-TTS-SERVICE
@@ -529,6 +553,7 @@ class TTSService:
         registry: RuntimeExecutionRegistry,
         settings: CoreSettings,
         inference_guard: InferenceGuard | None = None,
+        scheduler: EngineScheduler | None = None,
         result_cache: ResultCache | None = None,
     ):
         from core.services.result_cache import NullResultCache
@@ -538,6 +563,7 @@ class TTSService:
         self.registry = registry
         self.settings = settings
         self.inference_guard = inference_guard or _InferenceGuard()
+        self.scheduler = scheduler or EngineScheduler()
         self.planner = SynthesisPlanner(registry, settings)
         self._family_adapters = _build_family_adapter_map()
         self._engine_registry = _build_engine_registry(settings)
@@ -545,6 +571,7 @@ class TTSService:
             registry=registry,
             settings=settings,
             inference_guard=self.inference_guard,
+            scheduler=self.scheduler,
             planner=self.planner,
             family_adapters=self._family_adapters,
             engine_registry=self._engine_registry,
