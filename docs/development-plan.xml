@@ -345,6 +345,8 @@
         <source>server/app.py</source>
         <source>server/bootstrap.py</source>
         <source>server/api/routes_tts.py</source>
+        <source>server/api/tts/_helpers.py</source>
+        <source>server/api/tts/_timeout.py</source>
         <source>server/api/routes_health.py</source>
         <source>server/api/routes_models.py</source>
         <source>server/api/auth.py</source>
