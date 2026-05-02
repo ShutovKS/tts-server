@@ -297,9 +297,11 @@
         <file>tests/unit/core/test_mlx_backend.py</file>
         <file>tests/unit/core/test_qwen_fast_backend.py</file>
         <file>tests/unit/core/test_model_manifest.py</file>
+        <file>tests/unit/core/test_torch_backend_dispatcher.py</file>
+        <file>tests/unit/core/test_torch_backend_clone_guard.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_backend_registry.py tests/unit/core/test_mlx_backend.py tests/unit/core/test_qwen_fast_backend.py tests/unit/core/test_model_manifest.py -m unit</check-1>
+        <check-1>python -m pytest tests/unit/core/test_backend_registry.py tests/unit/core/test_mlx_backend.py tests/unit/core/test_qwen_fast_backend.py tests/unit/core/test_model_manifest.py tests/unit/core/test_torch_backend_dispatcher.py tests/unit/core/test_torch_backend_clone_guard.py -m unit</check-1>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">BackendRegistry honors explicit backend selection and autoselection preference ordering.</scenario-1>
@@ -308,6 +310,9 @@
         <scenario-4 kind="success">Listed preload policy preloads requested models and exposes cache diagnostics through the registry surface.</scenario-4>
         <scenario-5 kind="failure">MLX normalized runtime loading fails fast with ModelLoadError when tokenizer initialization is incomplete.</scenario-5>
         <scenario-6 kind="failure">Accelerated Qwen backend exposes explicit readiness rejection reasons for custom, design, and clone when its fast prerequisites are missing.</scenario-6>
+        <scenario-7 kind="success">TorchBackend builds its default family registry from the dedicated strategy-registry helper so built-in Qwen3 and OmniVoice stay available without inline dispatcher wiring.</scenario-7>
+        <scenario-8 kind="failure">Duplicate Torch family strategy registrations fail fast with the duplicate family key named in the error instead of silently replacing an existing built-in strategy.</scenario-8>
+        <scenario-9 kind="success">Unavailable optional injected Torch family strategies do not hide a valid registered family during availability checks.</scenario-9>
       </scenarios>
     </V-M-BACKENDS>
     <V-M-ENGINE-CONTRACTS MODULE="M-ENGINE-CONTRACTS" PRIORITY="medium">
@@ -577,13 +582,14 @@
     <V-M-BOOTSTRAP MODULE="M-BOOTSTRAP" PRIORITY="high">
       <test-files>
         <file>tests/unit/core/test_config_and_bootstrap.py</file>
+        <file>tests/unit/core/test_discovery.py</file>
         <file>tests/architecture/test_import_boundaries.py</file>
         <file>tests/unit/scripts/test_validate_runtime.py</file>
         <file>tests/unit/scripts/test_runtime_profiles.py</file>
         <file>tests/unit/scripts/test_family_env_guidance.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_config_and_bootstrap.py tests/architecture/test_import_boundaries.py -m "unit or architecture"</check-1>
+        <check-1>python -m pytest tests/unit/core/test_config_and_bootstrap.py tests/unit/core/test_discovery.py tests/architecture/test_import_boundaries.py -m "unit or architecture"</check-1>
         <check-2>python scripts/runtime_self_check.py</check-2>
         <check-3>python scripts/validate_runtime.py host-matrix</check-3>
         <check-4>python -m pytest tests/unit/scripts/test_runtime_profiles.py tests/unit/scripts/test_family_env_guidance.py -m unit</check-4>
@@ -592,12 +598,14 @@
         <scenario-1 kind="success">build_runtime passes manifest path and preload configuration into backend and registry wiring.</scenario-1>
         <scenario-2 kind="success">Local job artifact, metadata, and execution factories preserve the local default runtime wiring.</scenario-2>
         <scenario-3 kind="failure">Unsupported job backend identifiers are rejected by the bootstrap wiring factories.</scenario-3>
-        <scenario-4 kind="success">Architecture checks keep bootstrap wiring config-driven and free of adapter-layer drift.</scenario-4>
-        <scenario-5 kind="success">Operator self-check outputs selected backend, per-model execution backend, host snapshot, and missing asset evidence without import-path failures.</scenario-5>
-        <scenario-6 kind="success">Operator self-check exposes qwen_fast enablement, test-mode overrides, route candidates, and fallback reasons when the accelerated lane is configured.</scenario-6>
-        <scenario-7 kind="success">Host-matrix validation automates baseline and simulated qwen_fast lane evidence so support claims stay synchronized with runtime diagnostics.</scenario-7>
-        <scenario-8 kind="success">Windows Docker Desktop validation can reuse the same runtime wiring with Linux containers after the container trust store includes the required corporate proxy root certificate.</scenario-8>
-        <scenario-9 kind="success">Operator self-check exposes family, module, and dedicated isolated-environment guidance through the shared profiles package surface without import-boundary drift.</scenario-9>
+        <scenario-4 kind="success">Backend discovery seeds built-in MLX, ONNX, Qwen fast, and Torch registrations through one isolated helper before subclass enumeration.</scenario-4>
+        <scenario-5 kind="failure">One optional built-in backend import failure does not prevent unrelated backend classes from being discovered.</scenario-5>
+        <scenario-6 kind="success">Architecture checks keep bootstrap wiring config-driven and free of adapter-layer drift.</scenario-6>
+        <scenario-7 kind="success">Operator self-check outputs selected backend, per-model execution backend, host snapshot, and missing asset evidence without import-path failures.</scenario-7>
+        <scenario-8 kind="success">Operator self-check exposes qwen_fast enablement, test-mode overrides, route candidates, and fallback reasons when the accelerated lane is configured.</scenario-8>
+        <scenario-9 kind="success">Host-matrix validation automates baseline and simulated qwen_fast lane evidence so support claims stay synchronized with runtime diagnostics.</scenario-9>
+        <scenario-10 kind="success">Windows Docker Desktop validation can reuse the same runtime wiring with Linux containers after the container trust store includes the required corporate proxy root certificate.</scenario-10>
+        <scenario-11 kind="success">Operator self-check exposes family, module, and dedicated isolated-environment guidance through the shared profiles package surface without import-boundary drift.</scenario-11>
       </scenarios>
     </V-M-BOOTSTRAP>
 

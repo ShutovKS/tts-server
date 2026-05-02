@@ -16,7 +16,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.0.1 - Added backend re-exports for the shared runtime package surface]
 # END_CHANGE_SUMMARY
 
 from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
