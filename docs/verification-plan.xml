@@ -346,9 +346,11 @@
     <V-M-ENGINE-REGISTRY MODULE="M-ENGINE-REGISTRY" PRIORITY="high">
       <test-files>
         <file>tests/unit/core/test_engine_registry.py</file>
+        <file>tests/unit/core/test_engine_proof_family.py</file>
       </test-files>
       <module-checks>
         <check-1>python -m pytest tests/unit/core/test_engine_registry.py -m unit</check-1>
+        <check-2>python -m pytest tests/unit/core/test_engine_proof_family.py tests/unit/core/test_engine_registry.py -m unit</check-2>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">EngineRegistry accepts explicit and built-in TTSEngine registrations and resolves explicit engine keys or aliases deterministically.</scenario-1>
@@ -357,6 +359,8 @@
         <scenario-4 kind="failure">Duplicate engine keys fail fast with the duplicate key named in the error.</scenario-4>
         <scenario-5 kind="failure">Optional engine entry-point load failures and invalid objects/classes are logged and skipped in non-fail-fast mode so unrelated enabled engines still register.</scenario-5>
         <scenario-6 kind="failure">Fail-fast registry loading raises the original optional entry-point exception instead of warning-and-skip behavior.</scenario-6>
+        <scenario-7 kind="success">A test-only proof family TTSEngine can be registered through EngineRegistry, discovered by explicit config matching, and produce deterministic fake audio plus a reusable model handle through the engine path.</scenario-7>
+        <scenario-8 kind="failure">Invalid proof-family config payloads are rejected deterministically before registration, and the proof family name remains absent from server/api/routes_tts.py, core/services/tts_service.py, and core/backends/torch_backend/dispatcher.py.</scenario-8>
       </scenarios>
       <required-log-markers>
         <marker-1>[EngineRegistry][load_engine_registry][REGISTER_ENGINE_CANDIDATES]</marker-1>

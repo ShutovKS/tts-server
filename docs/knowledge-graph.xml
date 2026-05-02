@@ -67,6 +67,18 @@
       <CrossLink from="M-ENGINE-REGISTRY" to="M-OBSERVABILITY" relation="emits-loader-warning-events" />
     </M-ENGINE-REGISTRY>
 
+    <M-ENGINE-REGISTRY-TESTS NAME="EngineRegistryTests" TYPE="TEST_SUPPORT" STATUS="implemented">
+      <purpose>Exercise TTSEngine registry selection, typed config matching, and a test-only proof family without adding runtime coupling to transport adapters.</purpose>
+      <path>tests/unit/core/test_engine_proof_family.py</path>
+      <depends>M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS, M-ENGINE-CONFIG</depends>
+      <verification-ref>V-M-ENGINE-REGISTRY</verification-ref>
+      <annotations>
+        <fn-test_proof_family_registry_selection_and_fake_synthesis PURPOSE="Prove a test-only family can be discovered, selected, and synthesize deterministic fake audio through the engine path" />
+      </annotations>
+      <CrossLink from="M-ENGINE-REGISTRY-TESTS" to="M-ENGINE-REGISTRY" relation="verifies-registry-selection-paths" />
+      <CrossLink from="M-ENGINE-REGISTRY-TESTS" to="M-ENGINE-CONFIG" relation="verifies-typed-config-matching-and-invalid-config-rejection" />
+    </M-ENGINE-REGISTRY-TESTS>
+
     <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" STATUS="implemented">
       <purpose>Expose the current legacy family-adapter and backend lanes as temporary engine-like metadata without changing planner or synthesis-service behavior.</purpose>
       <path>core/engines/compatibility.py</path>
