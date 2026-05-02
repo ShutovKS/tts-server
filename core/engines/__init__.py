@@ -1,10 +1,10 @@
 # FILE: core/engines/__init__.py
-# VERSION: 1.3.0
+# VERSION: 1.4.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Re-export the public engine contract, typed configuration, production engine implementations, registry/discovery surfaces, and the temporary legacy compatibility bridge.
-#   SCOPE: barrel re-exports for engine DTOs, TTSEngine, discriminated engine config models, production engines, registry loader helpers, and temporary bridge helpers
-#   DEPENDS: M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-BACKENDS
-#   LINKS: M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-BACKENDS
+#   PURPOSE: Re-export the public engine contract, typed configuration, production engine implementations, scheduler surface, registry/discovery surfaces, and the temporary legacy compatibility bridge.
+#   SCOPE: barrel re-exports for engine DTOs, TTSEngine, discriminated engine config models, production engines, scheduler helpers, registry loader helpers, and temporary bridge helpers
+#   DEPENDS: M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-BACKENDS
+#   LINKS: M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-BACKENDS
 #   ROLE: BARREL
 #   MAP_MODE: SUMMARY
 # END_MODULE_CONTRACT
@@ -13,12 +13,13 @@
 #   Contract surface - Re-export TTSEngine, model/audio/job DTOs, and availability/capability types.
 #   Config surface - Re-export discriminated engine config models, parsing helpers, and collection settings.
 #   Production engine surface - Re-export the first real Piper ONNX engine implementation.
+#   Scheduler surface - Re-export the worker-pool key/policy DTOs, scheduler facade, and shutdown error.
 #   Registry surface - Re-export EngineRegistry, its typed error, and the loader/entry-point helpers.
 #   Compatibility surface - Re-export the temporary legacy compatibility bridge and registry builder.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.3.0 - Task 10: re-exported PiperOnnxEngine as the first production TTSEngine while keeping the temporary compatibility bridge available for non-migrated lanes]
+#   LAST_CHANGE: [v1.4.0 - Task 11: re-exported the standalone engine scheduler surface for later runtime integration while preserving existing TTSService wiring]
 # END_CHANGE_SUMMARY
 
 from core.engines.config import (
@@ -52,6 +53,13 @@ from core.engines.registry import (
     EngineRegistryError,
     load_engine_registry,
 )
+from core.engines.scheduler import (
+    EngineScheduler,
+    EngineSchedulerStoppedError,
+    EngineWorkerPoolKey,
+    EngineWorkerPoolPolicy,
+    WorkerPool,
+)
 
 __all__ = [
     "AudioBuffer",
@@ -63,7 +71,11 @@ __all__ = [
     "ENGINE_ENTRY_POINT_GROUP",
     "EngineRegistry",
     "EngineRegistryError",
+    "EngineScheduler",
+    "EngineSchedulerStoppedError",
     "EngineSettings",
+    "EngineWorkerPoolKey",
+    "EngineWorkerPoolPolicy",
     "LegacyEngineRecord",
     "MlxEngineConfig",
     "ModelHandle",
@@ -73,6 +85,7 @@ __all__ = [
     "SynthesisJob",
     "TTSEngine",
     "TorchEngineConfig",
+    "WorkerPool",
     "build_legacy_engine_registry",
     "load_engine_registry",
     "parse_engine_config",

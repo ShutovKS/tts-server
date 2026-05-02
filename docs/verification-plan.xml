@@ -409,11 +409,19 @@
         <file>tests/unit/core/test_engine_scheduler.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_engine_scheduler.py -m unit</check-1>
+        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_engine_scheduler.py -m unit</check-1>
+        <check-2>.venv311/bin/python -m pytest tests/unit/core/test_engine_scheduler.py -m unit -k "single_slot or queue_full or timeout or shutdown or exception_release"</check-2>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">Scheduler dispatch stays bounded, observable, and explicit about queueing decisions through the worker pool.</scenario-1>
+        <scenario-1 kind="success">Default scheduler policy preserves current single-slot semantics for same-engine and same-device contention by raising a controlled busy error instead of queueing silently.</scenario-1>
+        <scenario-2 kind="success">When an explicit worker-pool policy opts into queueing, capacity stays bounded per engine/device key and overflow raises a controlled queue-full error deterministically.</scenario-2>
+        <scenario-3 kind="failure">Inference deadlines surface RequestTimeoutError with structured engine/device/timeout details and do not leak scheduler capacity for later work.</scenario-3>
+        <scenario-4 kind="failure">Worker-call exceptions release scheduler capacity so a later task on the same engine/device key can proceed immediately.</scenario-4>
+        <scenario-5 kind="failure">After scheduler shutdown, submit attempts fail deterministically with a typed scheduler shutdown error.</scenario-5>
       </scenarios>
+      <required-log-markers>
+        <marker-1>[EngineScheduler][submit][BLOCK_SCHEDULER_DISPATCH]</marker-1>
+      </required-log-markers>
     </V-M-ENGINE-SCHEDULER>
 
     <V-M-ENGINE-ROUTE-SPLIT MODULE="M-ENGINE-ROUTE-SPLIT" PRIORITY="medium">

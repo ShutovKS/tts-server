@@ -604,16 +604,18 @@
       <verification-ref>V-M-ENGINE-BRIDGE</verification-ref>
     </M-ENGINE-BRIDGE>
 
-    <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" LAYER="2" ORDER="12" STATUS="planned">
+    <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" LAYER="2" ORDER="12" STATUS="implemented">
       <contract>
-        <purpose>Coordinate bounded worker dispatch for engine requests and keep queueing behavior explicit.</purpose>
+        <purpose>Coordinate bounded per-engine/per-device worker dispatch for engine requests and keep queueing behavior explicit.</purpose>
       </contract>
       <interface>
         <export-EngineScheduler PURPOSE="Scheduler facade for engine request dispatch" />
         <export-WorkerPool PURPOSE="Bounded worker pool for engine tasks" />
+        <export-EngineWorkerPoolKey PURPOSE="Deterministic engine/device pool key" />
+        <export-EngineWorkerPoolPolicy PURPOSE="Explicit active/queued/timeout policy for one pool" />
         <export-submit_engine_task PURPOSE="Queue a unit of engine work" />
       </interface>
-      <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-OBSERVABILITY, M-METRICS</depends>
+      <depends>M-ERRORS, M-OBSERVABILITY</depends>
       <target>
         <source>core/engines/scheduler.py</source>
       </target>

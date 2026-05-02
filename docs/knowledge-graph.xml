@@ -110,18 +110,23 @@
       <CrossLink from="M-ENGINE-PIPER" to="M-ENGINE-BRIDGE" relation="coexists-with-temporary-legacy-bridge-during-migration" />
     </M-ENGINE-PIPER>
 
-    <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" STATUS="planned">
-      <purpose>Coordinate bounded worker dispatch for engine requests and keep queueing behavior explicit.</purpose>
+    <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Coordinate bounded per-engine/per-device worker dispatch for engine requests while keeping queueing, timeout, and shutdown behavior explicit.</purpose>
       <path>core/engines/scheduler.py</path>
-      <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-OBSERVABILITY, M-METRICS</depends>
+      <depends>M-ERRORS, M-OBSERVABILITY</depends>
       <verification-ref>V-M-ENGINE-SCHEDULER</verification-ref>
+      <implementation-note>Task 11 introduces a standalone scheduler that creates lazy worker pools keyed by engine and device. The default policy preserves the current single-slot runtime behavior (`max_active=1`, `max_queued=0`) by raising `InferenceBusyError` on contention, while explicit policy objects can opt later integration work into bounded queueing, submit waits, and inference deadlines without changing TTSService yet.</implementation-note>
       <annotations>
         <class-EngineScheduler PURPOSE="Scheduler facade for engine request dispatch" />
-        <class-WorkerPool PURPOSE="Bounded worker pool for engine tasks" />
+        <class-WorkerPool PURPOSE="Bounded worker pool for one engine/device key" />
+        <type-EngineWorkerPoolKey PURPOSE="Deterministic per-engine/per-device pool key" />
+        <type-EngineWorkerPoolPolicy PURPOSE="Explicit active/queued/timeout policy for one pool" />
+        <class-EngineSchedulerStoppedError PURPOSE="Typed shutdown failure raised after scheduler shutdown" />
         <fn-submit_engine_task PURPOSE="Queue a unit of engine work" />
       </annotations>
       <CrossLink from="M-ENGINE-SCHEDULER" to="M-ENGINE-CONTRACTS" relation="uses-shared-engine-types" />
       <CrossLink from="M-ENGINE-SCHEDULER" to="M-OBSERVABILITY" relation="emits-scheduler-traces" />
+      <CrossLink from="M-ENGINE-SCHEDULER" to="M-ERRORS" relation="maps-busy-queue-and-timeout-failures-to-controlled-domain-errors" />
     </M-ENGINE-SCHEDULER>
 
     <M-ENGINE-ROUTE-SPLIT NAME="EngineRouteSplit" TYPE="CORE_LOGIC" STATUS="planned">
