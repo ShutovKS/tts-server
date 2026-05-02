@@ -367,13 +367,21 @@
     <V-M-ENGINE-BRIDGE MODULE="M-ENGINE-BRIDGE" PRIORITY="medium">
       <test-files>
         <file>tests/unit/core/test_engine_bridge.py</file>
+        <file>tests/unit/core/test_tts_service.py</file>
+        <file>tests/unit/core/test_synthesis_planner.py</file>
       </test-files>
       <module-checks>
         <check-1>python -m pytest tests/unit/core/test_engine_bridge.py -m unit</check-1>
+        <check-2>python -m pytest tests/unit/core/test_tts_service.py tests/unit/core/test_synthesis_planner.py -m unit</check-2>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">Compatibility bridge adapts family requests and backend results without changing transport-facing behavior.</scenario-1>
+        <scenario-1 kind="success">Compatibility bridge inventories the current legacy family-adapter and backend lanes into deterministic temporary `legacy-*` EngineRegistry entries with explicit deletion criteria for the post-migration cleanup.</scenario-1>
+        <scenario-2 kind="success">Bridge registry aliases and capability/family/backend matching expose current legacy metadata without activating engine-owned model loading or synthesis execution.</scenario-2>
+        <scenario-3 kind="success">Planner and TTSService continue to resolve and execute through the existing registry -> family adapter -> backend path while the temporary bridge coexists in-process.</scenario-3>
       </scenarios>
+      <required-log-markers>
+        <marker-1>TEMPORARY compatibility bridge</marker-1>
+      </required-log-markers>
     </V-M-ENGINE-BRIDGE>
 
     <V-M-ENGINE-SCHEDULER MODULE="M-ENGINE-SCHEDULER" PRIORITY="medium">
