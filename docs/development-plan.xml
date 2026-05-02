@@ -530,6 +530,19 @@
       </target>
       <verification-ref>V-M-ENGINE-QWEN3</verification-ref>
     </M-ENGINE-QWEN3>
+    <M-ENGINE-OMNIVOICE NAME="OmniVoiceTorchEngine" TYPE="CORE_LOGIC" LAYER="2" ORDER="8A" STATUS="implemented">
+      <contract>
+        <purpose>Provide the production TTSEngine implementation for OmniVoice custom, design, and clone synthesis on the Torch lane.</purpose>
+      </contract>
+      <interface>
+        <export-OmniVoiceTorchEngine PURPOSE="Production TTSEngine for OmniVoice synthesis via the Torch runtime" />
+      </interface>
+      <depends>M-ENGINE-CONTRACTS, M-ENGINE-REGISTRY, M-BACKENDS, M-ERRORS, M-METRICS, M-TTS-SERVICE, M-OMNIVOICE-FAMILY</depends>
+      <target>
+        <source>core/engines/omnivoice.py</source>
+      </target>
+      <verification-ref>V-M-ENGINE-OMNIVOICE</verification-ref>
+    </M-ENGINE-OMNIVOICE>
 
     <M-OMNIVOICE-FAMILY NAME="OmniVoiceFamilyAdapter" TYPE="CORE_LOGIC" LAYER="1" ORDER="5" STATUS="implemented">
       <contract>

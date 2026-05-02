@@ -1,5 +1,5 @@
 # FILE: core/engines/__init__.py
-# VERSION: 1.5.0
+# VERSION: 1.6.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Re-export the public engine contract, typed configuration, production engine implementations, scheduler surface, registry/discovery surfaces, and the temporary legacy compatibility bridge.
 #   SCOPE: barrel re-exports for engine DTOs, TTSEngine, discriminated engine config models, production engines, scheduler helpers, registry loader helpers, and temporary bridge helpers
@@ -12,14 +12,14 @@
 # START_MODULE_MAP
 #   Contract surface - Re-export TTSEngine, model/audio/job DTOs, and availability/capability types.
 #   Config surface - Re-export discriminated engine config models, parsing helpers, and collection settings.
-#   Production engine surface - Re-export the Piper ONNX engine and the Qwen3 Torch engine implementations.
+#   Production engine surface - Re-export the Piper ONNX engine, the Qwen3 Torch engine, and the OmniVoice Torch engine implementations.
 #   Scheduler surface - Re-export the worker-pool key/policy DTOs, scheduler facade, and shutdown error.
 #   Registry surface - Re-export EngineRegistry, its typed error, and the loader/entry-point helpers.
 #   Compatibility surface - Re-export the temporary legacy compatibility bridge and registry builder.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.5.0 - Task 15: re-exported the Qwen3 Torch engine alongside the existing Piper engine for generic runtime engine routing]
+#   LAST_CHANGE: [v1.6.0 - Task 16: re-exported the OmniVoice Torch engine alongside Piper and Qwen3 for generic runtime engine routing]
 # END_CHANGE_SUMMARY
 
 from core.engines.config import (
@@ -46,6 +46,7 @@ from core.engines.compatibility import (
     LegacyEngineRecord,
     build_legacy_engine_registry,
 )
+from core.engines.omnivoice import OmniVoiceTorchEngine
 from core.engines.piper import PiperOnnxEngine
 from core.engines.qwen3 import Qwen3TorchEngine
 from core.engines.registry import (
@@ -80,6 +81,7 @@ __all__ = [
     "LegacyEngineRecord",
     "MlxEngineConfig",
     "ModelHandle",
+    "OmniVoiceTorchEngine",
     "OnnxEngineConfig",
     "PiperOnnxEngine",
     "Qwen3TorchEngine",

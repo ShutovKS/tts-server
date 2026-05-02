@@ -1,8 +1,8 @@
 # FILE: core/services/tts_service.py
-# VERSION: 1.7.1
+# VERSION: 1.8.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Coordinate inference for custom, design, and clone synthesis modes via the SynthesisRouter unified seam, while preserving the transport-facing TTSService.synthesize_X(...) facade for backwards compatibility and routing runtime execution through the scheduler gateway.
-#   SCOPE: TTSService class with synthesize_custom/design/clone delegating through SynthesisRouter, SynthesisCoordinator (kept as the per-mode worker; now routes legacy backend plus Piper and Qwen3 engine execution through an EngineScheduler gateway while keeping an explicit temporary InferenceGuard compatibility shim for deletion-stage wiring).
+#   SCOPE: TTSService class with synthesize_custom/design/clone delegating through SynthesisRouter, SynthesisCoordinator (kept as the per-mode worker; now routes legacy backend plus Piper, Qwen3, and OmniVoice engine execution through an EngineScheduler gateway while keeping an explicit temporary InferenceGuard compatibility shim for deletion-stage wiring).
 #   DEPENDS: M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS, M-ENGINE-SCHEDULER
 #   LINKS: M-TTS-SERVICE
 #   ROLE: RUNTIME
@@ -13,12 +13,12 @@
 #   LOGGER - Module logger for synthesis service events
 #   SynthesisCoordinator - Internal coordinator over planning, family preparation, and scheduler-gated generation; the per-mode worker invoked by SynthesisRouter; routes legacy backend execution and optional Piper engine execution through EngineScheduler.
 #   _build_family_adapter_map - Instantiate a deterministic family-keyed adapter map from discovery results while rejecting duplicate keys
-#   _build_engine_registry - Build the explicit process-local engine registry used by the guarded Piper and Qwen3 engine seams
+#   _build_engine_registry - Build the explicit process-local engine registry used by the guarded Piper plus Qwen3 and OmniVoice engine seams
 #   TTSService - Public synthesis facade preserving transport-facing command methods; delegates each call through SynthesisRouter to keep the public pipeline at three layers (TTSService -> SynthesisRouter -> scheduler-gated runtime execution)
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.7.1 - Task 15 review-fix: kept generic engine routing intact, added explicit custom-route evidence, and renamed the generic engine temp-output prefix]
+#   LAST_CHANGE: [v1.8.0 - Task 16: registered OmniVoice on the generic engine seam so service execution no longer needs an OmniVoice-specific runtime branch]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -46,6 +46,7 @@ from core.engines import (
     EngineRegistry,
     EngineRegistryError,
     EngineScheduler,
+    OmniVoiceTorchEngine,
     TTSEngine,
     Qwen3TorchEngine,
     SynthesisJob,
@@ -93,14 +94,14 @@ def _build_family_adapter_map(
 
 
 # START_CONTRACT: _build_engine_registry
-#   PURPOSE: Build the local runtime engine registry with the production Piper and Qwen3 engines while keeping unsupported paths on legacy execution seams.
+#   PURPOSE: Build the local runtime engine registry with the production Piper, Qwen3, and OmniVoice engines while keeping unsupported paths on legacy execution seams.
 #   INPUTS: { settings: CoreSettings - Runtime settings containing explicit engine-route toggles }
 #   OUTPUTS: { EngineRegistry | None - Process-local engine registry when any engine route is enabled }
 #   SIDE_EFFECTS: none
 #   LINKS: M-TTS-SERVICE, M-ENGINE-REGISTRY
 # END_CONTRACT: _build_engine_registry
 def _build_engine_registry(settings: CoreSettings) -> EngineRegistry | None:
-    engines: list[TTSEngine] = [Qwen3TorchEngine()]
+    engines: list[TTSEngine] = [Qwen3TorchEngine(), OmniVoiceTorchEngine()]
     if settings.piper_engine_enabled:
         engines.append(PiperOnnxEngine())
     return load_engine_registry(

@@ -1,8 +1,8 @@
 # FILE: tests/unit/core/test_tts_service.py
-# VERSION: 1.6.1
+# VERSION: 1.7.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for the core TTS service orchestration and logging.
-#   SCOPE: Clone synthesis, family-adapter discovery wiring, duplicate-key validation, language normalization, structured log emission, guarded engine-route fallback behavior, generic Qwen3 engine routing, and scheduler gateway execution coverage
+#   SCOPE: Clone synthesis, family-adapter discovery wiring, duplicate-key validation, language normalization, structured log emission, guarded engine-route fallback behavior, generic Qwen3 and OmniVoice engine routing, and scheduler gateway execution coverage
 #   DEPENDS: M-CORE
 #   LINKS: V-M-CORE
 #   ROLE: TEST
@@ -25,7 +25,7 @@
 #   test_synthesize_clone_passes_explicit_language - Verifies clone requests normalize explicit language values
 #   test_synthesize_clone_preserves_missing_ref_text - Verifies clone requests preserve None ref_text in the kwargs
 #   test_tts_service_emits_structured_logs - Verifies structured synthesis logs include mode and language context
-#   test_tts_service_routes_omnivoice_family_payload_to_backend - Verifies the OmniVoice family routes its payload through the backend execution contract
+#   test_tts_service_routes_omnivoice_family_payload_to_engine - Verifies the OmniVoice family routes its payload through the generic engine execution contract
 #   test_build_engine_registry_returns_none_when_flag_is_disabled - Verifies engine wiring stays absent unless the explicit runtime flag is enabled
 #   test_tts_service_routes_legacy_backend_execution_through_scheduler_gateway - Verifies the legacy backend lane executes through EngineScheduler instead of direct InferenceGuard acquire/release
 #   test_tts_service_routes_qwen3_custom_through_engine_scheduler_gateway - Verifies the Qwen3 custom engine lane executes through EngineScheduler without backend.execute fallback
@@ -34,7 +34,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.6.1 - Task 15 review-fix: added deterministic Qwen3 custom engine-route coverage and kept scheduler-gated behavior assertions intact]
+#   LAST_CHANGE: [v1.7.0 - Task 16: replaced OmniVoice backend-route coverage with generic OmniVoice engine-route coverage and expanded engine registry expectations]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.config import CoreSettings
 from core.contracts import BackendRouteInfo
 from core.contracts.commands import CustomVoiceCommand, VoiceCloneCommand, VoiceDesignCommand
-from core.engines import Qwen3TorchEngine
+from core.engines import OmniVoiceTorchEngine, Qwen3TorchEngine
 from core.contracts.synthesis import ExecutionPlan
 from core.discovery import discover_family_adapter_classes
 from core.engines import EngineScheduler
@@ -400,12 +400,44 @@ def test_tts_service_uses_result_cache_to_short_circuit_repeat_requests(tmp_path
     assert second.backend == first.backend
 
 
-def test_tts_service_routes_omnivoice_family_payload_to_backend(tmp_path: Path):
+def test_tts_service_routes_omnivoice_family_payload_to_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from tests.unit.core.test_omnivoice_engine import _write_fake_wave
+
     settings = _make_core_settings(tmp_path)
     registry = FamilyAwareRegistry()
+    design_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family_key == "omnivoice" and spec.mode == "design"
+    )
+    (settings.models_dir / design_spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
+
+    class _FakeOmniVoiceRuntime:
+        def __init__(self, model_path: str) -> None:
+            self.audio_tokenizer = type(
+                "_AudioTokenizer",
+                (),
+                {"config": type("_Config", (), {"sample_rate": 24000})()},
+            )()
+
+        def generate(self, **kwargs):
+            assert kwargs["text"] == "Hello"
+            assert "language" not in kwargs
+            assert kwargs["instruct"] == "Warm bilingual narrator"
+            return [[0.0] * 8]
+
+    registry.backend.execute = lambda request: (_ for _ in ()).throw(
+        AssertionError("backend.execute should not be used for OmniVoice engine routing")
+    )
+    monkeypatch.setattr("core.engines.omnivoice.load_omnivoice_model_cls", lambda: _FakeOmniVoiceRuntime)
+    monkeypatch.setattr("core.engines.omnivoice.torch", object())
+    monkeypatch.setattr(
+        "soundfile.write",
+        lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
+    )
+
     service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
-    captured_kwargs: dict = {}
-    registry.backend.execute = _capture_execute(captured_kwargs)
 
     result = service.synthesize_design(
         VoiceDesignCommand(
@@ -416,9 +448,8 @@ def test_tts_service_routes_omnivoice_family_payload_to_backend(tmp_path: Path):
     )
 
     assert result.mode == "design"
-    assert captured_kwargs["mode"] == "design"
-    assert captured_kwargs["instruct"] == "Warm bilingual narrator"
-    assert captured_kwargs["language"] == "auto"
+    assert result.backend == "torch"
+    assert result.audio.bytes_data.startswith(b"RIFF")
 
 
 def test_build_engine_registry_returns_none_when_flag_is_disabled(tmp_path: Path) -> None:
@@ -427,7 +458,7 @@ def test_build_engine_registry_returns_none_when_flag_is_disabled(tmp_path: Path
     registry = _build_engine_registry(settings)
 
     assert registry is not None
-    assert registry.keys() == ("qwen3-torch",)
+    assert registry.keys() == ("qwen3-torch", "omnivoice-torch")
 
 
 def test_tts_service_routes_qwen3_custom_through_engine_scheduler_gateway(
@@ -605,6 +636,7 @@ def test_tts_service_routes_legacy_backend_execution_through_scheduler_gateway(t
         settings=settings,
         scheduler=scheduler,
     )
+    service.coordinator._resolve_runtime_engine = lambda **kwargs: None  # type: ignore[method-assign]
     captured_kwargs: dict = {}
     scheduler_calls: list[dict[str, object]] = []
     original_submit = scheduler.submit_engine_task
@@ -681,3 +713,96 @@ def test_tts_service_routes_piper_engine_execution_through_scheduler_gateway(
     assert result.backend == "onnx"
     assert result.audio.bytes_data.startswith(b"RIFF")
     assert scheduler_calls == [{"engine_key": "piper-onnx", "device_key": None}]
+
+
+def test_tts_service_routes_omnivoice_engine_execution_through_scheduler_gateway(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from tests.unit.core.test_omnivoice_engine import _write_fake_wave
+
+    registry = StubRegistry()
+    settings = _make_core_settings(tmp_path)
+    scheduler = EngineScheduler()
+    scheduler_calls: list[dict[str, object]] = []
+    original_submit = scheduler.submit_engine_task
+
+    def record_submit(**kwargs):
+        scheduler_calls.append(
+            {
+                "engine_key": kwargs["engine_key"],
+                "device_key": kwargs.get("device_key"),
+            }
+        )
+        return original_submit(**kwargs)
+
+    scheduler.submit_engine_task = record_submit  # type: ignore[method-assign]
+    registry.backend.execute = _capture_execute({})
+
+    custom_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family_key == "omnivoice" and spec.mode == "custom"
+    )
+    design_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family_key == "omnivoice" and spec.mode == "design"
+    )
+    clone_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family_key == "omnivoice" and spec.mode == "clone"
+    )
+    for spec in (custom_spec, design_spec, clone_spec):
+        (settings.models_dir / spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
+    ref_audio_path = tmp_path / "reference.wav"
+    ref_audio_path.write_bytes(make_wav_bytes())
+
+    class _FakeOmniVoiceRuntime:
+        def __init__(self, model_path: str) -> None:
+            self.audio_tokenizer = type(
+                "_AudioTokenizer",
+                (),
+                {"config": type("_Config", (), {"sample_rate": 24000})()},
+            )()
+
+        def generate(self, **kwargs):
+            return [[0.0] * 48000]
+
+    monkeypatch.setattr("core.engines.omnivoice.load_omnivoice_model_cls", lambda: _FakeOmniVoiceRuntime)
+    monkeypatch.setattr("core.engines.omnivoice.torch", object())
+    monkeypatch.setattr(
+        "soundfile.write",
+        lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
+    )
+
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        scheduler=scheduler,
+    )
+
+    custom_result = service.synthesize_custom(
+        CustomVoiceCommand(
+            text="Hello",
+            model=custom_spec.model_id,
+            speaker="ignored",
+            instruct="Friendly",
+            speed=1.1,
+        )
+    )
+    design_result = service.synthesize_design(
+        VoiceDesignCommand(text="Hello", model=design_spec.model_id, voice_description="Warm narrator")
+    )
+    clone_result = service.synthesize_clone(
+        VoiceCloneCommand(
+            text="Clone this",
+            model=clone_spec.model_id,
+            ref_audio_path=ref_audio_path,
+            ref_text="Clone this",
+        )
+    )
+
+    assert custom_result.backend == "torch"
+    assert design_result.backend == "torch"
+    assert clone_result.backend == "torch"
+    assert scheduler_calls == [
+        {"engine_key": "omnivoice-torch", "device_key": None},
+        {"engine_key": "omnivoice-torch", "device_key": None},
+        {"engine_key": "omnivoice-torch", "device_key": None},
+    ]
