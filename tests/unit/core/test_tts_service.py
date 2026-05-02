@@ -1,8 +1,8 @@
 # FILE: tests/unit/core/test_tts_service.py
-# VERSION: 1.1.0
+# VERSION: 1.3.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for the core TTS service orchestration and logging.
-#   SCOPE: Clone synthesis, language normalization, structured log emission
+#   SCOPE: Clone synthesis, family-adapter discovery wiring, duplicate-key validation, language normalization, structured log emission
 #   DEPENDS: M-CORE
 #   LINKS: V-M-CORE
 #   ROLE: TEST
@@ -15,6 +15,12 @@
 #   LoggingRegistry - Registry stub that counts model resolution calls
 #   _make_core_settings - Build isolated core settings for unit tests
 #   _capture_execute - Build an execute callback that records the ExecutionRequest fields the tests assert on
+#   _DiscoveredAdapter - Test-local adapter class used to assert discovery filtering and explicit discovery-driven service wiring
+#   _DuplicateAdapterOne - Test-local adapter class used to assert duplicate key validation
+#   _DuplicateAdapterTwo - Second test-local adapter class sharing a duplicate key
+#   test_default_discovery_filters_test_local_family_adapters - Verifies normal TTSService construction ignores test-local family adapters leaked into the subclass registry
+#   test_tts_service_builds_family_adapters_from_discovery - Verifies TTSService wiring consumes discover_family_adapter_classes() output instead of hardcoded constructors
+#   test_build_family_adapter_map_rejects_duplicate_keys - Verifies duplicate discovered family keys raise ValueError with the duplicate key in the message
 #   test_synthesize_clone_passes_ref_audio_as_string - Verifies clone requests pass file paths as strings to generation
 #   test_synthesize_clone_passes_explicit_language - Verifies clone requests normalize explicit language values
 #   test_synthesize_clone_preserves_missing_ref_text - Verifies clone requests preserve None ref_text in the kwargs
@@ -23,32 +29,70 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Phase 3.11: replaced generate_audio monkeypatches with a stable _StubBackend whose execute() callback is overridden per test, mirroring the new SynthesisCoordinator -> backend.execute(ExecutionRequest) flow]
+#   LAST_CHANGE: [v1.3.0 - Task 3 regression fix: removed the test-only discovery monkeypatch from default service construction and added coverage proving leaked tests.* adapters are filtered out by normal discovery]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from core.backends.base import ExecutionRequest
+from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.config import CoreSettings
+from core.contracts import BackendRouteInfo
 from core.contracts.commands import VoiceCloneCommand, VoiceDesignCommand
-from core.models.catalog import MODEL_SPECS
-from core.services.tts_service import TTSService
+from core.contracts.synthesis import ExecutionPlan
+from core.discovery import discover_family_adapter_classes
+from core.model_families.base import FamilyPreparedExecution, ModelFamilyAdapter
+from core.models.catalog import MODEL_SPECS, ModelSpec
+from core.services.tts_service import TTSService, _build_family_adapter_map
 from tests.support.api_fakes import extract_json_logs, make_wav_bytes
 
 pytestmark = pytest.mark.unit
 
 
-class _StubBackend:
+class _StubBackend(TTSBackend):
     key = "torch"
     label = "PyTorch + Transformers"
 
     def __init__(self) -> None:
         self.execute = lambda request: None  # type: ignore[assignment]
+
+    def execute(self, request: ExecutionRequest) -> None:
+        return None
+
+    def capabilities(self):  # pragma: no cover - not exercised in these tests
+        raise NotImplementedError
+
+    def is_available(self) -> bool:
+        return True
+
+    def supports_platform(self) -> bool:
+        return True
+
+    def resolve_model_path(self, folder_name: str) -> Path | None:  # pragma: no cover
+        return None
+
+    def load_model(self, spec):  # pragma: no cover
+        raise NotImplementedError
+
+    def inspect_model(self, spec) -> dict[str, Any]:  # pragma: no cover
+        return {}
+
+    def readiness_diagnostics(self):  # pragma: no cover
+        raise NotImplementedError
+
+    def cache_diagnostics(self) -> dict[str, Any]:  # pragma: no cover
+        return {}
+
+    def metrics_summary(self) -> dict[str, Any]:  # pragma: no cover
+        return {}
+
+    def preload_models(self, specs):  # pragma: no cover
+        return {}
 
 
 class StubRegistry:
@@ -56,10 +100,10 @@ class StubRegistry:
         self._backend = _StubBackend()
 
     @property
-    def backend(self):
+    def backend(self) -> TTSBackend:
         return self._backend
 
-    def get_model_spec(self, model_name=None, mode=None):
+    def get_model_spec(self, model_name: str | None = None, mode: str | None = None):
         if model_name is not None:
             return next(
                 spec
@@ -68,14 +112,21 @@ class StubRegistry:
             )
         return next(spec for spec in MODEL_SPECS.values() if spec.mode == (mode or "clone"))
 
-    def get_model(self, model_name=None, mode=None):
+    def get_model(
+        self, model_name: str | None = None, mode: str | None = None
+    ) -> tuple[ModelSpec, LoadedModelHandle]:
         spec = self.get_model_spec(model_name=model_name, mode=mode)
-        return spec, type("HandleStub", (), {"backend_key": "torch", "spec": spec})()
+        return spec, LoadedModelHandle(
+            spec=spec,
+            runtime_model=object(),
+            resolved_path=None,
+            backend_key="torch",
+        )
 
-    def backend_for_spec(self, spec):
+    def backend_for_spec(self, spec) -> TTSBackend:
         return self.backend
 
-    def backend_route_for_spec(self, spec):
+    def backend_route_for_spec(self, spec) -> BackendRouteInfo:
         return {
             "route_reason": "registry_model_resolution",
             "execution_backend": self.backend.key,
@@ -87,15 +138,40 @@ class LoggingRegistry(StubRegistry):
         super().__init__()
         self.calls = 0
 
-    def get_model(self, model_name=None, mode=None):
+    def get_model(self, model_name: str | None = None, mode: str | None = None):
         self.calls += 1
         return super().get_model(model_name=model_name, mode=mode)
 
 
 class FamilyAwareRegistry(StubRegistry):
-    def get_model(self, model_name=None, mode=None):
-        spec = self.get_model_spec(model_name=model_name, mode=mode)
-        return spec, type("HandleStub", (), {"backend_key": "torch", "spec": spec})()
+    pass
+
+
+class _DiscoveredAdapter(ModelFamilyAdapter):
+    key = "_discovered_family"
+    label = "Discovered family"
+
+    def capabilities(self) -> tuple[str, ...]:
+        return ("preset_speaker_tts",)
+
+    def supports_plan(self, plan: ExecutionPlan) -> bool:
+        return plan.family_key == self.key
+
+    def prepare_execution(self, plan: ExecutionPlan) -> FamilyPreparedExecution:  # pragma: no cover
+        return FamilyPreparedExecution(
+            execution_mode=plan.execution_mode,
+            generation_kwargs={"language": plan.request.language},
+        )
+
+
+class _DuplicateAdapterOne(_DiscoveredAdapter):
+    key = "duplicate-family"
+    label = "Duplicate adapter one"
+
+
+class _DuplicateAdapterTwo(_DiscoveredAdapter):
+    key = "duplicate-family"
+    label = "Duplicate adapter two"
 
 
 def _capture_execute(captured: dict, *, write_audio: bool = True):
@@ -133,6 +209,38 @@ def _make_core_settings(tmp_path: Path) -> CoreSettings:
     )
     settings.ensure_directories()
     return settings
+
+
+def test_tts_service_builds_family_adapters_from_discovery(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    settings = _make_core_settings(tmp_path)
+    registry = StubRegistry()
+
+    monkeypatch.setattr(
+        "core.services.tts_service.discover_family_adapter_classes",
+        lambda: (_DiscoveredAdapter,),
+    )
+
+    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+
+    assert tuple(service._family_adapters) == ("_discovered_family",)
+    assert isinstance(service._family_adapters["_discovered_family"], _DiscoveredAdapter)
+
+
+def test_build_family_adapter_map_rejects_duplicate_keys() -> None:
+    with pytest.raises(ValueError, match="duplicate-family"):
+        _build_family_adapter_map((_DuplicateAdapterOne, _DuplicateAdapterTwo))
+
+
+def test_default_discovery_filters_test_local_family_adapters(tmp_path: Path) -> None:
+    settings = _make_core_settings(tmp_path)
+    registry = StubRegistry()
+
+    discovered_keys = {cls.key for cls in discover_family_adapter_classes(include_entry_points=False)}
+    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+
+    assert "duplicate-family" not in discovered_keys
+    assert "_discovered_family" not in discovered_keys
+    assert set(service._family_adapters) == {"qwen3_tts", "omnivoice", "piper"}
 
 
 def test_synthesize_clone_passes_ref_audio_as_string(tmp_path: Path):

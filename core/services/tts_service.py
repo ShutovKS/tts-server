@@ -1,9 +1,9 @@
 # FILE: core/services/tts_service.py
-# VERSION: 1.3.0
+# VERSION: 1.4.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Coordinate inference for custom, design, and clone synthesis modes via the SynthesisRouter unified seam, while preserving the transport-facing TTSService.synthesize_X(...) facade for backwards compatibility.
 #   SCOPE: TTSService class with synthesize_custom/design/clone delegating through SynthesisRouter, SynthesisCoordinator (kept as the per-mode worker; now invokes backend.execute directly without a module-level generate_audio shim).
-#   DEPENDS: M-MODEL-REGISTRY, M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY
+#   DEPENDS: M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY
 #   LINKS: M-TTS-SERVICE
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -12,20 +12,22 @@
 # START_MODULE_MAP
 #   LOGGER - Module logger for synthesis service events
 #   SynthesisCoordinator - Internal coordinator over planning, family preparation, and guarded generation; the per-mode worker invoked by SynthesisRouter; now invokes backend.execute(ExecutionRequest(...)) directly inside _run_generation.
+#   _build_family_adapter_map - Instantiate a deterministic family-keyed adapter map from discovery results while rejecting duplicate keys
 #   TTSService - Public synthesis facade preserving transport-facing command methods; delegates each call through SynthesisRouter to keep the public pipeline at three layers (TTSService -> SynthesisRouter -> backend)
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.3.0 - Phase 3.11: removed the generate_audio() intermediate dispatcher; SynthesisCoordinator._run_generation now calls backend.execute(ExecutionRequest(...)) directly so the synthesis pipeline collapses to TTSService -> SynthesisRouter -> SynthesisCoordinator -> backend without an extra free-function hop]
+#   LAST_CHANGE: [v1.4.0 - Task 3: replaced direct built-in family adapter construction with discovery-driven instantiation and deterministic duplicate-key validation so service wiring preserves built-in behavior without hardcoded constructors]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from core.infrastructure.concurrency import InferenceGuard
     from core.services.result_cache import ResultCache
 
 from core.backends.base import ExecutionRequest
@@ -38,25 +40,44 @@ from core.contracts.commands import (
 )
 from core.contracts.results import GenerationResult
 from core.contracts.synthesis import SynthesisRequest
+from core.discovery import discover_family_adapter_classes
 from core.errors import AudioArtifactNotFoundError, TTSGenerationError
-from core.infrastructure.audio_io import (
-    convert_audio_to_wav_if_needed,
-    persist_output,
-    read_generated_wav,
-    temporary_output_dir,
-)
-from core.infrastructure.concurrency import InferenceGuard
-from core.model_families import (
-    ModelFamilyAdapter,
-    OmniVoiceFamilyAdapter,
-    PiperFamilyAdapter,
-    Qwen3FamilyAdapter,
-)
+from core.model_families import ModelFamilyAdapter
 from core.models.catalog import ModelSpec
 from core.observability import Timer, get_logger, log_event, operation_scope
 from core.planning import SynthesisPlanner
 
 LOGGER = get_logger(__name__)
+
+
+# START_CONTRACT: _build_family_adapter_map
+#   PURPOSE: Build the runtime family-adapter registry from discovered adapter classes while preserving deterministic startup behavior.
+#   INPUTS: { adapter_classes: tuple[type[ModelFamilyAdapter], ...] | None - Optional pre-resolved adapter classes for tests or alternate wiring }
+#   OUTPUTS: { dict[str, ModelFamilyAdapter] - Family-keyed adapter instance map used by TTSService and SynthesisCoordinator }
+#   SIDE_EFFECTS: imports built-in family adapter modules indirectly through discovery and raises ValueError when duplicate adapter keys are discovered
+#   LINKS: M-TTS-SERVICE, M-DISCOVERY
+# END_CONTRACT: _build_family_adapter_map
+def _build_family_adapter_map(
+    adapter_classes: tuple[type[ModelFamilyAdapter], ...] | None = None,
+) -> dict[str, ModelFamilyAdapter]:
+    resolved_classes = adapter_classes or discover_family_adapter_classes()
+    adapter_map: dict[str, ModelFamilyAdapter] = {}
+    for adapter_class in resolved_classes:
+        adapter = adapter_class()
+        adapter_key = getattr(adapter, "key", "")
+        if not isinstance(adapter_key, str) or not adapter_key.strip():
+            raise ValueError(
+                f"Family adapter class {adapter_class.__module__}.{adapter_class.__qualname__} must declare a non-empty key"
+            )
+        existing = adapter_map.get(adapter_key)
+        if existing is not None:
+            raise ValueError(
+                "Duplicate family adapter key discovered: "
+                f"{adapter_key} ({existing.__class__.__module__}.{existing.__class__.__qualname__}, "
+                f"{adapter_class.__module__}.{adapter_class.__qualname__})"
+            )
+        adapter_map[adapter_key] = adapter
+    return adapter_map
 
 
 class SynthesisCoordinator:
@@ -112,15 +133,27 @@ class SynthesisCoordinator:
         )
 
     def synthesize_clone(self, command: VoiceCloneCommand) -> GenerationResult:
+        from core.infrastructure.audio_io import convert_audio_to_wav_if_needed, temporary_output_dir
+
         plan = self.planner.plan_command(command)
         spec, handle = self.registry.get_model(
             model_name=plan.model_spec.model_id,
             mode=plan.execution_mode,
         )
+        ref_audio_path = command.ref_audio_path
+        if ref_audio_path is None:
+            raise TTSGenerationError(
+                "Reference audio is required for clone synthesis",
+                details={
+                    "mode": "clone",
+                    "reference_audio": None,
+                    "backend": self._handle_backend_key(handle),
+                },
+            )
 
         with temporary_output_dir(prefix="qwen3_tts_clone_input_") as temp_dir:
-            source_audio = temp_dir / command.ref_audio_path.name
-            source_audio.write_bytes(command.ref_audio_path.read_bytes())
+            source_audio = temp_dir / ref_audio_path.name
+            source_audio.write_bytes(ref_audio_path.read_bytes())
             wav_audio, converted = convert_audio_to_wav_if_needed(source_audio, self.settings)
             log_event(
                 LOGGER,
@@ -209,6 +242,8 @@ class SynthesisCoordinator:
             backend=backend.key,
         )
         try:
+            from core.infrastructure.audio_io import persist_output, read_generated_wav, temporary_output_dir
+
             with temporary_output_dir(prefix="qwen3_tts_output_") as output_dir:
                 try:
                     # START_BLOCK_DISPATCH_TO_BACKEND
@@ -324,7 +359,7 @@ class SynthesisCoordinator:
 
 # START_CONTRACT: TTSService
 #   PURPOSE: Coordinate model resolution, guarded inference execution, and output persistence for TTS requests.
-#   INPUTS: { registry: ModelRegistry - Model registry used to resolve and load models, settings: CoreSettings - Shared runtime settings controlling audio handling and persistence, inference_guard: InferenceGuard | None - Optional shared inference concurrency guard }
+#   INPUTS: { registry: ModelRegistry - Model registry used to resolve and load models, settings: CoreSettings - Shared runtime settings controlling audio handling and persistence, inference_guard: InferenceGuard | None - Optional shared inference concurrency guard, result_cache: ResultCache | None - Optional cache for repeat-result short-circuiting }
 #   OUTPUTS: { instance - TTS synthesis service for custom, design, and clone modes }
 #   SIDE_EFFECTS: none
 #   LINKS: M-TTS-SERVICE
@@ -339,16 +374,13 @@ class TTSService:
     ):
         from core.services.result_cache import NullResultCache
         from core.services.synthesis_router import SynthesisRouter
+        from core.infrastructure.concurrency import InferenceGuard as _InferenceGuard
 
         self.registry = registry
         self.settings = settings
-        self.inference_guard = inference_guard or InferenceGuard()
+        self.inference_guard = inference_guard or _InferenceGuard()
         self.planner = SynthesisPlanner(registry, settings)
-        self._family_adapters = {
-            "qwen3_tts": Qwen3FamilyAdapter(),
-            "omnivoice": OmniVoiceFamilyAdapter(),
-            "piper": PiperFamilyAdapter(),
-        }
+        self._family_adapters = _build_family_adapter_map()
         self.coordinator = SynthesisCoordinator(
             registry=registry,
             settings=settings,
@@ -377,7 +409,7 @@ class TTSService:
     #   LINKS: M-TTS-SERVICE
     # END_CONTRACT: synthesize_custom
     def synthesize_custom(self, command: CustomVoiceCommand) -> GenerationResult:
-        with operation_scope("core.tts_service.synthesize_custom"):
+        with cast(Any, operation_scope("core.tts_service.synthesize_custom")):
             log_event(
                 LOGGER,
                 level=20,
@@ -411,7 +443,7 @@ class TTSService:
     #   LINKS: M-TTS-SERVICE
     # END_CONTRACT: synthesize_design
     def synthesize_design(self, command: VoiceDesignCommand) -> GenerationResult:
-        with operation_scope("core.tts_service.synthesize_design"):
+        with cast(Any, operation_scope("core.tts_service.synthesize_design")):
             log_event(
                 LOGGER,
                 level=20,
@@ -445,7 +477,7 @@ class TTSService:
     #   LINKS: M-TTS-SERVICE
     # END_CONTRACT: synthesize_clone
     def synthesize_clone(self, command: VoiceCloneCommand) -> GenerationResult:
-        with operation_scope("core.tts_service.synthesize_clone"):
+        with cast(Any, operation_scope("core.tts_service.synthesize_clone")):
             # START_BLOCK_VALIDATE_CLONE_INPUT
             if command.ref_audio_path is None:
                 raise TTSGenerationError(
@@ -480,4 +512,5 @@ __all__ = [
     "LOGGER",
     "SynthesisCoordinator",
     "TTSService",
+    "_build_family_adapter_map",
 ]

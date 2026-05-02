@@ -249,13 +249,17 @@
 
     <V-M-MODEL-FAMILY MODULE="M-MODEL-FAMILY" PRIORITY="high">
       <test-files>
+        <file>tests/unit/core/test_discovery.py</file>
         <file>tests/unit/core/test_qwen3_family_adapter.py</file>
+        <file>tests/unit/core/test_tts_service.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_qwen3_family_adapter.py -m unit</check-1>
+        <check-1>python -m pytest tests/unit/core/test_discovery.py tests/unit/core/test_qwen3_family_adapter.py tests/unit/core/test_tts_service.py -m unit</check-1>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Family adapters match capabilities and translate normalized requests into backend execution inputs without transport involvement.</scenario-1>
+        <scenario-2 kind="failure">Discovery-driven family adapter wiring rejects duplicate adapter keys deterministically before runtime synthesis proceeds.</scenario-2>
+        <scenario-3 kind="success">Normal family-adapter discovery excludes test-local tests.* subclasses so unrelated runtime and integration construction is not polluted by prior unit-test imports.</scenario-3>
       </scenarios>
     </V-M-MODEL-FAMILY>
 
@@ -522,15 +526,18 @@
 
     <V-M-TTS-SERVICE MODULE="M-TTS-SERVICE" PRIORITY="high">
       <test-files>
+        <file>tests/unit/core/test_discovery.py</file>
         <file>tests/unit/core/test_tts_service.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_tts_service.py -m unit</check-1>
+        <check-1>python -m pytest tests/unit/core/test_discovery.py tests/unit/core/test_tts_service.py -m unit</check-1>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Clone synthesis passes the reference audio path to backend generation as a normalized string.</scenario-1>
         <scenario-2 kind="success">Explicit language values are normalized before clone synthesis is executed.</scenario-2>
         <scenario-3 kind="success">Structured clone logs include the entry marker and persistence marker with mode, model, and language context.</scenario-3>
+        <scenario-4 kind="success">TTSService builds its family adapter map from discover_family_adapter_classes() so built-in families remain available without direct constructor wiring in the service.</scenario-4>
+        <scenario-5 kind="success">Default TTSService construction ignores leaked tests.* family adapter subclasses while still honoring explicit duplicate-key validation when classes are passed directly to _build_family_adapter_map().</scenario-5>
       </scenarios>
       <required-log-markers>
         <marker-1>[TTSService][synthesize_clone][SYNTHESIZE_CLONE]</marker-1>

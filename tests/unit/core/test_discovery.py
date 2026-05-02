@@ -1,5 +1,5 @@
 # FILE: tests/unit/core/test_discovery.py
-# VERSION: 1.0.0
+# VERSION: 1.1.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for the auto-discovery helpers introduced in Phase 2.6.
 #   SCOPE: subclass-based discovery for TTSBackend / ModelFamilyAdapter / ModelFamilyPlugin, entry-point discovery via injected loader, dedupe + sort behavior, abstract-class filtering, error-tolerant entry-point loading
@@ -15,6 +15,8 @@
 #   _StubPlugin - In-test concrete ModelFamilyPlugin used to assert plugin discovery.
 #   _AbstractStubPlugin - In-test abstract plugin used to assert abstract-class filtering.
 #   _ExternalBackend - In-test concrete subclass used to assert entry-point discovery.
+#   test_subclass_discovery_filters_test_local_family_adapters_by_default - Verifies normal family-adapter discovery excludes test-local tests.* subclasses.
+#   test_subclass_discovery_can_include_test_local_family_adapters_when_requested - Verifies tests can still opt into explicit visibility of local adapter subclasses.
 #   test_subclass_discovery_finds_concrete_subclasses - Verifies in-process discovery picks up registered subclasses.
 #   test_subclass_discovery_skips_abstract_subclasses - Verifies abstract subclasses are filtered out.
 #   test_entry_point_loader_loads_external_classes - Verifies entry-point discovery via an injected loader.
@@ -24,7 +26,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Phase 2.6 discovery contract coverage]
+#   LAST_CHANGE: [v1.1.0 - Task 3 regression fix: family-adapter discovery tests now cover the default tests.* filter and the explicit include_test_classes override]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -174,12 +176,30 @@ class _AbstractStubPlugin(ModelFamilyPlugin):
 
 def test_subclass_discovery_finds_concrete_subclasses() -> None:
     backends = discover_backend_classes(include_entry_points=False)
-    adapters = discover_family_adapter_classes(include_entry_points=False)
+    adapters = discover_family_adapter_classes(
+        include_entry_points=False,
+        include_test_classes=True,
+    )
     plugins = discover_family_plugin_classes(include_entry_points=False)
 
     assert _StubBackend in backends
     assert _StubAdapter in adapters
     assert _StubPlugin in plugins
+
+
+def test_subclass_discovery_filters_test_local_family_adapters_by_default() -> None:
+    adapters = discover_family_adapter_classes(include_entry_points=False)
+
+    assert _StubAdapter not in adapters
+
+
+def test_subclass_discovery_can_include_test_local_family_adapters_when_requested() -> None:
+    adapters = discover_family_adapter_classes(
+        include_entry_points=False,
+        include_test_classes=True,
+    )
+
+    assert _StubAdapter in adapters
 
 
 def test_subclass_discovery_skips_abstract_subclasses() -> None:

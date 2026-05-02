@@ -1,8 +1,8 @@
 # FILE: core/discovery.py
-# VERSION: 1.0.0
+# VERSION: 1.2.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Provide auto-discovery helpers that enumerate concrete TTSBackend, ModelFamilyAdapter, and ModelFamilyPlugin classes from in-process __subclasses__() recursion plus optional importlib.metadata entry points.
-#   SCOPE: discover_backend_classes, discover_family_adapter_classes, discover_family_plugin_classes, BACKEND_ENTRY_POINT_GROUP, FAMILY_PLUGIN_ENTRY_POINT_GROUP, FAMILY_ADAPTER_ENTRY_POINT_GROUP
+#   SCOPE: discover_backend_classes, discover_family_adapter_classes, discover_family_plugin_classes, built-in adapter seeding for subclass discovery, test-local subclass filtering for normal family-adapter discovery, BACKEND_ENTRY_POINT_GROUP, FAMILY_PLUGIN_ENTRY_POINT_GROUP, FAMILY_ADAPTER_ENTRY_POINT_GROUP
 #   DEPENDS: M-BACKENDS, M-MODEL-FAMILY
 #   LINKS: M-DISCOVERY
 #   ROLE: RUNTIME
@@ -14,20 +14,22 @@
 #   FAMILY_PLUGIN_ENTRY_POINT_GROUP - Importlib entry-point group for external ModelFamilyPlugin classes.
 #   FAMILY_ADAPTER_ENTRY_POINT_GROUP - Importlib entry-point group for external ModelFamilyAdapter classes.
 #   discover_backend_classes - Enumerate concrete TTSBackend subclasses (in-process) plus entry-point-declared classes.
-#   discover_family_adapter_classes - Enumerate concrete ModelFamilyAdapter subclasses plus entry-point-declared classes.
+#   discover_family_adapter_classes - Enumerate concrete ModelFamilyAdapter subclasses plus entry-point-declared classes after seeding built-in adapter modules, excluding test-local subclass leakage by default.
+#   _is_test_local_module_name - Identify test-local module names for family-adapter leakage filtering.
 #   discover_family_plugin_classes - Enumerate concrete ModelFamilyPlugin subclasses plus entry-point-declared classes.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Phase 2.6: introduced auto-discovery helpers (subclass scan + entry-points) for backends and family plugins/adapters.]
+#   LAST_CHANGE: [v1.2.0 - Task 3 regression fix: normal family-adapter discovery now filters test-local subclasses from tests.* and pytest-imported test_* modules so duplicate test doubles do not leak into unrelated runtime construction while explicit class injection still exercises duplicate-key validation.]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
 import inspect
 import logging
+from importlib import import_module
 from importlib.metadata import EntryPoint, entry_points
-from typing import TypeVar
+from typing import Callable, Iterable, TypeVar
 
 from core.backends.base import TTSBackend
 from core.model_families.base import ModelFamilyAdapter
@@ -52,7 +54,7 @@ T = TypeVar("T")
 def discover_backend_classes(
     *,
     include_entry_points: bool = True,
-    entry_points_loader: object | None = None,
+    entry_points_loader: Callable[[], Iterable[EntryPoint]] | None = None,
 ) -> tuple[type[TTSBackend], ...]:
     discovered: list[type[TTSBackend]] = list(_iter_concrete_subclasses(TTSBackend))
     if include_entry_points:
@@ -67,17 +69,24 @@ def discover_backend_classes(
 
 # START_CONTRACT: discover_family_adapter_classes
 #   PURPOSE: Enumerate concrete ModelFamilyAdapter implementations (planner-side preparation contract). Same discovery surface as backends.
-#   INPUTS: { include_entry_points: bool - When True, also load entry-point-declared adapter classes (default True), entry_points_loader: callable | None - Optional override for tests }
+#   INPUTS: { include_entry_points: bool - When True, also load entry-point-declared adapter classes (default True), entry_points_loader: callable | None - Optional override for tests, include_test_classes: bool - When True, retain subclasses declared under tests.* modules for explicit test-only assertions (default False) }
 #   OUTPUTS: { tuple[type[ModelFamilyAdapter], ...] - Discovered adapter classes deduplicated and sorted }
-#   SIDE_EFFECTS: May import the modules referenced by entry points; logs a warning when an entry point fails to load
+#   SIDE_EFFECTS: May import the modules referenced by entry points; logs a warning when an entry point fails to load or resolves to a filtered tests.* module
 #   LINKS: M-DISCOVERY
 # END_CONTRACT: discover_family_adapter_classes
 def discover_family_adapter_classes(
     *,
     include_entry_points: bool = True,
-    entry_points_loader: object | None = None,
+    entry_points_loader: Callable[[], Iterable[EntryPoint]] | None = None,
+    include_test_classes: bool = False,
 ) -> tuple[type[ModelFamilyAdapter], ...]:
-    discovered: list[type[ModelFamilyAdapter]] = list(_iter_concrete_subclasses(ModelFamilyAdapter))
+    _import_builtin_family_adapter_modules()
+    discovered: list[type[ModelFamilyAdapter]] = list(
+        _iter_concrete_subclasses(
+            ModelFamilyAdapter,
+            include_test_classes=include_test_classes,
+        )
+    )
     if include_entry_points:
         for cls in _load_entry_point_classes(
             FAMILY_ADAPTER_ENTRY_POINT_GROUP,
@@ -98,7 +107,7 @@ def discover_family_adapter_classes(
 def discover_family_plugin_classes(
     *,
     include_entry_points: bool = True,
-    entry_points_loader: object | None = None,
+    entry_points_loader: Callable[[], Iterable[EntryPoint]] | None = None,
 ) -> tuple[type[ModelFamilyPlugin], ...]:
     discovered: list[type[ModelFamilyPlugin]] = list(_iter_concrete_subclasses(ModelFamilyPlugin))
     if include_entry_points:
@@ -112,7 +121,38 @@ def discover_family_plugin_classes(
 
 
 # START_BLOCK_DISCOVERY_HELPERS
-def _iter_concrete_subclasses(base_class: type[T]) -> list[type[T]]:
+def _import_builtin_family_adapter_modules() -> None:
+    """Compatibility import seeding for built-in family adapters.
+
+    Discovery relies on ``ModelFamilyAdapter.__subclasses__()``. The built-in
+    family adapter modules are imported here in one controlled place so callers
+    such as ``TTSService`` can discover them deterministically without keeping
+    hardcoded constructor wiring in runtime services.
+    """
+
+    for module_name in (
+        "core.model_families.qwen3",
+        "core.model_families.omnivoice",
+        "core.model_families.piper",
+    ):
+        import_module(module_name)
+
+
+def _is_test_local_module_name(module_name: str) -> bool:
+    return (
+        module_name == "tests"
+        or module_name.startswith("tests.")
+        or module_name == "test"
+        or module_name.startswith("test_")
+        or ".test_" in module_name
+    )
+
+
+def _iter_concrete_subclasses(
+    base_class: type[T],
+    *,
+    include_test_classes: bool = True,
+) -> list[type[T]]:
     seen: set[type[T]] = set()
     out: list[type[T]] = []
     stack: list[type[T]] = list(base_class.__subclasses__())
@@ -124,6 +164,8 @@ def _iter_concrete_subclasses(base_class: type[T]) -> list[type[T]]:
         stack.extend(cls.__subclasses__())
         if inspect.isabstract(cls):
             continue
+        if not include_test_classes and _is_test_local_module_name(getattr(cls, "__module__", "")):
+            continue
         out.append(cls)
     return out
 
@@ -132,7 +174,7 @@ def _load_entry_point_classes(
     group: str,
     *,
     base_class: type[T],
-    loader: object | None = None,
+    loader: Callable[[], Iterable[EntryPoint]] | None = None,
 ) -> list[type[T]]:
     out: list[type[T]] = []
     for entry in _resolve_entry_points(group, loader=loader):
@@ -169,6 +211,14 @@ def _load_entry_point_classes(
                 group,
             )
             continue
+        if _is_test_local_module_name(getattr(obj, "__module__", "")):
+            logger.warning(
+                "discovery: entry point %r in group %r resolves to test-local module %r; skipping",
+                getattr(entry, "name", "<unknown>"),
+                group,
+                getattr(obj, "__module__", "<unknown>"),
+            )
+            continue
         out.append(obj)
     return out
 
@@ -176,7 +226,7 @@ def _load_entry_point_classes(
 def _resolve_entry_points(
     group: str,
     *,
-    loader: object | None,
+    loader: Callable[[], Iterable[EntryPoint]] | None,
 ) -> tuple[EntryPoint, ...]:
     if loader is not None:
         if not callable(loader):
