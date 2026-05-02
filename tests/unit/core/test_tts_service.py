@@ -1,8 +1,8 @@
 # FILE: tests/unit/core/test_tts_service.py
-# VERSION: 1.3.0
+# VERSION: 1.4.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for the core TTS service orchestration and logging.
-#   SCOPE: Clone synthesis, family-adapter discovery wiring, duplicate-key validation, language normalization, structured log emission
+#   SCOPE: Clone synthesis, family-adapter discovery wiring, duplicate-key validation, language normalization, structured log emission, and guarded engine-route fallback behavior
 #   DEPENDS: M-CORE
 #   LINKS: V-M-CORE
 #   ROLE: TEST
@@ -26,10 +26,11 @@
 #   test_synthesize_clone_preserves_missing_ref_text - Verifies clone requests preserve None ref_text in the kwargs
 #   test_tts_service_emits_structured_logs - Verifies structured synthesis logs include mode and language context
 #   test_tts_service_routes_omnivoice_family_payload_to_backend - Verifies the OmniVoice family routes its payload through the backend execution contract
+#   test_build_engine_registry_returns_none_when_flag_is_disabled - Verifies engine wiring stays absent unless the explicit runtime flag is enabled
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.3.0 - Task 3 regression fix: removed the test-only discovery monkeypatch from default service construction and added coverage proving leaked tests.* adapters are filtered out by normal discovery]
+#   LAST_CHANGE: [v1.4.0 - Task 10: added a guardrail test proving runtime engine wiring stays disabled unless the explicit Piper engine flag is enabled]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ from core.contracts.synthesis import ExecutionPlan
 from core.discovery import discover_family_adapter_classes
 from core.model_families.base import FamilyPreparedExecution, ModelFamilyAdapter
 from core.models.catalog import MODEL_SPECS, ModelSpec
-from core.services.tts_service import TTSService, _build_family_adapter_map
+from core.services.tts_service import TTSService, _build_engine_registry, _build_family_adapter_map
 from tests.support.api_fakes import extract_json_logs, make_wav_bytes
 
 pytestmark = pytest.mark.unit
@@ -406,3 +407,9 @@ def test_tts_service_routes_omnivoice_family_payload_to_backend(tmp_path: Path):
     assert captured_kwargs["mode"] == "design"
     assert captured_kwargs["instruct"] == "Warm bilingual narrator"
     assert captured_kwargs["language"] == "auto"
+
+
+def test_build_engine_registry_returns_none_when_flag_is_disabled(tmp_path: Path) -> None:
+    settings = _make_core_settings(tmp_path)
+
+    assert _build_engine_registry(settings) is None
