@@ -14,6 +14,21 @@
       <item-5>Readiness, observability, and job execution remain first-class runtime artifacts exposed by the server host.</item-5>
       <item-6>OmniVoice onboarding reuses the existing Torch backend contract through a family adapter instead of introducing transport-visible forks.</item-6>
     </runtime-invariants>
+    <Glossary>
+      <family>A runtime-facing model family such as qwen, omnivoice, or piper, used to select planner rules and backend strategy.</family>
+      <backend>The execution implementation that performs inference work for a family, such as MLX, Torch, or ONNX.</backend>
+      <engine>The planned runtime assembly that combines contracts, config, registry, scheduler, and adapter bridges for model execution.</engine>
+      <strategy>A family-specific decision object that maps a request to backend execution details without exposing transport concerns.</strategy>
+      <model-handle>The loaded runtime object plus metadata that identifies a ready model instance for synthesis.</model-handle>
+      <scheduler>The worker coordination layer that queues and dispatches engine work with bounded concurrency and explicit handoff points.</scheduler>
+      <plugin>An in-repo extension unit that registers a family, backend, or compatibility behavior without requiring a public API rewrite.</plugin>
+    </Glossary>
+    <StagedNonGoals>
+      <no-public-api-redesign>No public API redesign in this wave.</no-public-api-redesign>
+      <no-ray-triton-celery-bentoml>No Ray, Triton, Celery, or BentoML integration in this wave.</no-ray-triton-celery-bentoml>
+      <no-third-party-sdk-before-registry-proof>No third-party SDK dependency until the in-repo registry proof is present.</no-third-party-sdk-before-registry-proof>
+      <no-qwen3-or-omnivoice-migration-before-proof>No Qwen3 or OmniVoice migration before the proof family and Piper path are evidenced.</no-qwen3-or-omnivoice-migration-before-proof>
+    </StagedNonGoals>
     <target-state>
       <item-1>HTTP is the canonical Phase 1 contract, and `/v1/audio/speech`, `/v1/audio/speech/jobs`, and `/api/v1/tts/jobs/{job_id}` are the public server-facing surfaces.</item-1>
       <item-2>The HTTP server is the sole Phase 1 runtime and model host.</item-2>
@@ -508,6 +523,123 @@
       </target>
       <verification-ref>V-M-OMNIVOICE-FAMILY</verification-ref>
     </M-OMNIVOICE-FAMILY>
+    <M-ENGINE-CONTRACTS NAME="EngineContracts" TYPE="TYPES" LAYER="2" ORDER="8" STATUS="planned">
+      <contract>
+        <purpose>Define the shared engine contracts, handles, strategies, and registration payloads that the planned runtime engine uses.</purpose>
+      </contract>
+      <interface>
+        <export-ModelHandle PURPOSE="Loaded model handle plus metadata for ready synthesis targets" />
+        <export-TTSEngine PURPOSE="Planned engine facade for synthesis orchestration" />
+        <export-EngineCapabilities PURPOSE="Typed capability set describing what an engine can execute" />
+        <export-SynthesisJob PURPOSE="Queued synthesis job request owned by the engine scheduler" />
+        <export-AudioBuffer PURPOSE="In-memory audio payload produced by synthesis execution" />
+        <export-EngineAvailability PURPOSE="Structured readiness and availability state for the engine registry" />
+        <export-EngineStrategy PURPOSE="Request-to-backend execution strategy contract" />
+        <export-EngineRegistration PURPOSE="Registration payload for backend and family engine wiring" />
+      </interface>
+      <depends>M-CONTRACTS, M-ERRORS</depends>
+      <target>
+        <source>core/engines/contracts.py</source>
+      </target>
+      <observability>
+        <log-prefix>[EngineContracts]</log-prefix>
+      </observability>
+      <verification-ref>V-M-ENGINE-CONTRACTS</verification-ref>
+    </M-ENGINE-CONTRACTS>
+
+    <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" LAYER="2" ORDER="9" STATUS="planned">
+      <contract>
+        <purpose>Parse and validate engine-specific typed config for registry, scheduler, and bridge behavior.</purpose>
+      </contract>
+      <interface>
+        <export-EngineConfig PURPOSE="Typed engine configuration settings" />
+        <export-parse_engine_config_from_env PURPOSE="Parse engine-related environment variables into typed settings" />
+      </interface>
+      <depends>M-CONFIG</depends>
+      <target>
+        <source>core/engines/config.py</source>
+      </target>
+      <observability>
+        <log-prefix>[EngineConfig]</log-prefix>
+      </observability>
+      <verification-ref>V-M-ENGINE-CONFIG</verification-ref>
+    </M-ENGINE-CONFIG>
+
+    <M-ENGINE-REGISTRY NAME="EngineRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="10" STATUS="planned">
+      <contract>
+        <purpose>Register engines, resolve compatible strategies, and expose the active engine selection for each runtime family through the engine registry.</purpose>
+      </contract>
+      <interface>
+        <export-EngineRegistry PURPOSE="Registry for engine discovery and selection" />
+        <export-register_engine PURPOSE="Register an engine implementation with metadata" />
+        <export-resolve_engine PURPOSE="Resolve the best matching engine for a requested family or backend" />
+      </interface>
+      <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ERRORS, M-OBSERVABILITY</depends>
+      <target>
+        <source>core/engines/registry.py</source>
+      </target>
+      <observability>
+        <log-prefix>[EngineRegistry]</log-prefix>
+        <critical-block>BLOCK_RESOLVE_ENGINE</critical-block>
+      </observability>
+      <verification-ref>V-M-ENGINE-REGISTRY</verification-ref>
+    </M-ENGINE-REGISTRY>
+
+    <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" LAYER="2" ORDER="11" STATUS="planned">
+      <contract>
+        <purpose>Translate the current model-family surfaces into the new engine contracts without changing transport behavior.</purpose>
+      </contract>
+      <interface>
+        <export-EngineCompatibilityBridge PURPOSE="Bridge from existing family surfaces into engine contracts" />
+        <export-adapt_family_request PURPOSE="Adapt a family request to engine inputs" />
+        <export-adapt_backend_result PURPOSE="Adapt backend results back to current runtime shapes" />
+      </interface>
+      <depends>M-ENGINE-CONTRACTS, M-MODEL-FAMILY, M-BACKENDS, M-CONTRACTS</depends>
+      <target>
+        <source>core/engines/compatibility.py</source>
+      </target>
+      <observability>
+        <log-prefix>[EngineBridge]</log-prefix>
+      </observability>
+      <verification-ref>V-M-ENGINE-BRIDGE</verification-ref>
+    </M-ENGINE-BRIDGE>
+
+    <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" LAYER="2" ORDER="12" STATUS="planned">
+      <contract>
+        <purpose>Coordinate bounded worker dispatch for engine requests and keep queueing behavior explicit.</purpose>
+      </contract>
+      <interface>
+        <export-EngineScheduler PURPOSE="Scheduler facade for engine request dispatch" />
+        <export-WorkerPool PURPOSE="Bounded worker pool for engine tasks" />
+        <export-submit_engine_task PURPOSE="Queue a unit of engine work" />
+      </interface>
+      <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-OBSERVABILITY, M-METRICS</depends>
+      <target>
+        <source>core/engines/scheduler.py</source>
+      </target>
+      <observability>
+        <log-prefix>[EngineScheduler]</log-prefix>
+        <critical-block>BLOCK_SCHEDULER_DISPATCH</critical-block>
+      </observability>
+      <verification-ref>V-M-ENGINE-SCHEDULER</verification-ref>
+    </M-ENGINE-SCHEDULER>
+
+    <M-ENGINE-ROUTE-SPLIT NAME="EngineRouteSplit" TYPE="CORE_LOGIC" LAYER="2" ORDER="13" STATUS="planned">
+      <contract>
+        <purpose>Define the planned HTTP route split that keeps engine-owned planning separate from current transport adapters.</purpose>
+      </contract>
+      <interface>
+        <export-RouteSplitPolicy PURPOSE="Policy object describing server and client route responsibilities" />
+      </interface>
+      <depends>M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-ENGINE-SCHEDULER</depends>
+      <target>
+        <source>core/engines/route_split.py</source>
+      </target>
+      <observability>
+        <log-prefix>[EngineRouteSplit]</log-prefix>
+      </observability>
+      <verification-ref>V-M-ENGINE-ROUTE-SPLIT</verification-ref>
+    </M-ENGINE-ROUTE-SPLIT>
 
     <M-MODEL-CATALOG NAME="ModelCatalogRegistry" TYPE="CORE_LOGIC" LAYER="2" ORDER="4" STATUS="implemented">
       <contract>

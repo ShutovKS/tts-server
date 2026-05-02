@@ -20,6 +20,88 @@
       </annotations>
     </M-CONFIG>
 
+    <M-ENGINE-CONTRACTS NAME="EngineContracts" TYPE="TYPES" STATUS="planned">
+      <purpose>Define the shared engine contracts, handles, strategies, and registration payloads that the planned runtime engine uses.</purpose>
+      <path>core/engines/contracts.py</path>
+      <depends>M-CONTRACTS, M-ERRORS</depends>
+      <verification-ref>V-M-ENGINE-CONTRACTS</verification-ref>
+      <annotations>
+        <type-ModelHandle PURPOSE="Loaded model handle plus metadata for ready synthesis targets" />
+        <class-TTSEngine PURPOSE="Planned engine facade for synthesis orchestration" />
+        <type-EngineStrategy PURPOSE="Request-to-backend execution strategy contract" />
+        <type-EngineCapabilities PURPOSE="Typed capability set describing what an engine can execute" />
+        <type-EngineRegistration PURPOSE="Registration payload for backend and family engine wiring" />
+        <type-SynthesisJob PURPOSE="Queued synthesis job request owned by the engine scheduler" />
+        <type-AudioBuffer PURPOSE="In-memory audio payload produced by synthesis execution" />
+        <type-EngineAvailability PURPOSE="Structured readiness and availability state for the engine registry" />
+      </annotations>
+    </M-ENGINE-CONTRACTS>
+
+    <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" STATUS="planned">
+      <purpose>Parse and validate engine-specific typed config for registry, scheduler, and bridge behavior.</purpose>
+      <path>core/engines/config.py</path>
+      <depends>M-CONFIG</depends>
+      <verification-ref>V-M-ENGINE-CONFIG</verification-ref>
+      <annotations>
+        <fn-parse_engine_config_from_env PURPOSE="Parse engine-related environment variables into typed settings" />
+        <class-EngineConfig PURPOSE="Typed engine configuration settings" />
+      </annotations>
+    </M-ENGINE-CONFIG>
+
+    <M-ENGINE-REGISTRY NAME="EngineRegistry" TYPE="CORE_LOGIC" STATUS="planned">
+      <purpose>Register engines, resolve compatible strategies, and expose the active engine selection for each runtime family through the engine registry.</purpose>
+      <path>core/engines/registry.py</path>
+      <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ERRORS, M-OBSERVABILITY</depends>
+      <verification-ref>V-M-ENGINE-REGISTRY</verification-ref>
+      <annotations>
+        <class-EngineRegistry PURPOSE="Registry for engine discovery and selection" />
+        <fn-register_engine PURPOSE="Register an engine implementation with metadata" />
+        <fn-resolve_engine PURPOSE="Resolve the best matching engine for a requested family or backend" />
+      </annotations>
+      <CrossLink from="M-ENGINE-REGISTRY" to="M-ENGINE-CONTRACTS" relation="uses-shared-engine-types" />
+      <CrossLink from="M-ENGINE-REGISTRY" to="M-BACKENDS" relation="selects-backend-strategies" />
+    </M-ENGINE-REGISTRY>
+
+    <M-ENGINE-BRIDGE NAME="EngineCompatibilityBridge" TYPE="INTEGRATION" STATUS="planned">
+      <purpose>Translate the current model-family surfaces into the new engine contracts without changing transport behavior.</purpose>
+      <path>core/engines/compatibility.py</path>
+      <depends>M-ENGINE-CONTRACTS, M-MODEL-FAMILY, M-BACKENDS, M-CONTRACTS</depends>
+      <verification-ref>V-M-ENGINE-BRIDGE</verification-ref>
+      <annotations>
+        <class-EngineCompatibilityBridge PURPOSE="Bridge from existing family surfaces into engine contracts" />
+        <fn-adapt_family_request PURPOSE="Adapt a family request to engine inputs" />
+        <fn-adapt_backend_result PURPOSE="Adapt backend results back to current runtime shapes" />
+      </annotations>
+      <CrossLink from="M-ENGINE-BRIDGE" to="M-ENGINE-CONTRACTS" relation="adapts-engine-types" />
+      <CrossLink from="M-ENGINE-BRIDGE" to="M-MODEL-FAMILY" relation="bridges-family-surface" />
+    </M-ENGINE-BRIDGE>
+
+    <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" STATUS="planned">
+      <purpose>Coordinate bounded worker dispatch for engine requests and keep queueing behavior explicit.</purpose>
+      <path>core/engines/scheduler.py</path>
+      <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-OBSERVABILITY, M-METRICS</depends>
+      <verification-ref>V-M-ENGINE-SCHEDULER</verification-ref>
+      <annotations>
+        <class-EngineScheduler PURPOSE="Scheduler facade for engine request dispatch" />
+        <class-WorkerPool PURPOSE="Bounded worker pool for engine tasks" />
+        <fn-submit_engine_task PURPOSE="Queue a unit of engine work" />
+      </annotations>
+      <CrossLink from="M-ENGINE-SCHEDULER" to="M-ENGINE-CONTRACTS" relation="uses-shared-engine-types" />
+      <CrossLink from="M-ENGINE-SCHEDULER" to="M-OBSERVABILITY" relation="emits-scheduler-traces" />
+    </M-ENGINE-SCHEDULER>
+
+    <M-ENGINE-ROUTE-SPLIT NAME="EngineRouteSplit" TYPE="CORE_LOGIC" STATUS="planned">
+      <purpose>Define the planned HTTP route split that keeps engine-owned planning separate from current transport adapters.</purpose>
+      <path>core/engines/route_split.py</path>
+      <depends>M-ENGINE-REGISTRY, M-ENGINE-BRIDGE, M-ENGINE-SCHEDULER</depends>
+      <verification-ref>V-M-ENGINE-ROUTE-SPLIT</verification-ref>
+      <annotations>
+        <class-RouteSplitPolicy PURPOSE="Policy object describing server and client route responsibilities" />
+      </annotations>
+      <CrossLink from="M-ENGINE-ROUTE-SPLIT" to="M-ENGINE-REGISTRY" relation="anchors-engine-selection-boundary" />
+      <CrossLink from="M-ENGINE-ROUTE-SPLIT" to="M-ENGINE-SCHEDULER" relation="routes-work-dispatch" />
+    </M-ENGINE-ROUTE-SPLIT>
+
     <M-ERRORS NAME="DomainErrors" TYPE="UTILITY" STATUS="implemented">
       <purpose>Define typed domain error hierarchy for all core operations.</purpose>
       <path>core/errors.py</path>

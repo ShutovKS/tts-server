@@ -50,6 +50,13 @@
         <trace-sequence>BackendRegistry chooses explicit or autoselected backend -> ModelRegistry readiness_report exposes selected backend and available models</trace-sequence>
       </required-signals>
     </VF-004>
+    <VF-011 NAME="EnginePlanningReadiness" USE_CASES="UC-008" DATA_FLOW="DF-BACKEND-SELECTION,DF-REQUEST-TO-PLAN" PRIORITY="high">
+      <scenario>Engine planning surfaces can resolve a family, engine, and backend path without breaking current transport behavior.</scenario>
+      <expected-outcome>Engine registry and compatibility bridge evidence show the planned engine vocabulary, typed config, TTSEngine, and worker pool while current runtime paths remain intact.</expected-outcome>
+      <required-signals>
+        <trace-sequence>Discovery resolves engine-related modules -> engine config parses typed settings -> engine registry resolves engine strategy -> bridge adapts current family surfaces -> scheduler keeps worker pool dispatch explicit</trace-sequence>
+      </required-signals>
+    </VF-011>
 
     <VF-005 NAME="RequestToPlanFlow" USE_CASES="UC-001,UC-002,UC-003" DATA_FLOW="DF-REQUEST-TO-PLAN" PRIORITY="high">
       <scenario>A normalized synthesis request is resolved through planner, family adapter, runtime model registry, and backend execution without transport-specific branching.</scenario>
@@ -299,6 +306,101 @@
         <scenario-6 kind="failure">Accelerated Qwen backend exposes explicit readiness rejection reasons for custom, design, and clone when its fast prerequisites are missing.</scenario-6>
       </scenarios>
     </V-M-BACKENDS>
+    <V-M-ENGINE-CONTRACTS MODULE="M-ENGINE-CONTRACTS" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_engine_contracts.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_engine_contracts.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Engine handle, TTSEngine, EngineCapabilities, SynthesisJob, AudioBuffer, and EngineAvailability contracts stay explicit and reusable across family and backend planning surfaces.</scenario-1>
+      </scenarios>
+    </V-M-ENGINE-CONTRACTS>
+
+    <V-M-ENGINE-CONFIG MODULE="M-ENGINE-CONFIG" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_engine_config.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_engine_config.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Engine configuration parsing keeps the planned registry and scheduler settings explicit in typed config.</scenario-1>
+      </scenarios>
+    </V-M-ENGINE-CONFIG>
+
+    <V-M-ENGINE-REGISTRY MODULE="M-ENGINE-REGISTRY" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_engine_registry.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_engine_registry.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Engine discovery and resolution remain deterministic and fail fast when no compatible engine exists in the engine registry.</scenario-1>
+      </scenarios>
+    </V-M-ENGINE-REGISTRY>
+
+    <V-M-ENGINE-BRIDGE MODULE="M-ENGINE-BRIDGE" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_engine_bridge.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_engine_bridge.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Compatibility bridge adapts family requests and backend results without changing transport-facing behavior.</scenario-1>
+      </scenarios>
+    </V-M-ENGINE-BRIDGE>
+
+    <V-M-ENGINE-SCHEDULER MODULE="M-ENGINE-SCHEDULER" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_engine_scheduler.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_engine_scheduler.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Scheduler dispatch stays bounded, observable, and explicit about queueing decisions through the worker pool.</scenario-1>
+      </scenarios>
+    </V-M-ENGINE-SCHEDULER>
+
+    <V-M-ENGINE-ROUTE-SPLIT MODULE="M-ENGINE-ROUTE-SPLIT" PRIORITY="medium">
+      <test-files>
+        <file>tests/architecture/test_engine_route_split.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/architecture/test_engine_route_split.py -m architecture</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Route split keeps engine planning separate from transport adapters and does not add a public API rewrite.</scenario-1>
+      </scenarios>
+    </V-M-ENGINE-ROUTE-SPLIT>
+
+    <V-M-ENGINE-MIGRATION-CLEANUP MODULE="M-ENGINE-ROUTE-SPLIT" PRIORITY="medium">
+      <test-files>
+        <file>tests/architecture/test_engine_migration_cleanup.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/architecture/test_engine_migration_cleanup.py -m architecture</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Migration cleanup verifies that the planning wave does not leave behind duplicate concepts or stale route ownership claims.</scenario-1>
+      </scenarios>
+    </V-M-ENGINE-MIGRATION-CLEANUP>
+
+    <V-M-ENGINE-STATIC-COUPLING MODULE="M-ENGINE-REGISTRY" PRIORITY="medium">
+      <test-files>
+        <file>tests/architecture/test_engine_static_coupling.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/architecture/test_engine_static_coupling.py -m architecture</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Static coupling checks confirm the new engine docs stay declarative and do not introduce runtime dependencies.</scenario-1>
+      </scenarios>
+    </V-M-ENGINE-STATIC-COUPLING>
 
     <V-M-INFRASTRUCTURE MODULE="M-INFRASTRUCTURE" PRIORITY="medium">
       <test-files>
