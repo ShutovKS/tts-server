@@ -324,6 +324,7 @@
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Engine handle, TTSEngine, EngineCapabilities, SynthesisJob, AudioBuffer, and EngineAvailability contracts stay explicit and reusable across family and backend planning surfaces.</scenario-1>
+        <scenario-2 kind="success">TTSEngine keeps `load_model(...) -&gt; ModelHandle` separate from `synthesize(handle, job)` so future registry and bridge work can layer on the contracts without changing current runtime paths yet.</scenario-2>
       </scenarios>
     </V-M-ENGINE-CONTRACTS>
 
@@ -336,6 +337,9 @@
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Engine configuration parsing keeps the planned registry and scheduler settings explicit in typed config.</scenario-1>
+        <scenario-2 kind="success">Known enabled engine variants parse through a discriminated union while keeping typed shared fields and a family-specific `params` escape hatch.</scenario-2>
+        <scenario-3 kind="success">Explicit disabled engine configs parse deterministically and remain identifiable as disabled for future registry filtering.</scenario-3>
+        <scenario-4 kind="failure">Unknown engine config kinds, missing required shared fields, and duplicate aliases fail validation deterministically.</scenario-4>
       </scenarios>
     </V-M-ENGINE-CONFIG>
 

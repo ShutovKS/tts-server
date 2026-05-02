@@ -20,31 +20,34 @@
       </annotations>
     </M-CONFIG>
 
-    <M-ENGINE-CONTRACTS NAME="EngineContracts" TYPE="TYPES" STATUS="planned">
-      <purpose>Define the shared engine contracts, handles, strategies, and registration payloads that the planned runtime engine uses.</purpose>
+    <M-ENGINE-CONTRACTS NAME="EngineContracts" TYPE="TYPES" STATUS="implemented">
+      <purpose>Define the shared engine contracts, handles, and immutable synthesis DTOs that future engine registry, bridge, and scheduler layers will consume.</purpose>
       <path>core/engines/contracts.py</path>
-      <depends>M-CONTRACTS, M-ERRORS</depends>
+      <depends>M-MODELS</depends>
       <verification-ref>V-M-ENGINE-CONTRACTS</verification-ref>
+      <implementation-note>The initial engine contract wave is intentionally contract-only: `TTSEngine` now separates `load_model(...) -> ModelHandle` from `synthesize(handle, job)` and introduces explicit `EngineCapabilities`, `SynthesisJob`, `AudioBuffer`, and `EngineAvailability` DTOs without migrating any current runtime synthesis path to engines yet.</implementation-note>
       <annotations>
         <type-ModelHandle PURPOSE="Loaded model handle plus metadata for ready synthesis targets" />
-        <class-TTSEngine PURPOSE="Planned engine facade for synthesis orchestration" />
-        <type-EngineStrategy PURPOSE="Request-to-backend execution strategy contract" />
+        <class-TTSEngine PURPOSE="Engine facade that separates model loading from synthesis execution" />
         <type-EngineCapabilities PURPOSE="Typed capability set describing what an engine can execute" />
-        <type-EngineRegistration PURPOSE="Registration payload for backend and family engine wiring" />
-        <type-SynthesisJob PURPOSE="Queued synthesis job request owned by the engine scheduler" />
+        <type-SynthesisJob PURPOSE="Normalized synthesis job request handed to TTSEngine.synthesize" />
         <type-AudioBuffer PURPOSE="In-memory audio payload produced by synthesis execution" />
-        <type-EngineAvailability PURPOSE="Structured readiness and availability state for the engine registry" />
+        <type-EngineAvailability PURPOSE="Structured readiness and enabled-state summary for future engine filtering" />
       </annotations>
     </M-ENGINE-CONTRACTS>
 
-    <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" STATUS="planned">
-      <purpose>Parse and validate engine-specific typed config for registry, scheduler, and bridge behavior.</purpose>
+    <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" STATUS="implemented">
+      <purpose>Parse and validate typed and discriminated engine config for future registry filtering and compatibility wiring.</purpose>
       <path>core/engines/config.py</path>
-      <depends>M-CONFIG</depends>
+      <depends>M-ENGINE-CONTRACTS</depends>
       <verification-ref>V-M-ENGINE-CONFIG</verification-ref>
+      <implementation-note>The first engine config wave introduces a discriminated `EngineConfig` union with typed shared fields, family-specific `params: dict[str, Any]` escape hatches, and an explicit `DisabledEngineConfig` case so disabled engines still parse deterministically and can be filtered later.</implementation-note>
       <annotations>
-        <fn-parse_engine_config_from_env PURPOSE="Parse engine-related environment variables into typed settings" />
-        <class-EngineConfig PURPOSE="Typed engine configuration settings" />
+        <type-EngineConfig PURPOSE="Discriminated union over disabled, torch, mlx, onnx, and qwen_fast engine config variants" />
+        <class-EngineSettings PURPOSE="Validated collection of engine configs with duplicate alias protection" />
+        <class-DisabledEngineConfig PURPOSE="Explicit disabled-engine config case" />
+        <fn-parse_engine_config PURPOSE="Parse one raw engine-config payload into a typed variant" />
+        <fn-parse_engine_settings PURPOSE="Parse a collection of engine configs and reject duplicate aliases" />
       </annotations>
     </M-ENGINE-CONFIG>
 
