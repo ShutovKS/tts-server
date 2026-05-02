@@ -345,6 +345,12 @@
         <source>server/app.py</source>
         <source>server/bootstrap.py</source>
         <source>server/api/routes_tts.py</source>
+        <source>server/api/tts/openai.py</source>
+        <source>server/api/tts/custom.py</source>
+        <source>server/api/tts/stream.py</source>
+        <source>server/api/tts/design.py</source>
+        <source>server/api/tts/clone.py</source>
+        <source>server/api/tts/jobs.py</source>
         <source>server/api/tts/_helpers.py</source>
         <source>server/api/tts/_timeout.py</source>
         <source>server/api/routes_health.py</source>
