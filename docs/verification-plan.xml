@@ -160,6 +160,7 @@
     <V-M-OBSERVABILITY MODULE="M-OBSERVABILITY" PRIORITY="medium">
       <test-files>
         <file>tests/unit/core/test_tts_service.py</file>
+        <file>tests/unit/core/test_qwen3_engine.py</file>
         <file>tests/integration/test_api.py</file>
       </test-files>
       <module-checks>
@@ -403,6 +404,22 @@
         <scenario-4 kind="success">The Piper engine path remains custom-only and does not widen design or clone capability claims during the first production engine migration step.</scenario-4>
       </scenarios>
     </V-M-ENGINE-PIPER>
+    <V-M-ENGINE-QWEN3 MODULE="M-ENGINE-QWEN3" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_qwen3_engine.py</file>
+        <file>tests/unit/core/test_tts_service.py</file>
+        <file>tests/unit/core/test_qwen3_family_adapter.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_qwen3_engine.py tests/unit/core/test_tts_service.py tests/unit/core/test_qwen3_family_adapter.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Qwen3TorchEngine loads a Torch/Qwen runtime handle and produces deterministic in-memory WAV bytes for voice-design synthesis under a fake qwen_tts runtime.</scenario-1>
+        <scenario-2 kind="failure">When the qwen_tts runtime is unavailable, the engine raises a controlled ModelLoadError with explicit qwen_tts runtime-dependency metadata.</scenario-2>
+        <scenario-3 kind="success">TTSService routes Qwen3 design and clone synthesis through EngineRegistry and EngineScheduler without falling back to backend.execute.</scenario-3>
+        <scenario-4 kind="success">The Qwen3 engine preserves family-prepared payload semantics for custom, design, and clone, including clone reference-audio/ref_text behavior and the short-clone guard.</scenario-4>
+      </scenarios>
+    </V-M-ENGINE-QWEN3>
 
     <V-M-ENGINE-SCHEDULER MODULE="M-ENGINE-SCHEDULER" PRIORITY="medium">
       <test-files>
@@ -584,8 +601,8 @@
         <file>tests/unit/core/test_tts_service.py</file>
       </test-files>
       <module-checks>
-        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_discovery.py tests/unit/core/test_tts_service.py -m unit</check-1>
-        <check-2>.venv311/bin/python -m pytest tests/unit/core/test_tts_service.py -m unit -k "scheduler_gateway or piper_engine_execution"</check-2>
+        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_discovery.py tests/unit/core/test_tts_service.py tests/unit/core/test_qwen3_engine.py -m unit</check-1>
+        <check-2>.venv311/bin/python -m pytest tests/unit/core/test_tts_service.py tests/unit/core/test_qwen3_engine.py -m unit -k "scheduler_gateway or piper_engine_execution or qwen3_engine_execution or qwen3_clone_through_engine"</check-2>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Clone synthesis passes the reference audio path to backend generation as a normalized string.</scenario-1>
@@ -595,11 +612,13 @@
         <scenario-5 kind="success">Default TTSService construction ignores leaked tests.* family adapter subclasses while still honoring explicit duplicate-key validation when classes are passed directly to _build_family_adapter_map().</scenario-5>
         <scenario-6 kind="success">Legacy backend execution routes through EngineScheduler with the current single-slot default behavior instead of direct InferenceGuard acquire/release calls.</scenario-6>
         <scenario-7 kind="success">The explicit Piper engine route also submits work through EngineScheduler so both migrated execution lanes share the same busy and timeout gateway.</scenario-7>
+        <scenario-8 kind="success">Qwen3 design and clone flows resolve through the generic engine seam, so TTSService no longer needs a Qwen3-specific service branch to reach scheduler-gated execution.</scenario-8>
       </scenarios>
       <required-log-markers>
         <marker-1>[TTSService][synthesize_clone][SYNTHESIZE_CLONE]</marker-1>
         <marker-2>[TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO]</marker-2>
         <marker-3>[TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]</marker-3>
+        <marker-4>[TTSService][_run_engine_generation][BLOCK_PERSIST_OUTPUT]</marker-4>
       </required-log-markers>
     </V-M-TTS-SERVICE>
 
