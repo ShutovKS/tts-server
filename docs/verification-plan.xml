@@ -387,6 +387,22 @@
         <marker-1>TEMPORARY compatibility bridge</marker-1>
       </required-log-markers>
     </V-M-ENGINE-BRIDGE>
+    <V-M-ENGINE-PIPER MODULE="M-ENGINE-PIPER" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_piper_engine.py</file>
+        <file>tests/unit/core/test_onnx_backend.py</file>
+        <file>tests/unit/core/test_tts_service.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_piper_engine.py tests/unit/core/test_onnx_backend.py tests/unit/core/test_tts_service.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">PiperOnnxEngine loads manifest-compatible `model.onnx` and `model.onnx.json` artifacts and produces deterministic WAV bytes under fake Piper runtime conditions.</scenario-1>
+        <scenario-2 kind="failure">When the Piper model directory is present but required artifacts are missing, the engine raises a controlled ModelLoadError with explicit missing_artifacts metadata.</scenario-2>
+        <scenario-3 kind="success">TTSService routes Piper custom synthesis through EngineRegistry only when the explicit runtime flag is enabled and otherwise preserves the legacy backend.execute fallback path.</scenario-3>
+        <scenario-4 kind="success">The Piper engine path remains custom-only and does not widen design or clone capability claims during the first production engine migration step.</scenario-4>
+      </scenarios>
+    </V-M-ENGINE-PIPER>
 
     <V-M-ENGINE-SCHEDULER MODULE="M-ENGINE-SCHEDULER" PRIORITY="medium">
       <test-files>

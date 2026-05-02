@@ -1,8 +1,8 @@
 # FILE: core/config.py
-# VERSION: 1.4.0
+# VERSION: 1.5.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Parse and validate environment-based runtime configuration for all components.
-#   SCOPE: CoreSettings dataclass, pydantic-settings env source, typed settings dict, env helpers
+#   PURPOSE: Parse and validate environment-based runtime configuration for all components, including explicit opt-in engine-route toggles.
+#   SCOPE: CoreSettings dataclass, pydantic-settings env source, typed settings dict, env helpers, and engine-route feature flags
 #   DEPENDS: pydantic, pydantic-settings
 #   LINKS: M-CONFIG
 #   ROLE: CONFIG
@@ -33,7 +33,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.4.0 - Replaced hand-rolled env parsing with pydantic-settings while preserving public API surface (CoreSettings dataclass, CoreSettingsEnv TypedDict, parse_core_settings_from_env, env_text/env_int/env_bool/env_path/env_value helpers)]
+#   LAST_CHANGE: [v1.5.0 - Task 10: added an explicit Piper engine-route feature flag so the first production TTSEngine can be enabled without changing default runtime behavior]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -44,8 +44,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
-from pydantic import Field, ValidationError, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, ValidationError, field_validator  # pyright: ignore[reportMissingImports]
+from pydantic_settings import BaseSettings, SettingsConfigDict  # pyright: ignore[reportMissingImports]
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODELS_DIR = PROJECT_ROOT / ".models"
@@ -81,6 +81,7 @@ class CoreSettingsEnv(TypedDict):
     default_custom_model: str | None
     default_design_model: str | None
     default_clone_model: str | None
+    piper_engine_enabled: bool
     backend: str | None
     backend_autoselect: bool
     qwen_fast_enabled: bool
@@ -141,6 +142,7 @@ class CoreSettings:
     default_custom_model: str | None = None
     default_design_model: str | None = None
     default_clone_model: str | None = None
+    piper_engine_enabled: bool = False
     backend: str | None = None
     backend_autoselect: bool = True
     qwen_fast_enabled: bool = True
@@ -255,6 +257,7 @@ class CoreEnvSettings(BaseSettings):
     default_custom_model: str | None = None
     default_design_model: str | None = None
     default_clone_model: str | None = None
+    piper_engine_enabled: bool = False
     backend: str | None = None
     backend_autoselect: bool = True
     qwen_fast_enabled: bool = True
@@ -392,6 +395,7 @@ class CoreEnvSettings(BaseSettings):
     @field_validator(
         "backend_autoselect",
         "qwen_fast_enabled",
+        "piper_engine_enabled",
         "rate_limit_enabled",
         "quota_enabled",
         "default_save_output",

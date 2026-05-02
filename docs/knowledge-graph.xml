@@ -95,6 +95,21 @@
       <CrossLink from="M-ENGINE-BRIDGE" to="M-ENGINE-REGISTRY" relation="registers-temporary-legacy-engine-entries" />
     </M-ENGINE-BRIDGE>
 
+    <M-ENGINE-PIPER NAME="PiperOnnxEngine" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Provide the first production TTSEngine implementation for Piper custom synthesis on the ONNX lane behind an explicit runtime opt-in.</purpose>
+      <path>core/engines/piper.py</path>
+      <depends>M-ENGINE-CONTRACTS, M-ENGINE-REGISTRY, M-BACKENDS, M-ERRORS, M-METRICS, M-TTS-SERVICE</depends>
+      <verification-ref>V-M-ENGINE-PIPER</verification-ref>
+      <implementation-note>Task 10 introduces a real engine-owned Piper path while deliberately keeping the legacy ONNX backend execution path as the default fallback. The runtime only opts into this route when the explicit `piper_engine_enabled` setting is enabled, and the engine preserves the manifest-compatible `model.onnx` + `model.onnx.json` artifact contract.</implementation-note>
+      <annotations>
+        <class-PiperOnnxEngine PURPOSE="Production TTSEngine for Piper custom synthesis via ONNX runtime" />
+      </annotations>
+      <CrossLink from="M-ENGINE-PIPER" to="M-ENGINE-CONTRACTS" relation="implements-shared-engine-contract" />
+      <CrossLink from="M-ENGINE-PIPER" to="M-BACKENDS" relation="preserves-onnx-artifact-and-runtime-compatibility" />
+      <CrossLink from="M-ENGINE-PIPER" to="M-TTS-SERVICE" relation="enables-guarded-piper-engine-route" />
+      <CrossLink from="M-ENGINE-PIPER" to="M-ENGINE-BRIDGE" relation="coexists-with-temporary-legacy-bridge-during-migration" />
+    </M-ENGINE-PIPER>
+
     <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" STATUS="planned">
       <purpose>Coordinate bounded worker dispatch for engine requests and keep queueing behavior explicit.</purpose>
       <path>core/engines/scheduler.py</path>
