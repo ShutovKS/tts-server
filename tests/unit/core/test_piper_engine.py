@@ -14,12 +14,12 @@
 #   _EngineAwareRegistry - Minimal runtime registry exposing an ONNX backend for Piper engine-route tests
 #   test_piper_onnx_engine_loads_and_synthesizes_wav_bytes - Verifies production Piper engine load/synthesize parity under a fake Piper runtime
 #   test_piper_onnx_engine_missing_artifacts_raise_controlled_model_load_error - Verifies missing model.onnx/model.onnx.json artifacts surface a controlled error
-#   test_tts_service_routes_piper_through_engine_when_explicitly_enabled - Verifies the guarded runtime flag routes Piper custom synthesis through the engine registry
-#   test_tts_service_keeps_legacy_backend_path_when_piper_engine_is_disabled - Verifies legacy backend execution remains the fallback path when the flag is off
+#   test_tts_service_routes_piper_through_engine_when_explicitly_enabled - Verifies Piper custom synthesis routes through the migrated engine path
+#   test_tts_service_routes_piper_through_engine_when_flag_is_off - Verifies Piper still uses the migrated engine path even when the old runtime flag is false
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Task 10: added deterministic coverage for the first production Piper engine and its guarded TTSService route]
+#   LAST_CHANGE: [v1.1.0 - Updated Piper route coverage to require the migrated engine path regardless of the legacy runtime flag]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ from core.contracts import BackendRouteInfo
 from core.contracts.commands import CustomVoiceCommand
 from core.engines import SynthesisJob
 from core.engines.piper import PiperOnnxEngine
+from core.engines.runtime_factory import build_engine_registry
 from core.errors import ModelLoadError
 from core.models.catalog import MODEL_SPECS, ModelSpec
 from core.services.tts_service import TTSService
@@ -138,6 +139,9 @@ class _EngineAwareRegistry:
     def backend_for_spec(self, spec: ModelSpec) -> TTSBackend:
         return self._backend
 
+    def legacy_backend_for_spec(self, spec: ModelSpec) -> TTSBackend:
+        return self._backend
+
     def backend_route_for_spec(self, spec: ModelSpec) -> BackendRouteInfo:
         return {"route_reason": "registry_model_resolution", "execution_backend": self._backend.key}
 
@@ -233,7 +237,11 @@ def test_tts_service_routes_piper_through_engine_when_explicitly_enabled(
         SimpleNamespace(load=lambda model_path, config_path, use_cuda=False: _FakeVoice()),
     )
 
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
     result = service.synthesize_custom(
         CustomVoiceCommand(text="Hello Piper", model=spec.model_id, speaker="ignored")
     )
@@ -246,11 +254,30 @@ def test_tts_service_routes_piper_through_engine_when_explicitly_enabled(
     assert backend.execute_calls == 0
 
 
-def test_tts_service_keeps_legacy_backend_path_when_piper_engine_is_disabled(tmp_path: Path) -> None:
+def test_tts_service_routes_piper_through_engine_when_flag_is_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     settings = _make_settings(tmp_path, piper_engine_enabled=False)
     registry = _EngineAwareRegistry(settings.models_dir)
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
     spec = MODEL_SPECS["piper-1"]
+    _write_piper_artifacts(settings.models_dir / spec.folder)
+
+    class _FakeVoice:
+        def synthesize_wav(self, text: str, wav_file) -> None:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
+            wav_file.writeframes(b"\x11\x22\x33\x44")
+
+    monkeypatch.setattr(
+        "core.engines.piper.PiperVoice",
+        SimpleNamespace(load=lambda model_path, config_path, use_cuda=False: _FakeVoice()),
+    )
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
 
     result = service.synthesize_custom(
         CustomVoiceCommand(text="Hello Piper", model=spec.model_id, speaker="ignored")
@@ -258,6 +285,6 @@ def test_tts_service_keeps_legacy_backend_path_when_piper_engine_is_disabled(tmp
     backend = registry.backend
 
     assert result.backend == "onnx"
-    assert result.audio.bytes_data == b"legacy-backend-audio"
+    assert result.audio.bytes_data.startswith(b"RIFF")
     assert isinstance(backend, _FallbackOnnxBackend)
-    assert backend.execute_calls == 1
+    assert backend.execute_calls == 0

@@ -37,11 +37,11 @@
     </M-ENGINE-CONTRACTS>
 
     <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" STATUS="implemented">
-      <purpose>Parse and validate typed and discriminated engine config for live registry filtering, alias matching, and deterministic disabled-engine parsing.</purpose>
+      <purpose>Parse and validate typed and discriminated engine config for live registry filtering, alias matching, scheduler policy, cache sizing, and deterministic disabled-engine parsing.</purpose>
       <path>core/engines/config.py</path>
       <depends>M-ENGINE-CONTRACTS</depends>
       <verification-ref>V-M-ENGINE-CONFIG</verification-ref>
-      <implementation-note>The engine config surface defines a discriminated `EngineConfig` union with typed shared fields, family-specific `params: dict[str, Any]` escape hatches, and an explicit `DisabledEngineConfig` case so disabled engines still parse deterministically and can be filtered by the registry.</implementation-note>
+      <implementation-note>The engine config surface defines a discriminated `EngineConfig` union with typed shared fields, per-engine scheduler policy fields (`max_active`, `max_queued`, submit/inference timeouts), `device`, `model_cache_size`, family-specific `params: dict[str, Any]` escape hatches, and an explicit `DisabledEngineConfig` case so disabled engines still parse deterministically and can be filtered by the registry.</implementation-note>
       <annotations>
         <type-EngineConfig PURPOSE="Discriminated union over disabled, torch, mlx, onnx, and qwen_fast engine config variants" />
         <class-EngineSettings PURPOSE="Validated collection of engine configs with duplicate alias protection" />
@@ -56,7 +56,7 @@
       <path>core/engines/registry.py</path>
       <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ERRORS, M-OBSERVABILITY</depends>
       <verification-ref>V-M-ENGINE-REGISTRY</verification-ref>
-      <implementation-note>The first registry wave stays process-local and discovery-focused: explicit engines, built-in registrations, and optional entry points can all contribute TTSEngine instances; disabled config entries are skipped deterministically; duplicate keys fail fast with the key named; and optional load failures are warning-isolated unless fail-fast is requested.</implementation-note>
+      <implementation-note>The registry stays process-local and discovery-focused: explicit engines, built-in registrations, and optional entry points can all contribute TTSEngine instances; disabled config entries are skipped deterministically; duplicate keys fail fast with the key named; optional load failures are warning-isolated unless fail-fast is requested; and runtime callers can provide a wrapper hook so built-in and entry-point engines share cross-cutting seams such as ModelCache.</implementation-note>
       <annotations>
         <class-EngineRegistry PURPOSE="Process-local registry for TTSEngine registration, alias lookup, and deterministic selection" />
         <class-EngineRegistryError PURPOSE="Typed registry failure for duplicate keys and unresolved selection paths" />
@@ -66,6 +66,54 @@
       <CrossLink from="M-ENGINE-REGISTRY" to="M-ENGINE-CONFIG" relation="filters-enabled-and-disabled-engine-config" />
       <CrossLink from="M-ENGINE-REGISTRY" to="M-OBSERVABILITY" relation="emits-loader-warning-events" />
     </M-ENGINE-REGISTRY>
+
+    <M-ENGINE-RUNTIME-FACTORY NAME="EngineRuntimeFactory" TYPE="RUNTIME" STATUS="implemented">
+      <purpose>Build the runtime EngineRegistry from built-in TTSEngine implementations and optional entry-point discovery outside the service layer while applying cache wrappers and typed runtime settings.</purpose>
+      <path>core/engines/runtime_factory.py</path>
+      <depends>M-CONFIG, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS, M-ENGINE-MODEL-CACHE, M-ENGINE-PIPER, M-ENGINE-QWEN3, M-ENGINE-OMNIVOICE</depends>
+      <verification-ref>V-M-ENGINE-RUNTIME-SEAMS</verification-ref>
+      <implementation-note>`build_engine_registry(settings)` is the runtime composition seam for engines: bootstrap calls it, TTSService receives the resulting EngineRegistry as an injected dependency, entry-point discovery is enabled with fail-soft optional plugin handling, and every registered built-in or entry-point TTSEngine is cache-decorated through `CachedEngine` using typed `model_cache_size` settings.</implementation-note>
+      <annotations>
+        <class-CachedEngine PURPOSE="Cache-decorating TTSEngine wrapper around load_model while preserving synthesize delegation" />
+        <fn-build_engine_settings PURPOSE="Parse EngineSettings from CoreSettings.engine_configs without injecting hidden disabled-engine fallbacks" />
+        <fn-build_engine_registry PURPOSE="Build the runtime EngineRegistry from built-in engines plus tts_server.engines entry points" />
+      </annotations>
+      <CrossLink from="M-ENGINE-RUNTIME-FACTORY" to="M-BOOTSTRAP" relation="called-by-composition-root" />
+      <CrossLink from="M-ENGINE-RUNTIME-FACTORY" to="M-ENGINE-REGISTRY" relation="constructs-engine-registry" />
+      <CrossLink from="M-ENGINE-RUNTIME-FACTORY" to="M-ENGINE-MODEL-CACHE" relation="wraps-registered-engines-with-cache" />
+      <CrossLink from="M-ENGINE-RUNTIME-FACTORY" to="M-ENGINE-QWEN3" relation="registers-built-in-engine" />
+      <CrossLink from="M-ENGINE-RUNTIME-FACTORY" to="M-ENGINE-OMNIVOICE" relation="registers-built-in-engine" />
+      <CrossLink from="M-ENGINE-RUNTIME-FACTORY" to="M-ENGINE-PIPER" relation="registers-built-in-engine" />
+    </M-ENGINE-RUNTIME-FACTORY>
+
+    <M-ENGINE-MODEL-CACHE NAME="ModelCache" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Provide a thread-safe bounded cache for TTSEngine model handles keyed by engine, model, backend, and resolved path.</purpose>
+      <path>core/engines/model_cache.py</path>
+      <depends>M-ENGINE-CONTRACTS</depends>
+      <verification-ref>V-M-ENGINE-RUNTIME-SEAMS</verification-ref>
+      <implementation-note>`ModelCache` is owned by the engine runtime layer and is applied by `CachedEngine` during registry composition so TTSService does not know about cache eviction or hot model handle reuse.</implementation-note>
+      <annotations>
+        <type-ModelCacheKey PURPOSE="Stable cache key for engine/model/backend/path combinations" />
+        <class-ModelCache PURPOSE="Thread-safe bounded model handle cache with reuse and eviction semantics" />
+        <fn-get_or_load PURPOSE="Return a cached handle or atomically load and store a new one" />
+      </annotations>
+      <CrossLink from="M-ENGINE-MODEL-CACHE" to="M-ENGINE-RUNTIME-FACTORY" relation="used-by-cached-engine-wrapper" />
+      <CrossLink from="M-ENGINE-MODEL-CACHE" to="M-ENGINE-CONTRACTS" relation="stores-model-handle-contract" />
+    </M-ENGINE-MODEL-CACHE>
+
+    <M-ENGINE-AUDIO-PIPELINE NAME="AudioPipeline" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Provide the standard post-engine audio processing seam before generated audio is persisted.</purpose>
+      <path>core/engines/audio_pipeline.py</path>
+      <depends>M-ENGINE-CONTRACTS</depends>
+      <verification-ref>V-M-ENGINE-RUNTIME-SEAMS</verification-ref>
+      <implementation-note>AudioPipeline is now the standard post-engine seam: it converts engine outputs into WAV bytes, normalizes to the runtime target sample rate, applies loudness-style RMS normalization with peak limiting, and runs before AudioPersistenceService persists generated bytes.</implementation-note>
+      <annotations>
+        <class-AudioPipeline PURPOSE="Post-engine AudioBuffer processing seam" />
+        <fn-process PURPOSE="Return the processed AudioBuffer for persistence" />
+      </annotations>
+      <CrossLink from="M-ENGINE-AUDIO-PIPELINE" to="M-TTS-SERVICE" relation="processes-engine-audio-before-persistence" />
+      <CrossLink from="M-ENGINE-AUDIO-PIPELINE" to="M-ENGINE-CONTRACTS" relation="uses-audio-buffer-contract" />
+    </M-ENGINE-AUDIO-PIPELINE>
 
     <M-ENGINE-REGISTRY-TESTS NAME="EngineRegistryTests" TYPE="TEST_SUPPORT" STATUS="implemented">
       <purpose>Exercise TTSEngine registry selection, typed config matching, and a test-only proof family without adding runtime coupling to transport adapters.</purpose>
@@ -80,17 +128,17 @@
     </M-ENGINE-REGISTRY-TESTS>
 
     <M-ENGINE-PIPER NAME="PiperOnnxEngine" TYPE="CORE_LOGIC" STATUS="implemented">
-      <purpose>Provide the first production TTSEngine implementation for Piper custom synthesis on the ONNX lane behind an explicit runtime opt-in.</purpose>
+      <purpose>Provide the production TTSEngine implementation for Piper custom synthesis on the ONNX lane as part of the engine-first runtime set.</purpose>
       <path>core/engines/piper.py</path>
       <depends>M-ENGINE-CONTRACTS, M-ENGINE-REGISTRY, M-BACKENDS, M-ERRORS, M-METRICS, M-TTS-SERVICE</depends>
       <verification-ref>V-M-ENGINE-PIPER</verification-ref>
-      <implementation-note>Task 10 introduces a real engine-owned Piper path while deliberately keeping the legacy ONNX backend execution path as the default fallback. The runtime only opts into this route when the explicit `piper_engine_enabled` setting is enabled, and the engine preserves the manifest-compatible `model.onnx` + `model.onnx.json` artifact contract.</implementation-note>
+      <implementation-note>Piper is now part of the production TTSEngine runtime set alongside Qwen3 and OmniVoice. Custom Piper synthesis resolves through the engine registry regardless of the legacy runtime flag, and the engine preserves the manifest-compatible `model.onnx` + `model.onnx.json` artifact contract.</implementation-note>
       <annotations>
         <class-PiperOnnxEngine PURPOSE="Production TTSEngine for Piper custom synthesis via ONNX runtime" />
       </annotations>
       <CrossLink from="M-ENGINE-PIPER" to="M-ENGINE-CONTRACTS" relation="implements-shared-engine-contract" />
       <CrossLink from="M-ENGINE-PIPER" to="M-BACKENDS" relation="preserves-onnx-artifact-and-runtime-compatibility" />
-      <CrossLink from="M-ENGINE-PIPER" to="M-TTS-SERVICE" relation="enables-guarded-piper-engine-route" />
+      <CrossLink from="M-ENGINE-PIPER" to="M-TTS-SERVICE" relation="participates-in-engine-required-production-routing" />
     </M-ENGINE-PIPER>
 
     <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" STATUS="implemented">
@@ -98,7 +146,7 @@
       <path>core/engines/scheduler.py</path>
       <depends>M-ERRORS, M-OBSERVABILITY</depends>
       <verification-ref>V-M-ENGINE-SCHEDULER</verification-ref>
-      <implementation-note>Task 11 introduces a standalone scheduler that creates lazy worker pools keyed by engine and device. The default policy preserves the current single-slot runtime behavior (`max_active=1`, `max_queued=0`) by raising `InferenceBusyError` on contention, while explicit policy objects can opt later integration work into bounded queueing, submit waits, and inference deadlines without changing TTSService yet.</implementation-note>
+      <implementation-note>EngineScheduler creates lazy worker pools keyed by engine and device. The default policy preserves the current single-slot runtime behavior (`max_active=1`, `max_queued=0`) by raising `InferenceBusyError` on contention, while `CoreSettings.engine_configs` can now feed per-engine bounded queueing, submit waits, and inference deadlines through bootstrap. Runtime readiness reads scheduler-owned busy state directly, so InferenceGuard is no longer part of bootstrap, CoreRuntime, TTSService, or SynthesisRouter wiring.</implementation-note>
       <annotations>
         <class-EngineScheduler PURPOSE="Scheduler facade for engine request dispatch" />
         <class-WorkerPool PURPOSE="Bounded worker pool for one engine/device key" />
@@ -106,6 +154,7 @@
         <type-EngineWorkerPoolPolicy PURPOSE="Explicit active/queued/timeout policy for one pool" />
         <class-EngineSchedulerStoppedError PURPOSE="Typed shutdown failure raised after scheduler shutdown" />
         <fn-submit_engine_task PURPOSE="Queue a unit of engine work" />
+        <fn-is_busy PURPOSE="Report whether any scheduler pool currently has admitted work" />
       </annotations>
       <CrossLink from="M-ENGINE-SCHEDULER" to="M-ENGINE-CONTRACTS" relation="uses-shared-engine-types" />
       <CrossLink from="M-ENGINE-SCHEDULER" to="M-OBSERVABILITY" relation="emits-scheduler-traces" />
@@ -353,7 +402,7 @@
     </M-OMNIVOICE-FAMILY>
 
     <M-INFRASTRUCTURE NAME="Infrastructure" TYPE="DATA_LAYER" STATUS="implemented">
-      <purpose>Provide local implementations for job execution, audio I/O, admission control, and concurrency.</purpose>
+      <purpose>Provide local implementations for job execution, audio I/O, and admission control.</purpose>
       <path>core/infrastructure/</path>
       <depends>M-CONFIG, M-ERRORS, M-OBSERVABILITY, M-METRICS, M-CONTRACTS</depends>
       <verification-ref>V-M-INFRASTRUCTURE</verification-ref>
@@ -361,7 +410,6 @@
         <class-LocalBoundedExecutionManager PURPOSE="Local async job execution with bounded concurrency" />
         <class-LocalInMemoryJobStore PURPOSE="In-memory job metadata store" />
         <class-LocalJobArtifactStore PURPOSE="In-memory job artifact storage" />
-        <class-InferenceGuard PURPOSE="Single-slot inference concurrency guard" />
         <fn-convert_audio_to_wav_if_needed PURPOSE="Audio format normalization via ffmpeg" />
         <fn-build_rate_limiter PURPOSE="Factory for rate limiter from settings" />
         <fn-build_quota_guard PURPOSE="Factory for quota guard from settings" />
@@ -462,24 +510,27 @@
     <M-TTS-SERVICE NAME="TTSService" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Coordinate inference for custom, design, and clone synthesis modes via the SynthesisRouter unified seam, while keeping the transport-facing TTSService.synthesize_X(...) facade stable and routing runtime execution through the scheduler gateway.</purpose>
       <path>core/services/tts_service.py, core/services/synthesis_router.py</path>
-      <depends>M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS</depends>
+      <depends>M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS, M-AUDIO-PERSISTENCE, M-CLONE-PREPROCESSING, M-ENGINE-AUDIO-PIPELINE, M-LEGACY-BACKEND-EXECUTION</depends>
       <verification-ref>V-M-TTS-SERVICE</verification-ref>
-      <implementation-note>Phase 3.9 introduces `core/services/synthesis_router.py::SynthesisRouter` as the unified Command -&gt; backend seam. `TTSService.__init__` now builds a `SynthesisRouter(coordinator=...)` and `synthesize_custom`, `synthesize_design`, and `synthesize_clone` all delegate through `self.router.route_custom/_design/_clone(...)`. The router exposes a single public `route(command: GenerationCommand) -&gt; GenerationResult` entry-point that dispatches by `isinstance(command, ...)`, raising `TTSGenerationError` with structured details when the command type is unsupported. Phase 3.11 then collapses the historic `generate_audio` free function: `SynthesisCoordinator._run_generation` now calls `backend.execute(ExecutionRequest(...))` directly inside a `START_BLOCK_DISPATCH_TO_BACKEND` block, the module-level `generate_audio(*args, **kwargs)` shim is deleted, and tests now substitute behaviour by overriding `registry.backend.execute` on a stable `_StubBackend` instead of monkeypatching `core.services.tts_service.generate_audio`. Task 3 then replaces direct `Qwen3FamilyAdapter()` / `OmniVoiceFamilyAdapter()` / `PiperFamilyAdapter()` construction inside `TTSService` with a discovery-driven `_build_family_adapter_map()` seam that instantiates discovered adapter classes and raises a deterministic duplicate-key error before startup proceeds. Task 12 moves runtime execution ownership from direct `InferenceGuard.acquire()/release()` calls to `EngineScheduler.submit_engine_task(...)` while preserving the current single-slot default behavior, sync timeout mapping, and async timeout lifecycle. Task 15 then generalizes engine routing so the production `Qwen3TorchEngine` handles Qwen3 custom, design, and clone execution through the same scheduler-gated engine seam, leaving legacy backend execution as the fallback for still-unmigrated paths. Task 16 applies the same generic seam to OmniVoice, so no OmniVoice-specific runtime execution branch remains in TTSService.</implementation-note>
+      <implementation-note>Phase 3.9 introduces `core/services/synthesis_router.py::SynthesisRouter` as the unified Command -&gt; runtime seam. `TTSService.__init__` now builds a `SynthesisRouter(coordinator=...)` and `synthesize_custom`, `synthesize_design`, and `synthesize_clone` all delegate through `self.router.route_custom/_design/_clone(...)`. The router exposes a single public `route(command: GenerationCommand) -&gt; GenerationResult` entry-point that dispatches by `isinstance(command, ...)`, raising `TTSGenerationError` with structured details when the command type is unsupported. The historic inline backend execution lane no longer lives inside `SynthesisCoordinator._run_generation`; `_run_generation()` delegates to `LegacyBackendExecutionService`, which owns `backend.execute(ExecutionRequest(...))`, persistence, and legacy error mapping. Task 3 then replaces direct `Qwen3FamilyAdapter()` / `OmniVoiceFamilyAdapter()` / `PiperFamilyAdapter()` construction inside `TTSService` with a discovery-driven `_build_family_adapter_map()` seam that instantiates discovered adapter classes and raises a deterministic duplicate-key error before startup proceeds. Runtime execution now goes through `EngineScheduler.submit_engine_task(...)`; InferenceGuard is no longer part of bootstrap, CoreRuntime, TTSService, or SynthesisRouter wiring, and scheduler pool selection can differ by engine and configured device key. Production Qwen3, OmniVoice, and Piper flows all resolve through the generic TTSEngine seam, while the explicit legacy backend execution service remains only for unmigrated compatibility paths.</implementation-note>
       <annotations>
         <class-TTSService PURPOSE="Core synthesis facade with scheduler-gated runtime execution; delegates each synthesize_X call through SynthesisRouter" />
         <fn-_build_family_adapter_map PURPOSE="Instantiate a deterministic family-keyed adapter map from discovery results while rejecting duplicate keys" />
         <class-SynthesisRouter PURPOSE="Phase 3.9 unified Command -&gt; backend routing seam exposing route(command) plus per-mode helpers" />
-        <class-SynthesisCoordinator PURPOSE="Per-mode worker invoked by SynthesisRouter; submits legacy backend plus Piper and Qwen3 engine work through EngineScheduler while preserving existing generation/error handling" />
+        <class-SynthesisCoordinator PURPOSE="Per-mode worker invoked by SynthesisRouter; submits legacy compatibility work plus Qwen3, OmniVoice, and Piper engine work through EngineScheduler while preserving existing generation/error handling" />
       </annotations>
       <CrossLink from="M-TTS-SERVICE" to="M-DISCOVERY" relation="builds-family-adapter-map-from-discovery" />
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-REGISTRY" relation="resolves-models" />
-      <CrossLink from="M-TTS-SERVICE" to="M-INFRASTRUCTURE" relation="uses-audio-io" />
+      <CrossLink from="M-TTS-SERVICE" to="M-AUDIO-PERSISTENCE" relation="delegates-generated-audio-persistence" />
+      <CrossLink from="M-TTS-SERVICE" to="M-CLONE-PREPROCESSING" relation="delegates-reference-audio-preprocessing" />
+      <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-AUDIO-PIPELINE" relation="normalizes-engine-output-before-persistence" />
+      <CrossLink from="M-TTS-SERVICE" to="M-LEGACY-BACKEND-EXECUTION" relation="delegates-legacy-backend-compatibility-lane" />
       <CrossLink from="M-TTS-SERVICE" to="M-MODEL-FAMILY" relation="prepares-execution" />
       <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-SCHEDULER" relation="routes-runtime-execution-through-scheduler-gateway" />
-      <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-REGISTRY" relation="builds-local-engine-registry-for-migrated-runtime-lanes" />
+      <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-REGISTRY" relation="consumes-injected-engine-registry-for-migrated-runtime-lanes" />
       <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-QWEN3" relation="routes-qwen3-through-production-engine-seam" />
       <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-OMNIVOICE" relation="routes-omnivoice-through-production-engine-seam" />
-      <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-PIPER" relation="routes-piper-through-production-engine-seam-when-runtime-flag-is-enabled" />
+      <CrossLink from="M-TTS-SERVICE" to="M-ENGINE-PIPER" relation="routes-piper-through-production-engine-seam" />
     </M-TTS-SERVICE>
 
     <M-TELEMETRY NAME="Telemetry" TYPE="CORE_LOGIC" STATUS="implemented">
@@ -521,15 +572,16 @@
     <M-MODEL-LIFECYCLE NAME="ModelLifecycleService" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Process-local lifecycle facade exposing model deletion, registry refresh, and best-effort download orchestration to HTTP transports without coupling them to a specific downloader implementation.</purpose>
       <path>core/services/model_lifecycle.py</path>
-      <depends>M-MODEL-REGISTRY, M-MODELS, M-CONFIG</depends>
+      <depends>M-MODEL-REGISTRY, M-MODELS, M-CONFIG, M-ENGINE-REGISTRY</depends>
       <verification-ref>V-M-MODEL-LIFECYCLE</verification-ref>
-      <implementation-note>Phase 4.13 introduces `core/services/model_lifecycle.py::ModelLifecycleService` together with the frozen `ModelDownloadJob` descriptor and a `default_downloader` that returns a deterministic "no_downloader_configured" failure. The service exposes `delete_model(model_id)` (rmtree the per-model folder under `models_dir`), `submit_download(model_id, source=None, run_async=True)` (creates a tracked job and runs the configured downloader on a background thread), `get_download(job_id)` / `list_downloads()` (in-memory job lookup), and `refresh()` (best-effort detection of `reload_manifest` / `refresh` / `rebuild` hooks on the underlying registry). `core/bootstrap.py::CoreRuntime` now also carries `model_lifecycle: ModelLifecycleService`, and `server/app.py` surfaces it as `app.state.model_lifecycle` so `server/api/routes_models.py` can register `DELETE /api/v1/models/{model_id}`, `POST /api/v1/models/{model_id}/download`, `GET /api/v1/models/{model_id}/downloads/{job_id}`, and `POST /api/v1/models/refresh`.</implementation-note>
+      <implementation-note>Phase 4.13 introduces `core/services/model_lifecycle.py::ModelLifecycleService` together with the frozen `ModelDownloadJob` descriptor and a `default_downloader` that returns a deterministic "no_downloader_configured" failure. The service exposes `delete_model(model_id)` (rmtree the per-model folder under `models_dir`), `submit_download(model_id, source=None, run_async=True)` (creates a tracked job and runs the configured downloader on a background thread), `get_download(job_id)` / `list_downloads()` (in-memory job lookup), and `refresh()` (best-effort detection of `reload_manifest` / `refresh` / `rebuild` hooks on the underlying registry plus `clear_cache()` invalidation for cacheable registered engines). `core/bootstrap.py::CoreRuntime` now also carries `model_lifecycle: ModelLifecycleService`, and `server/app.py` surfaces it as `app.state.model_lifecycle` so `server/api/routes_models.py` can register `DELETE /api/v1/models/{model_id}`, `POST /api/v1/models/{model_id}/download`, `GET /api/v1/models/{model_id}/downloads/{job_id}`, and `POST /api/v1/models/refresh`.</implementation-note>
       <annotations>
         <class-ModelDownloadJob PURPOSE="Frozen descriptor for a single model download submission with status, progress, error, timestamps, and free-form details" />
         <class-ModelLifecycleService PURPOSE="Process-local lifecycle facade for delete/refresh/download orchestration over the active ModelRegistry" />
         <fn-default_downloader PURPOSE="Deterministic no_downloader_configured failure used when no downloader is injected" />
       </annotations>
       <CrossLink from="M-MODEL-LIFECYCLE" to="M-MODEL-REGISTRY" relation="reads-model-specs" />
+      <CrossLink from="M-MODEL-LIFECYCLE" to="M-ENGINE-REGISTRY" relation="clears-cacheable-engine-wrappers-during-refresh" />
       <CrossLink from="M-MODEL-LIFECYCLE" to="M-SERVER" relation="powers-lifecycle-endpoints" />
     </M-MODEL-LIFECYCLE>
 
@@ -549,17 +601,47 @@
     </M-STREAMING>
 
     <M-TTS-COORDINATOR NAME="SynthesisCoordinator" TYPE="CORE_LOGIC" STATUS="implemented">
-      <purpose>Refactor the current TTS service into a coordinator over planner resolution, family execution semantics, persistence, and observability.</purpose>
+      <purpose>Coordinate planner resolution, family execution semantics, scheduler-gated runtime execution, delegated persistence, and observability.</purpose>
       <path>core/services/tts_service.py</path>
-      <depends>M-SYNTHESIS-PLANNER, M-RUNTIME-MODEL-REGISTRY, M-INFRASTRUCTURE, M-OBSERVABILITY</depends>
+      <depends>M-SYNTHESIS-PLANNER, M-RUNTIME-MODEL-REGISTRY, M-AUDIO-PERSISTENCE, M-CLONE-PREPROCESSING, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-AUDIO-PIPELINE, M-LEGACY-BACKEND-EXECUTION, M-OBSERVABILITY</depends>
       <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
-      <implementation-note>Planner and coordinator seams depend on typed runtime registry protocols defined in core/contracts/runtime.py instead of concrete registry implementations.</implementation-note>
+      <implementation-note>Planner and coordinator seams depend on typed runtime registry protocols and injected engine runtime services; generated-audio persistence and clone reference staging/WAV normalization are delegated to dedicated services so the coordinator stays orchestration-first.</implementation-note>
       <annotations>
         <class-TTSService PURPOSE="Coordinator-shaped synthesis service over planning, family preparation, and runtime execution" />
       </annotations>
       <CrossLink from="M-TTS-COORDINATOR" to="M-SYNTHESIS-PLANNER" relation="consumes-execution-plans" />
       <CrossLink from="M-TTS-COORDINATOR" to="M-MODEL-FAMILY" relation="delegates-family-semantics" />
+      <CrossLink from="M-TTS-COORDINATOR" to="M-AUDIO-PERSISTENCE" relation="delegates-output-materialization" />
+      <CrossLink from="M-TTS-COORDINATOR" to="M-CLONE-PREPROCESSING" relation="delegates-clone-reference-staging" />
+      <CrossLink from="M-TTS-COORDINATOR" to="M-ENGINE-AUDIO-PIPELINE" relation="normalizes-engine-audio-before-persistence" />
+      <CrossLink from="M-TTS-COORDINATOR" to="M-LEGACY-BACKEND-EXECUTION" relation="isolates-backend-execute-compatibility-lane" />
     </M-TTS-COORDINATOR>
+
+    <M-AUDIO-PERSISTENCE NAME="AudioPersistenceService" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Persist generated synthesis audio artifacts for legacy backend and TTSEngine execution paths outside the synthesis coordinator.</purpose>
+      <path>core/services/audio_persistence.py</path>
+      <depends>M-CONFIG, M-CONTRACTS, M-INFRASTRUCTURE, M-MODELS</depends>
+      <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
+      <annotations>
+        <class-PersistedAudio PURPOSE="Generated audio artifact plus optional saved-output path" />
+        <class-AudioPersistenceService PURPOSE="Shared persistence helper for backend output dirs and engine audio buffers" />
+      </annotations>
+      <CrossLink from="M-AUDIO-PERSISTENCE" to="M-INFRASTRUCTURE" relation="uses-audio-io-persistence" />
+      <CrossLink from="M-AUDIO-PERSISTENCE" to="M-TTS-COORDINATOR" relation="serves-coordinator" />
+    </M-AUDIO-PERSISTENCE>
+
+    <M-CLONE-PREPROCESSING NAME="CloneReferenceAudioPreprocessor" TYPE="CORE_LOGIC" STATUS="implemented">
+      <purpose>Stage and normalize reference audio for clone synthesis outside the synthesis coordinator.</purpose>
+      <path>core/services/clone_preprocessing.py</path>
+      <depends>M-CONFIG, M-CONTRACTS, M-INFRASTRUCTURE, M-ERRORS</depends>
+      <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
+      <annotations>
+        <class-PreparedCloneReference PURPOSE="Staged and normalized clone reference metadata" />
+        <class-CloneReferenceAudioPreprocessor PURPOSE="Context-managed clone reference staging and WAV normalization service" />
+      </annotations>
+      <CrossLink from="M-CLONE-PREPROCESSING" to="M-INFRASTRUCTURE" relation="uses-audio-normalization" />
+      <CrossLink from="M-CLONE-PREPROCESSING" to="M-TTS-COORDINATOR" relation="serves-coordinator" />
+    </M-CLONE-PREPROCESSING>
 
     <M-APPLICATION NAME="TTSApplicationService" TYPE="CORE_LOGIC" STATUS="implemented">
       <purpose>Provide application-level facade for TTS operations including job execution gateway and admission control.</purpose>
@@ -580,9 +662,9 @@
     <M-BOOTSTRAP NAME="CoreBootstrap" TYPE="ENTRY_POINT" STATUS="implemented">
       <purpose>Assemble the full CoreRuntime from settings by wiring all components together via auto-discovery (TTSBackend subclasses + composite manifest) so adding a new backend or model never requires editing this module.</purpose>
       <path>core/bootstrap.py, scripts/runtime_self_check.py</path>
-      <depends>M-CONFIG, M-BACKENDS, M-MODELS, M-DISCOVERY, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-PROFILES</depends>
+      <depends>M-CONFIG, M-BACKENDS, M-MODELS, M-DISCOVERY, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-PROFILES, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-RUNTIME-FACTORY, M-MODEL-LIFECYCLE</depends>
       <verification-ref>V-M-BOOTSTRAP</verification-ref>
-      <implementation-note>Phase 2.8 removes the hardcoded backend list and `model_manifest_path` plumbing from `build_runtime`. The bootstrap now delegates backend discovery to `core.discovery.discover_backend_classes()`, and discovery seeds the four built-in backend modules through a single helper so source-checkout startup remains deterministic without scattered side-effect imports. After discovery, bootstrap constructs each backend through the new `TTSBackend.from_settings(settings, *, metrics)` classmethod factory (overridden in `MLXBackend` to use `mlx_models_dir` and in `QwenFastBackend` to thread `qwen_fast_enabled`), skipping any backend whose constructor raises with a `[Bootstrap][build_backends][SKIP]` warning, and loads the active manifest via `core.models.composite.load_composite_manifest(base_path=settings.model_manifest_path, models_dir=settings.models_dir)` before passing the pre-loaded `ModelManifest` into `BackendRegistry(..., model_manifest=...)` (a new keyword that takes precedence over the legacy `model_manifest_path`). The result is that `bootstrap.py` no longer enumerates concrete backend classes, no longer hardcodes per-backend constructor signatures, and transparently picks up per-family fragments and `.models/` auto-discovery.</implementation-note>
+      <implementation-note>Phase 2.8 removes the hardcoded backend list and `model_manifest_path` plumbing from `build_runtime`. The bootstrap now delegates backend discovery to `core.discovery.discover_backend_classes()`, builds the runtime EngineRegistry through `core.engines.runtime_factory.build_engine_registry(settings)`, configures EngineScheduler policy from typed engine config, wires ModelLifecycleService with the active engine registry for refresh-time cache invalidation, and constructs each backend through the new `TTSBackend.from_settings(settings, *, metrics)` classmethod factory (overridden in `MLXBackend` to use `mlx_models_dir` and in `QwenFastBackend` to thread `qwen_fast_enabled`), skipping any backend whose constructor raises with a `[Bootstrap][build_backends][SKIP]` warning. It then loads the active manifest via `core.models.composite.load_composite_manifest(base_path=settings.model_manifest_path, models_dir=settings.models_dir)` before passing the pre-loaded `ModelManifest` into `BackendRegistry(..., model_manifest=...)` (a new keyword that takes precedence over the legacy `model_manifest_path`). The result is that `bootstrap.py` no longer enumerates concrete backend classes, no longer hardcodes per-backend constructor signatures, and keeps engine composition, scheduler policy, and lifecycle invalidation outside the service layer.</implementation-note>
       <annotations>
         <class-CoreRuntime PURPOSE="Frozen dataclass holding all wired runtime components" />
         <fn-build_runtime PURPOSE="Factory function that assembles CoreRuntime from settings via auto-discovered backends and composite manifest" />

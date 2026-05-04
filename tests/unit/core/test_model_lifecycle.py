@@ -2,7 +2,7 @@
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Verify ModelLifecycleService delete/refresh/submit_download/get_download semantics for the HTTP control plane.
-#   SCOPE: delete_model success and 404 paths, default no-downloader-configured failure, custom downloader success path, refresh hook detection, get_download/list_downloads tracking.
+#   SCOPE: delete_model success and 404 paths, default no-downloader-configured failure, custom downloader success path, refresh hook detection, engine-cache invalidation, get_download/list_downloads tracking.
 #   DEPENDS: M-MODEL-LIFECYCLE
 #   LINKS: V-M-MODEL-LIFECYCLE
 #   ROLE: TEST
@@ -19,12 +19,13 @@
 #   test_submit_download_uses_injected_downloader - Verifies an injected downloader runs synchronously when run_async is False.
 #   test_submit_download_unknown_model_fails - Verifies unknown model_ids fail before the downloader runs.
 #   test_refresh_uses_reload_manifest_hook - Verifies refresh prefers reload_manifest when available.
+#   test_refresh_clears_cacheable_registered_engines - Verifies refresh clears cacheable engine wrappers before calling registry hooks.
 #   test_refresh_reports_unsupported_when_no_hook - Verifies refresh returns supported=False when no hook is exposed.
 #   test_get_download_returns_none_for_unknown_id - Verifies get_download returns None for unknown ids.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Phase 4.13: introduced unit coverage for ModelLifecycleService delete/submit_download/get_download/refresh paths]
+#   LAST_CHANGE: [v1.1.0 - Added refresh coverage for engine cache invalidation via cacheable registered engines]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -32,14 +33,22 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
+from core.backends.registry import BackendRegistry
+from core.engines.contracts import AudioBuffer, EngineAvailability, EngineCapabilities, ModelHandle, SynthesisJob, TTSEngine
+from core.engines.registry import EngineRegistry
+from core.models.catalog import MODEL_SPECS
+from core.models.manifest import ModelManifest
 from core.services.model_lifecycle import (
     MODEL_DOWNLOAD_STATUSES,
     ModelDownloadJob,
     ModelLifecycleService,
 )
+from core.services.model_registry import ModelRegistry
+from tests.unit.core.test_backend_registry import StubBackend
 
 pytestmark = pytest.mark.unit
 
@@ -149,7 +158,87 @@ def test_refresh_uses_reload_manifest_hook(tmp_path: Path) -> None:
     assert outcome["supported"] is True
     assert outcome["method"] == "reload_manifest"
     assert outcome["model_count"] == 1
+    assert outcome["cleared_engine_caches"] == 0
     assert calls == ["reload_manifest"]
+
+
+def test_refresh_clears_cacheable_registered_engines(tmp_path: Path) -> None:
+    spec = _make_spec(folder="ModelA")
+    calls: list[str] = []
+    registry = _make_registry((spec,), reload_calls=calls)
+
+    class _CacheableEngine(TTSEngine):
+        key = "cacheable-test-engine"
+        label = "Cacheable Test Engine"
+
+        def __init__(self) -> None:
+            self.clear_calls = 0
+
+        def capabilities(self) -> EngineCapabilities:
+            return EngineCapabilities(capabilities=("preset_speaker_tts",))
+
+        def availability(self) -> EngineAvailability:
+            return EngineAvailability(engine_key=self.key, is_available=True)
+
+        def load_model(self, *, spec, backend_key: str, model_path) -> ModelHandle:
+            return ModelHandle(
+                spec=spec,
+                runtime_model=object(),
+                resolved_path=model_path,
+                engine_key=self.key,
+                backend_key=backend_key,
+                family_key=spec.family_key,
+            )
+
+        def synthesize(self, handle: ModelHandle, job: SynthesisJob) -> AudioBuffer:
+            return AudioBuffer(waveform=b"", sample_rate=24000)
+
+        def clear_cache(self) -> None:
+            self.clear_calls += 1
+
+    cacheable_engine = _CacheableEngine()
+    engine_registry = EngineRegistry(((cacheable_engine, None, "test"),))
+    service = ModelLifecycleService(
+        models_dir=tmp_path,
+        registry=registry,
+        engine_registry=engine_registry,
+    )
+
+    outcome = service.refresh()
+
+    assert outcome["supported"] is True
+    assert outcome["method"] == "reload_manifest"
+    assert outcome["cleared_engine_caches"] == 1
+    assert cacheable_engine.clear_calls == 1
+    assert calls == ["reload_manifest"]
+
+
+def test_refresh_uses_real_model_registry_reload_hook(tmp_path: Path) -> None:
+    backend = StubBackend(key="torch", available=True, platform_supported=True)
+    manifest_one = cast(
+        ModelManifest,
+        type("_ManifestOne", (), {"enabled_models": lambda self: (MODEL_SPECS["1"],)})(),
+    )
+    manifest_two = cast(
+        ModelManifest,
+        type("_ManifestTwo", (), {"enabled_models": lambda self: (MODEL_SPECS["1"], MODEL_SPECS["3"]) })(),
+    )
+    manifest_queue: list[ModelManifest] = [manifest_two]
+    backend_registry = BackendRegistry(
+        [backend],
+        requested_backend="torch",
+        autoselect=True,
+        model_manifest=manifest_one,
+        model_manifest_loader=lambda: manifest_queue.pop(0),
+    )
+    registry = ModelRegistry(backend_registry=backend_registry)
+    service = ModelLifecycleService(models_dir=tmp_path, registry=registry)
+
+    outcome = service.refresh()
+
+    assert outcome["supported"] is True
+    assert outcome["method"] == "reload_manifest"
+    assert outcome["model_count"] == 2
 
 
 def test_refresh_reports_unsupported_when_no_hook(tmp_path: Path) -> None:
@@ -160,6 +249,7 @@ def test_refresh_reports_unsupported_when_no_hook(tmp_path: Path) -> None:
 
     assert outcome["supported"] is False
     assert outcome["model_count"] == 0
+    assert outcome["cleared_engine_caches"] == 0
 
 
 def test_get_download_returns_none_for_unknown_id(tmp_path: Path) -> None:

@@ -1,5 +1,5 @@
 # FILE: tests/unit/core/test_tts_service.py
-# VERSION: 1.7.0
+# VERSION: 1.8.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for the core TTS service orchestration and logging.
 #   SCOPE: Clone synthesis, family-adapter discovery wiring, duplicate-key validation, language normalization, structured log emission, guarded engine-route fallback behavior, generic Qwen3 and OmniVoice engine routing, and scheduler gateway execution coverage
@@ -26,15 +26,16 @@
 #   test_synthesize_clone_preserves_missing_ref_text - Verifies clone requests preserve None ref_text in the kwargs
 #   test_tts_service_emits_structured_logs - Verifies structured synthesis logs include mode and language context
 #   test_tts_service_routes_omnivoice_family_payload_to_engine - Verifies the OmniVoice family routes its payload through the generic engine execution contract
-#   test_build_engine_registry_returns_none_when_flag_is_disabled - Verifies engine wiring stays absent unless the explicit runtime flag is enabled
+#   test_build_engine_registry_includes_piper_runtime_engine - Verifies runtime engine composition always includes the migrated Piper engine
 #   test_tts_service_routes_legacy_backend_execution_through_scheduler_gateway - Verifies the legacy backend lane executes through EngineScheduler instead of direct InferenceGuard acquire/release
 #   test_tts_service_routes_qwen3_custom_through_engine_scheduler_gateway - Verifies the Qwen3 custom engine lane executes through EngineScheduler without backend.execute fallback
+#   test_tts_service_processes_engine_audio_before_persistence - Verifies engine-generated audio passes through AudioPipeline before persistence
 #   test_tts_service_routes_qwen3_engine_execution_through_scheduler_gateway - Verifies the Qwen3 engine lane executes through EngineScheduler for design and clone synthesis without backend.execute fallback
 #   test_tts_service_routes_piper_engine_execution_through_scheduler_gateway - Verifies the Piper engine lane executes through EngineScheduler when the explicit engine path is enabled
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.7.0 - Task 16: replaced OmniVoice backend-route coverage with generic OmniVoice engine-route coverage and expanded engine registry expectations]
+#   LAST_CHANGE: [v1.9.0 - Added AudioPipeline integration coverage for engine-generated audio]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -49,13 +50,14 @@ from core.backends.base import ExecutionRequest, LoadedModelHandle, TTSBackend
 from core.config import CoreSettings
 from core.contracts import BackendRouteInfo
 from core.contracts.commands import CustomVoiceCommand, VoiceCloneCommand, VoiceDesignCommand
-from core.engines import OmniVoiceTorchEngine, Qwen3TorchEngine
 from core.contracts.synthesis import ExecutionPlan
 from core.discovery import discover_family_adapter_classes
 from core.engines import EngineScheduler
+from core.engines.runtime_factory import build_engine_registry
+from core.errors import TTSGenerationError
 from core.model_families.base import FamilyPreparedExecution, ModelFamilyAdapter
 from core.models.catalog import MODEL_SPECS, ModelSpec
-from core.services.tts_service import TTSService, _build_engine_registry, _build_family_adapter_map
+from core.services.tts_service import TTSService, _build_family_adapter_map
 from tests.support.api_fakes import extract_json_logs, make_wav_bytes
 
 pytestmark = pytest.mark.unit
@@ -131,6 +133,9 @@ class StubRegistry:
         )
 
     def backend_for_spec(self, spec) -> TTSBackend:
+        return self.backend
+
+    def legacy_backend_for_spec(self, spec) -> TTSBackend:
         return self.backend
 
     def backend_route_for_spec(self, spec) -> BackendRouteInfo:
@@ -233,7 +238,11 @@ def test_tts_service_builds_family_adapters_from_discovery(monkeypatch: pytest.M
         lambda: (_DiscoveredAdapter,),
     )
 
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
 
     assert tuple(service._family_adapters) == ("_discovered_family",)
     assert isinstance(service._family_adapters["_discovered_family"], _DiscoveredAdapter)
@@ -249,21 +258,61 @@ def test_default_discovery_filters_test_local_family_adapters(tmp_path: Path) ->
     registry = StubRegistry()
 
     discovered_keys = {cls.key for cls in discover_family_adapter_classes(include_entry_points=False)}
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
 
     assert "duplicate-family" not in discovered_keys
     assert "_discovered_family" not in discovered_keys
     assert set(service._family_adapters) == {"qwen3_tts", "omnivoice", "piper"}
 
 
-def test_synthesize_clone_passes_ref_audio_as_string(tmp_path: Path):
+def test_synthesize_clone_passes_ref_audio_as_string(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     settings = _make_core_settings(tmp_path)
     ref_audio_path = tmp_path / "reference.wav"
     ref_audio_path.write_bytes(make_wav_bytes())
     registry = StubRegistry()
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
-    captured_kwargs: dict = {}
-    registry.backend.execute = _capture_execute(captured_kwargs)
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
+    captured_payload: dict[str, object] = {}
+
+    class _FakeQwenRuntime:
+        def generate_voice_clone(self, *, text: str, language: str, ref_audio: str, ref_text: str | None):
+            captured_payload.update(
+                {
+                    "text": text,
+                    "language": language,
+                    "ref_audio": ref_audio,
+                    "ref_text": ref_text,
+                }
+            )
+            return ([[0.0] * 48000], 24000)
+
+    monkeypatch.setattr(
+        "core.engines.qwen3.load_qwen_tts_model_cls",
+        lambda: type(
+            "_FakeQwenModelClass",
+            (),
+            {"from_pretrained": staticmethod(lambda model_path, device_map, dtype: _FakeQwenRuntime())},
+        ),
+    )
+    monkeypatch.setattr("core.engines.qwen3.torch", object())
+    monkeypatch.setattr(
+        "soundfile.write",
+        lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
+    )
+    clone_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "clone"
+    )
+    (settings.models_dir / clone_spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
 
     result = service.synthesize_clone(
         VoiceCloneCommand(
@@ -274,19 +323,48 @@ def test_synthesize_clone_passes_ref_audio_as_string(tmp_path: Path):
     )
 
     assert result.mode == "clone"
-    assert isinstance(captured_kwargs["ref_audio"], str)
-    assert captured_kwargs["ref_audio"].endswith("reference.wav")
-    assert captured_kwargs["language"] == "auto"
+    assert isinstance(captured_payload["ref_audio"], str)
+    assert str(captured_payload["ref_audio"]).endswith("reference.wav")
+    assert captured_payload["language"] == "auto"
 
 
-def test_synthesize_clone_passes_explicit_language(tmp_path: Path):
+def test_synthesize_clone_passes_explicit_language(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     settings = _make_core_settings(tmp_path)
     ref_audio_path = tmp_path / "reference.wav"
     ref_audio_path.write_bytes(make_wav_bytes())
     registry = StubRegistry()
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
-    captured_kwargs: dict = {}
-    registry.backend.execute = _capture_execute(captured_kwargs)
+    captured_payload: dict[str, object] = {}
+
+    class _FakeQwenRuntime:
+        def generate_voice_clone(self, *, text: str, language: str, ref_audio: str, ref_text: str | None):
+            captured_payload.update({"language": language, "ref_audio": ref_audio, "ref_text": ref_text})
+            return ([[0.0] * 48000], 24000)
+
+    monkeypatch.setattr(
+        "core.engines.qwen3.load_qwen_tts_model_cls",
+        lambda: type(
+            "_FakeQwenModelClass",
+            (),
+            {"from_pretrained": staticmethod(lambda model_path, device_map, dtype: _FakeQwenRuntime())},
+        ),
+    )
+    monkeypatch.setattr("core.engines.qwen3.torch", object())
+    monkeypatch.setattr(
+        "soundfile.write",
+        lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
+    )
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
+    clone_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "clone"
+    )
+    (settings.models_dir / clone_spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
 
     service.synthesize_clone(
         VoiceCloneCommand(
@@ -297,17 +375,46 @@ def test_synthesize_clone_passes_explicit_language(tmp_path: Path):
         )
     )
 
-    assert captured_kwargs["language"] == "ru"
+    assert captured_payload["language"] == "ru"
 
 
-def test_synthesize_clone_preserves_missing_ref_text(tmp_path: Path):
+def test_synthesize_clone_preserves_missing_ref_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     settings = _make_core_settings(tmp_path)
     ref_audio_path = tmp_path / "reference.wav"
     ref_audio_path.write_bytes(make_wav_bytes())
     registry = StubRegistry()
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
-    captured_kwargs: dict = {}
-    registry.backend.execute = _capture_execute(captured_kwargs)
+    captured_payload: dict[str, object] = {}
+
+    class _FakeQwenRuntime:
+        def generate_voice_clone(self, *, text: str, language: str, ref_audio: str, ref_text: str | None):
+            captured_payload.update({"ref_audio": ref_audio, "ref_text": ref_text})
+            return ([[0.0] * 48000], 24000)
+
+    monkeypatch.setattr(
+        "core.engines.qwen3.load_qwen_tts_model_cls",
+        lambda: type(
+            "_FakeQwenModelClass",
+            (),
+            {"from_pretrained": staticmethod(lambda model_path, device_map, dtype: _FakeQwenRuntime())},
+        ),
+    )
+    monkeypatch.setattr("core.engines.qwen3.torch", object())
+    monkeypatch.setattr(
+        "soundfile.write",
+        lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
+    )
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
+    clone_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "clone"
+    )
+    (settings.models_dir / clone_spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
 
     service.synthesize_clone(
         VoiceCloneCommand(
@@ -317,18 +424,45 @@ def test_synthesize_clone_preserves_missing_ref_text(tmp_path: Path):
         )
     )
 
-    assert "ref_text" in captured_kwargs
-    assert captured_kwargs["ref_text"] is None
+    assert "ref_text" in captured_payload
+    assert captured_payload["ref_text"] is None
 
 
-def test_tts_service_emits_structured_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+def test_tts_service_emits_structured_logs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
     settings = _make_core_settings(tmp_path)
     registry = LoggingRegistry()
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
     ref_audio_path = tmp_path / "reference.wav"
     ref_audio_path.write_bytes(make_wav_bytes())
-    captured_kwargs: dict = {}
-    registry.backend.execute = _capture_execute(captured_kwargs)
+    clone_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "clone"
+    )
+    (settings.models_dir / clone_spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
+
+    class _FakeQwenRuntime:
+        def generate_voice_clone(self, *, text: str, language: str, ref_audio: str, ref_text: str | None):
+            return ([[0.0] * 48000], 24000)
+
+    monkeypatch.setattr(
+        "core.engines.qwen3.load_qwen_tts_model_cls",
+        lambda: type(
+            "_FakeQwenModelClass",
+            (),
+            {"from_pretrained": staticmethod(lambda model_path, device_map, dtype: _FakeQwenRuntime())},
+        ),
+    )
+    monkeypatch.setattr("core.engines.qwen3.torch", object())
+    monkeypatch.setattr(
+        "soundfile.write",
+        lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
+    )
     caplog.set_level(logging.INFO)
 
     result = service.synthesize_clone(
@@ -342,9 +476,9 @@ def test_tts_service_emits_structured_logs(tmp_path: Path, caplog: pytest.LogCap
     assert result.mode == "clone"
     started_logs = extract_json_logs(caplog, "[TTSService][synthesize_clone][SYNTHESIZE_CLONE]")
     completed_logs = extract_json_logs(
-        caplog, "[TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]"
+        caplog, "[TTSService][_run_engine_generation][BLOCK_PERSIST_OUTPUT]"
     )
-    assert registry.calls == 1
+    assert registry.calls == 0
     assert any(
         item["mode"] == "clone"
         and item["text_length"] == len("Clone this")
@@ -367,16 +501,40 @@ def test_tts_service_uses_result_cache_to_short_circuit_repeat_requests(tmp_path
     service = TTSService(  # type: ignore[arg-type]
         registry=registry,
         settings=settings,
+        engine_registry=build_engine_registry(settings),
         result_cache=cache,
     )
-    captured_kwargs: dict = {}
     call_counter = {"n": 0}
 
-    def _execute(request: ExecutionRequest) -> None:
-        call_counter["n"] += 1
-        _capture_execute(captured_kwargs)(request)
+    class _FakeQwenRuntime:
+        def generate_custom_voice(
+            self,
+            *,
+            text: str,
+            language: str,
+            speaker: str,
+            instruct: str,
+            speed: float,
+        ):
+            call_counter["n"] += 1
+            return ([[0.0] * 8], 24000)
 
-    registry.backend.execute = _execute
+    from pytest import MonkeyPatch
+
+    monkeypatch = MonkeyPatch()
+    monkeypatch.setattr(
+        "core.engines.qwen3.load_qwen_tts_model_cls",
+        lambda: type(
+            "_FakeQwenModelClass",
+            (),
+            {"from_pretrained": staticmethod(lambda model_path, device_map, dtype: _FakeQwenRuntime())},
+        ),
+    )
+    monkeypatch.setattr("core.engines.qwen3.torch", object())
+    monkeypatch.setattr(
+        "soundfile.write",
+        lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
+    )
 
     qwen_custom_model = next(
         spec.model_id
@@ -390,9 +548,17 @@ def test_tts_service_uses_result_cache_to_short_circuit_repeat_requests(tmp_path
         instruct="Normal tone",
         speed=1.0,
     )
+    custom_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "custom"
+    )
+    (settings.models_dir / custom_spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
 
-    first = service.synthesize_custom(command)
-    second = service.synthesize_custom(command)
+    try:
+        first = service.synthesize_custom(command)
+        second = service.synthesize_custom(command)
+    finally:
+        monkeypatch.undo()
 
     assert call_counter["n"] == 1
     assert first.audio.bytes_data == second.audio.bytes_data
@@ -437,7 +603,11 @@ def test_tts_service_routes_omnivoice_family_payload_to_engine(
         lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
     )
 
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
 
     result = service.synthesize_design(
         VoiceDesignCommand(
@@ -452,13 +622,12 @@ def test_tts_service_routes_omnivoice_family_payload_to_engine(
     assert result.audio.bytes_data.startswith(b"RIFF")
 
 
-def test_build_engine_registry_returns_none_when_flag_is_disabled(tmp_path: Path) -> None:
+def test_build_engine_registry_includes_piper_runtime_engine(tmp_path: Path) -> None:
     settings = _make_core_settings(tmp_path)
 
-    registry = _build_engine_registry(settings)
+    registry = build_engine_registry(settings)
 
-    assert registry is not None
-    assert registry.keys() == ("qwen3-torch", "omnivoice-torch")
+    assert registry.keys() == ("qwen3-torch", "omnivoice-torch", "piper-onnx")
 
 
 def test_tts_service_routes_qwen3_custom_through_engine_scheduler_gateway(
@@ -523,6 +692,7 @@ def test_tts_service_routes_qwen3_custom_through_engine_scheduler_gateway(
         registry=registry,
         settings=settings,
         scheduler=scheduler,
+        engine_registry=build_engine_registry(settings),
     )
     custom_spec = next(
         spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "custom"
@@ -538,6 +708,131 @@ def test_tts_service_routes_qwen3_custom_through_engine_scheduler_gateway(
     assert result.audio.bytes_data.startswith(b"RIFF")
     assert execute_calls["count"] == 0
     assert scheduler_calls == [{"engine_key": "qwen3-torch", "device_key": None}]
+
+
+def test_tts_service_processes_engine_audio_before_persistence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    registry = StubRegistry()
+    settings = _make_core_settings(tmp_path)
+
+    class _FakeQwenRuntime:
+        def generate_custom_voice(
+            self,
+            *,
+            text: str,
+            language: str,
+            speaker: str,
+            instruct: str,
+            speed: float,
+        ):
+            return ([[0.0] * 8], 24000)
+
+    class _RecordingPipeline:
+        def __init__(self) -> None:
+            self.seen_waveform: bytes | None = None
+
+        def process(self, audio_buffer):
+            self.seen_waveform = bytes(audio_buffer.waveform)
+            return audio_buffer.__class__(
+                waveform=b"processed-audio",
+                sample_rate=audio_buffer.sample_rate,
+                audio_format=audio_buffer.audio_format,
+            )
+
+    pipeline = _RecordingPipeline()
+    monkeypatch.setattr(
+        "core.engines.qwen3.load_qwen_tts_model_cls",
+        lambda: type(
+            "_FakeQwenModelClass",
+            (),
+            {"from_pretrained": staticmethod(lambda model_path, device_map, dtype: _FakeQwenRuntime())},
+        ),
+    )
+    monkeypatch.setattr("core.engines.qwen3.torch", object())
+    monkeypatch.setattr(
+        "soundfile.write",
+        lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
+    )
+
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        scheduler=EngineScheduler(),
+        engine_registry=build_engine_registry(settings),
+    )
+    service.coordinator._audio_pipeline = pipeline  # type: ignore[assignment]
+    custom_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "custom"
+    )
+    (settings.models_dir / custom_spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
+
+    result = service.synthesize_custom(CustomVoiceCommand(text="Hello", speaker="Ryan"))
+
+    assert pipeline.seen_waveform is not None
+    assert result.audio.bytes_data == b"processed-audio"
+
+
+def test_tts_service_materializes_engine_audio_via_persistence_service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    registry = StubRegistry()
+    settings = _make_core_settings(tmp_path)
+    captured: dict[str, object] = {}
+
+    class _FakeQwenRuntime:
+        def generate_custom_voice(
+            self,
+            *,
+            text: str,
+            language: str,
+            speaker: str,
+            instruct: str,
+            speed: float,
+        ):
+            return ([[0.0] * 8], 24000)
+
+    monkeypatch.setattr(
+        "core.engines.qwen3.load_qwen_tts_model_cls",
+        lambda: type(
+            "_FakeQwenModelClass",
+            (),
+            {"from_pretrained": staticmethod(lambda model_path, device_map, dtype: _FakeQwenRuntime())},
+        ),
+    )
+    monkeypatch.setattr("core.engines.qwen3.torch", object())
+    monkeypatch.setattr(
+        "soundfile.write",
+        lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
+    )
+
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        scheduler=EngineScheduler(),
+        engine_registry=build_engine_registry(settings),
+    )
+    original_materialize = service.coordinator._audio_persistence.materialize_engine_generation
+
+    def _capture_materialize(**kwargs):
+        captured.update(kwargs)
+        return original_materialize(**kwargs)
+
+    monkeypatch.setattr(service.coordinator._audio_persistence, "materialize_engine_generation", _capture_materialize)
+    custom_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "custom"
+    )
+    (settings.models_dir / custom_spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
+
+    result = service.synthesize_custom(CustomVoiceCommand(text="Hello", speaker="Ryan"))
+
+    assert captured["spec"] == custom_spec
+    assert captured["text"] == "Hello"
+    assert captured["backend_key"] == "torch"
+    assert callable(captured["generate_waveform"])
+    assert result.audio.bytes_data.startswith(b"RIFF")
 
 
 def test_tts_service_routes_qwen3_engine_execution_through_scheduler_gateway(
@@ -582,6 +877,7 @@ def test_tts_service_routes_qwen3_engine_execution_through_scheduler_gateway(
         registry=registry,
         settings=settings,
         scheduler=scheduler,
+        engine_registry=build_engine_registry(settings),
     )
     design_spec = next(
         spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "design"
@@ -635,6 +931,7 @@ def test_tts_service_routes_legacy_backend_execution_through_scheduler_gateway(t
         registry=registry,
         settings=settings,
         scheduler=scheduler,
+        engine_registry=build_engine_registry(settings),
     )
     service.coordinator._resolve_runtime_engine = lambda **kwargs: None  # type: ignore[method-assign]
     captured_kwargs: dict = {}
@@ -660,6 +957,42 @@ def test_tts_service_routes_legacy_backend_execution_through_scheduler_gateway(t
     assert result.mode == "design"
     assert captured_kwargs["mode"] == "design"
     assert scheduler_calls == [{"engine_key": "tts-service-compat", "device_key": None}]
+
+
+def test_tts_service_does_not_fallback_to_legacy_backend_for_migrated_family(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    settings = _make_core_settings(tmp_path)
+    registry = StubRegistry()
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
+    custom_spec = next(
+        spec for spec in MODEL_SPECS.values() if spec.family == "Qwen3-TTS" and spec.mode == "custom"
+    )
+    (settings.models_dir / custom_spec.folder).mkdir(parents=True, exist_ok=True)
+    registry.backend.resolve_model_path = lambda folder_name: settings.models_dir / folder_name  # type: ignore[method-assign]
+    execute_calls = {"count": 0}
+
+    def fail_execute(request: ExecutionRequest) -> None:
+        execute_calls["count"] += 1
+        raise AssertionError("legacy backend path must not run for migrated families")
+
+    registry.backend.execute = fail_execute
+    monkeypatch.setattr(
+        service.coordinator,
+        "_resolve_runtime_engine",
+        lambda **kwargs: (_ for _ in ()).throw(
+            TTSGenerationError("No runtime engine is registered for the requested execution path")
+        ),
+    )
+
+    with pytest.raises(TTSGenerationError, match="No runtime engine is registered"):
+        service.synthesize_custom(CustomVoiceCommand(text="Hello", speaker="Ryan"))
+
+    assert execute_calls["count"] == 0
 
 
 def test_tts_service_routes_piper_engine_execution_through_scheduler_gateway(
@@ -704,6 +1037,7 @@ def test_tts_service_routes_piper_engine_execution_through_scheduler_gateway(
         registry=registry,
         settings=settings,
         scheduler=scheduler,
+        engine_registry=build_engine_registry(settings),
     )
 
     result = service.synthesize_custom(
@@ -775,6 +1109,7 @@ def test_tts_service_routes_omnivoice_engine_execution_through_scheduler_gateway
         registry=registry,
         settings=settings,
         scheduler=scheduler,
+        engine_registry=build_engine_registry(settings),
     )
 
     custom_result = service.synthesize_custom(

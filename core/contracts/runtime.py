@@ -21,9 +21,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Protocol, TypedDict
 
-from core.backends.base import LoadedModelHandle, TTSBackend
+from core.backends.base import ExecutionRequest, LoadedModelHandle
 from core.models.catalog import ModelSpec
 
 
@@ -32,15 +33,28 @@ class BackendRouteInfo(TypedDict, total=False):
     execution_backend: str
 
 
+class RuntimeBackendView(Protocol):
+    key: str
+    label: str
+
+
+class RuntimeEngineBackend(RuntimeBackendView, Protocol):
+    def resolve_model_path(self, folder_name: str) -> Path | None: ...
+
+
+class RuntimeLegacyExecutionBackend(RuntimeBackendView, Protocol):
+    def execute(self, request: ExecutionRequest) -> None: ...
+
+
 class RuntimePlanningRegistry(Protocol):
     @property
-    def backend(self) -> TTSBackend: ...
+    def backend(self) -> RuntimeBackendView: ...
 
     def get_model_spec(
         self, model_name: str | None = None, mode: str | None = None
     ) -> ModelSpec: ...
 
-    def backend_for_spec(self, spec: ModelSpec) -> TTSBackend: ...
+    def backend_for_spec(self, spec: ModelSpec) -> RuntimeEngineBackend: ...
 
     def backend_route_for_spec(self, spec: ModelSpec) -> BackendRouteInfo: ...
 
@@ -50,9 +64,14 @@ class RuntimeExecutionRegistry(RuntimePlanningRegistry, Protocol):
         self, model_name: str | None = None, mode: str | None = None
     ) -> tuple[ModelSpec, LoadedModelHandle]: ...
 
+    def legacy_backend_for_spec(self, spec: ModelSpec) -> RuntimeLegacyExecutionBackend: ...
+
 
 __all__ = [
     "BackendRouteInfo",
+    "RuntimeBackendView",
+    "RuntimeEngineBackend",
+    "RuntimeLegacyExecutionBackend",
     "RuntimeExecutionRegistry",
     "RuntimePlanningRegistry",
 ]

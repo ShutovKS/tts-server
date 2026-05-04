@@ -72,8 +72,26 @@ class ModelRegistry:
     def backend_for_spec(self, spec: ModelSpec):
         return self.backend_registry.resolve_backend_for_spec(spec)
 
+    def legacy_backend_for_spec(self, spec: ModelSpec):
+        return self.backend_registry.resolve_backend_for_spec(spec)
+
     def backend_route_for_spec(self, spec: ModelSpec) -> dict[str, Any]:
         return self.backend_registry.explain_backend_route_for_spec(spec)
+
+    # START_CONTRACT: reload_manifest
+    #   PURPOSE: Refresh the active manifest-backed model catalog and rebuild split registry surfaces after the backing model layout changes.
+    #   INPUTS: {}
+    #   OUTPUTS: { None }
+    #   SIDE_EFFECTS: Reloads the backend registry manifest, rebuilds catalog/artifact/runtime registry helpers, resets preload status, and reapplies preload policy.
+    #   LINKS: M-MODEL-REGISTRY, M-RUNTIME-MODEL-REGISTRY, M-ARTIFACT-REGISTRY
+    # END_CONTRACT: reload_manifest
+    def reload_manifest(self) -> None:
+        self.backend_registry.reload_manifest()
+        self.catalog = ModelCatalogRegistry(self.backend_registry.model_specs)
+        self.artifacts = ArtifactRegistry(self.catalog, self.backend_registry)
+        self.runtime_models = RuntimeModelRegistry(self.artifacts, self.preload_report)
+        self._preload_report = self._build_preload_report(status="not_started")
+        self._apply_preload_policy()
 
     @property
     def model_specs(self) -> tuple[ModelSpec, ...]:

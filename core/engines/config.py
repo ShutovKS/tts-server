@@ -1,8 +1,8 @@
 # FILE: core/engines/config.py
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Define typed and discriminated engine configuration models for future engine registry filtering and compatibility wiring.
-#   SCOPE: engine config base models, explicit disabled config, enabled engine variants, collection validation, and parsing helpers
+#   PURPOSE: Define typed and discriminated engine configuration models for engine registry filtering, scheduler policy, and runtime compatibility wiring.
+#   SCOPE: engine config base models, explicit disabled config, enabled engine variants, per-engine runtime policy fields, collection validation, and parsing helpers
 #   DEPENDS: pydantic
 #   LINKS: M-ENGINE-CONFIG, M-ENGINE-CONTRACTS
 #   ROLE: CONFIG
@@ -22,7 +22,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Phase 2 engine wave: introduced discriminated engine config models with a deterministic disabled case, typed shared fields, and params escape hatches]
+#   LAST_CHANGE: [v1.1.0 - Added per-engine runtime policy fields for scheduler tuning and model-cache sizing]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -70,6 +70,12 @@ class _EnabledEngineConfig(_EngineModel):
     capabilities: tuple[str, ...]
     priority: int = 100
     enabled: Literal[True] = True
+    max_active: int = 1
+    max_queued: int = 0
+    submit_timeout_seconds: float = 0.0
+    inference_timeout_seconds: float | None = None
+    device: str | None = None
+    model_cache_size: int = 1
     params: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("name", "family", mode="before")
@@ -96,6 +102,48 @@ class _EnabledEngineConfig(_EngineModel):
     def _validate_priority(cls, value: int) -> int:
         if value < 0:
             raise ValueError("priority must be >= 0")
+        return value
+
+    @field_validator("max_active")
+    @classmethod
+    def _validate_max_active(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("max_active must be at least 1")
+        return value
+
+    @field_validator("max_queued")
+    @classmethod
+    def _validate_max_queued(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("max_queued must be at least 0")
+        return value
+
+    @field_validator("submit_timeout_seconds")
+    @classmethod
+    def _validate_submit_timeout(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("submit_timeout_seconds must be at least 0")
+        return value
+
+    @field_validator("inference_timeout_seconds")
+    @classmethod
+    def _validate_inference_timeout(cls, value: float | None) -> float | None:
+        if value is not None and value <= 0:
+            raise ValueError("inference_timeout_seconds must be greater than 0 when provided")
+        return value
+
+    @field_validator("device", mode="before")
+    @classmethod
+    def _normalize_device(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        return _normalize_required_text(value, field_name="device")
+
+    @field_validator("model_cache_size")
+    @classmethod
+    def _validate_model_cache_size(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("model_cache_size must be at least 0")
         return value
 
     @model_validator(mode="after")

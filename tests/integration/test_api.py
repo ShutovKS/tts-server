@@ -502,7 +502,7 @@ def _install_lifecycle_service(client: TestClient, *, models_dir: Path, specs: t
     from core.services.model_lifecycle import ModelLifecycleService
 
     fake_registry = SimpleNamespace(model_specs=specs)
-    client.app.state.model_lifecycle = ModelLifecycleService(
+    _state(client).model_lifecycle = ModelLifecycleService(
         models_dir=models_dir, registry=fake_registry
     )
 
@@ -966,7 +966,7 @@ def test_async_custom_job_submit_status_result_flow(client: TestClient):
 
     job_id = submit_payload["job_id"]
     status_payload = None
-    status_headers: dict[str, str] | None = None
+    status_headers: Any | None = None
     for _ in range(50):
         status = client.get(f"/api/v1/tts/jobs/{job_id}")
         assert status.status_code == 200
@@ -2172,7 +2172,7 @@ def test_clone_upload_uses_isolated_staging_dir_and_cleans_up(client: TestClient
     assert not clone_request.ref_audio_path.exists()
 
 
-def test_clone_endpoint_returns_controlled_error_when_generation_artifact_missing(
+def test_clone_endpoint_returns_controlled_error_when_engine_registry_is_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     settings = ServerSettings(
@@ -2189,7 +2189,6 @@ def test_clone_endpoint_returns_controlled_error_when_generation_artifact_missin
     app = create_app(settings)
     app.state.registry = StubRegistry()
     tts_registry = StubRegistry()
-    tts_registry.backend.execute = lambda request: None
     app.state.tts_service = TTSService(
         registry=cast(RuntimeExecutionRegistry, tts_registry), settings=settings
     )
@@ -2208,8 +2207,12 @@ def test_clone_endpoint_returns_controlled_error_when_generation_artifact_missin
     payload = response.json()
     assert payload["code"] == "generation_failed"
     assert payload["message"] == "Audio generation failed"
-    assert payload["details"]["reason"].startswith("Generated audio file not found in ")
-    assert "/private/" not in payload["details"]["reason"]
-    assert "/var/" not in payload["details"]["reason"]
-    assert payload["details"]["failure_kind"] == "missing_artifact"
+    assert (
+        payload["details"]["reason"]
+        == "Runtime engine registry is required for the requested execution path"
+    )
+    assert payload["details"]["family"] == "qwen3_tts"
+    assert payload["details"]["capability"] == "reference_voice_clone"
+    assert payload["details"]["backend"] == "torch"
+    assert payload["details"]["engine_required"] is True
     assert payload["request_id"]

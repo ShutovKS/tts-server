@@ -167,10 +167,9 @@ Repository = "https://github.com/maksglebov5757-bit/tts-server"
 Issues = "https://github.com/maksglebov5757-bit/tts-server/issues"
 
 # START_BLOCK_ENTRY_POINTS
-# Plugin discovery surface. External packages can register additional backends
-# or model families by exposing the same group keys in their own pyproject.
-# The current built-in implementations are listed here so consumers can see the
-# canonical extension shape; runtime auto-discovery is wired in a later phase.
+# Plugin discovery surface. External packages can register additional backends,
+# model families, or TTSEngine implementations by exposing the same group keys
+# in their own pyproject.
 [project.entry-points."tts_server.backends"]
 torch = "core.backends.torch_backend:TorchBackend"
 mlx = "core.backends.mlx_backend:MLXBackend"
@@ -181,6 +180,11 @@ qwen_fast = "core.backends.qwen_fast_backend:QwenFastBackend"
 qwen3_tts = "core.model_families.qwen3:Qwen3FamilyAdapter"
 piper = "core.model_families.piper:PiperFamilyAdapter"
 omnivoice = "core.model_families.omnivoice:OmniVoiceFamilyAdapter"
+
+[project.entry-points."tts_server.engines"]
+qwen3_torch = "core.engines.qwen3:Qwen3TorchEngine"
+piper_onnx = "core.engines.piper:PiperOnnxEngine"
+omnivoice_torch = "core.engines.omnivoice:OmniVoiceTorchEngine"
 # END_BLOCK_ENTRY_POINTS
 
 [project.scripts]

@@ -36,6 +36,7 @@ from core.config import CoreSettings
 from core.contracts import BackendRouteInfo
 from core.contracts.commands import CustomVoiceCommand, VoiceCloneCommand, VoiceDesignCommand
 from core.engines import OmniVoiceTorchEngine, SynthesisJob
+from core.engines.runtime_factory import build_engine_registry
 from core.errors import ModelLoadError, TTSGenerationError
 from core.models.catalog import MODEL_SPECS, ModelSpec
 from core.services.tts_service import TTSService
@@ -290,7 +291,11 @@ def test_tts_service_routes_omnivoice_custom_design_and_clone_through_engine(
         lambda target, data, sample_rate, format=None: _write_fake_wave(target, sample_rate=sample_rate),
     )
 
-    service = TTSService(registry=registry, settings=settings)  # type: ignore[arg-type]
+    service = TTSService(  # type: ignore[arg-type]
+        registry=registry,
+        settings=settings,
+        engine_registry=build_engine_registry(settings),
+    )
     clone_result = service.synthesize_clone(
         VoiceCloneCommand(text="Clone this", ref_audio_path=ref_audio_path, ref_text="Clone this")
     )

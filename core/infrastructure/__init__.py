@@ -12,11 +12,11 @@
 # START_MODULE_MAP
 #   Admission control implementations - Re-export local quota/rate-limit builders
 #   Audio I/O helpers - Re-export ffmpeg checks, audio normalization, persistence, and temp output helpers
-#   Concurrency/runtime adapters - Re-export inference guard and local async job execution implementations
+#   Runtime adapters - Re-export local async job execution implementations
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - GRACE integration: added MODULE_CONTRACT, MODULE_MAP, and function contracts]
+#   LAST_CHANGE: [v1.1.0 - Removed InferenceGuard from the public infrastructure barrel after runtime wiring moved fully to EngineScheduler]
 # END_CHANGE_SUMMARY
 
 from core.infrastructure.admission_control_local import (
@@ -30,7 +30,6 @@ from core.infrastructure.audio_io import (
     read_generated_wav,
     temporary_output_dir,
 )
-from core.infrastructure.concurrency import InferenceGuard
 from core.infrastructure.job_execution_local import (
     LocalBoundedExecutionManager,
     LocalInMemoryJobStore,
@@ -39,7 +38,6 @@ from core.infrastructure.job_execution_local import (
 )
 
 __all__ = [
-    "InferenceGuard",
     "LocalBoundedExecutionManager",
     "LocalInMemoryJobStore",
     "LocalJobArtifactHandler",

@@ -3,7 +3,7 @@
     <objective>Clean layered architecture with a single Phase 1 runtime host: transport adapters depend on shared core, and only the HTTP server owns local runtime and model execution.</objective>
     <non-goal>No distributed or multi-node execution patterns.</non-goal>
     <risk-1>Backend selection at startup must fail fast with explicit diagnostics when no registered backend is actually ready.</risk-1>
-    <risk-2>Scheduler gateway preserves the current single-slot default behavior during migration, while the temporary inference guard compatibility seam must not drift from that bounded execution contract.</risk-2>
+    <risk-2>Scheduler gateway preserves the current single-slot default behavior during migration, and bounded execution semantics must remain policy-driven inside EngineScheduler without reviving a separate guard seam.</risk-2>
     <risk-3>Additional Torch-backed families must isolate family semantics from backend loading so OmniVoice does not regress Qwen3 transport behavior.</risk-3>
     <runtime-objective>Maintain the current multi-platform, multi-backend, multi-model runtime without regressing the Phase 1 server host or the Telegram remote client boundary.</runtime-objective>
     <runtime-invariants>
@@ -205,13 +205,12 @@
 
     <M-INFRASTRUCTURE NAME="Infrastructure" TYPE="DATA_LAYER" LAYER="1" ORDER="2" STATUS="implemented">
       <contract>
-        <purpose>Provide local implementations for job execution, audio I/O, admission control, and concurrency.</purpose>
+        <purpose>Provide local implementations for job execution, audio I/O, and admission control.</purpose>
       </contract>
       <interface>
         <export-LocalBoundedExecutionManager PURPOSE="Local async job execution with bounded concurrency" />
         <export-LocalInMemoryJobStore PURPOSE="In-memory job metadata store" />
         <export-LocalJobArtifactStore PURPOSE="In-memory job artifact storage" />
-        <export-InferenceGuard PURPOSE="Single-slot inference concurrency guard" />
         <export-convert_audio_to_wav_if_needed PURPOSE="Audio format normalization for clone flows" />
         <export-build_rate_limiter PURPOSE="Factory for rate limiter from settings" />
         <export-build_quota_guard PURPOSE="Factory for quota guard from settings" />
@@ -221,7 +220,6 @@
         <source>core/infrastructure/job_execution_local.py</source>
         <source>core/infrastructure/audio_io.py</source>
         <source>core/infrastructure/admission_control_local.py</source>
-        <source>core/infrastructure/concurrency.py</source>
       </target>
       <verification-ref>V-M-INFRASTRUCTURE</verification-ref>
     </M-INFRASTRUCTURE>
@@ -276,13 +274,13 @@
       <interface>
         <export-TTSService PURPOSE="Core synthesis facade that delegates through SynthesisRouter and a scheduler-gated synthesis coordinator for legacy plus engine-backed execution" />
       </interface>
-      <depends>M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS, M-ENGINE-SCHEDULER</depends>
+      <depends>M-MODEL-REGISTRY, M-CONFIG, M-DISCOVERY, M-ERRORS, M-OBSERVABILITY, M-INFRASTRUCTURE, M-MODEL-FAMILY, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS, M-ENGINE-SCHEDULER, M-AUDIO-PERSISTENCE, M-CLONE-PREPROCESSING, M-ENGINE-AUDIO-PIPELINE, M-LEGACY-BACKEND-EXECUTION</depends>
       <target>
         <source>core/services/tts_service.py</source>
       </target>
       <observability>
         <log-prefix>[TTSService]</log-prefix>
-        <critical-block>BLOCK_RUN_GENERATION</critical-block>
+        <critical-block>BLOCK_EXECUTE_CLONE</critical-block>
       </observability>
       <verification-ref>V-M-TTS-SERVICE</verification-ref>
     </M-TTS-SERVICE>
@@ -323,7 +321,7 @@
         <export-CoreRuntime PURPOSE="Frozen dataclass holding all wired runtime components" />
         <export-build_runtime PURPOSE="Factory function that assembles CoreRuntime from settings" />
       </interface>
-      <depends>M-CONFIG, M-BACKENDS, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-PROFILES</depends>
+      <depends>M-CONFIG, M-BACKENDS, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-PROFILES, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-RUNTIME-FACTORY, M-MODEL-LIFECYCLE</depends>
       <target>
         <source>core/bootstrap.py</source>
         <source>scripts/runtime_self_check.py</source>
@@ -545,7 +543,7 @@
     </M-ENGINE-OMNIVOICE>
     <M-ENGINE-PIPER NAME="PiperOnnxEngine" TYPE="CORE_LOGIC" LAYER="2" ORDER="8B" STATUS="implemented">
       <contract>
-        <purpose>Provide the production TTSEngine implementation for Piper custom synthesis on the ONNX lane behind the explicit runtime opt-in.</purpose>
+        <purpose>Provide the production TTSEngine implementation for Piper custom synthesis on the ONNX lane as part of the engine-first runtime set.</purpose>
       </contract>
       <interface>
         <export-PiperOnnxEngine PURPOSE="Production TTSEngine for Piper custom synthesis via the ONNX runtime" />
@@ -594,7 +592,7 @@
 
     <M-ENGINE-CONFIG NAME="EngineConfig" TYPE="UTILITY" LAYER="2" ORDER="10" STATUS="implemented">
       <contract>
-        <purpose>Parse and validate discriminated engine config models for registry filtering, alias matching, and deterministic disabled-engine handling.</purpose>
+        <purpose>Parse and validate discriminated engine config models for registry filtering, alias matching, scheduler policy, cache sizing, and deterministic disabled-engine handling.</purpose>
       </contract>
       <interface>
         <export-DisabledEngineConfig PURPOSE="Explicit disabled-engine config shape that still parses deterministically" />
@@ -604,6 +602,7 @@
         <export-QwenFastEngineConfig PURPOSE="Typed enabled config for qwen_fast-routed engines" />
         <export-EngineConfig PURPOSE="Discriminated union over all supported engine config settings" />
         <export-EngineSettings PURPOSE="Validated collection of engine configs with duplicate alias protection" />
+        <export-runtime-policy-fields PURPOSE="Per-engine max_active, max_queued, submit/inference timeout, device, and model_cache_size settings" />
         <export-parse_engine_config PURPOSE="Parse one engine config payload into a typed variant" />
         <export-parse_engine_settings PURPOSE="Parse a collection of engine configs and reject duplicate aliases deterministically" />
       </interface>
@@ -624,6 +623,7 @@
       <interface>
         <export-EngineRegistry PURPOSE="Process-local registry for TTSEngine registration, alias lookup, and deterministic selection" />
         <export-EngineRegistryError PURPOSE="Typed registry failure for duplicate keys and unresolved selection paths" />
+        <export-EngineRegistrationWrapper PURPOSE="Optional hook for applying cross-cutting wrappers to built-in, explicit, and entry-point engines before registration" />
         <export-load_engine_registry PURPOSE="Build the registry from explicit engines, typed config, and optional entry points" />
       </interface>
       <depends>M-ENGINE-CONTRACTS, M-ENGINE-CONFIG, M-ERRORS, M-OBSERVABILITY</depends>
@@ -634,8 +634,57 @@
         <log-prefix>[EngineRegistry]</log-prefix>
         <critical-block>BLOCK_RESOLVE_ENGINE</critical-block>
       </observability>
-      <verification-ref>V-M-ENGINE-REGISTRY</verification-ref>
+      <verification-ref>V-M-ENGINE-RUNTIME-SEAMS</verification-ref>
     </M-ENGINE-REGISTRY>
+
+    <M-ENGINE-RUNTIME-FACTORY NAME="EngineRuntimeFactory" TYPE="RUNTIME" LAYER="2" ORDER="12" STATUS="implemented">
+      <contract>
+        <purpose>Build the runtime EngineRegistry from built-in TTSEngine implementations and optional entry-point discovery outside the service layer while applying model-cache wrappers.</purpose>
+      </contract>
+      <interface>
+        <export-CachedEngine PURPOSE="Cache-decorating TTSEngine wrapper used by runtime registry composition" />
+        <export-build_engine_settings PURPOSE="Parse EngineSettings from CoreSettings.engine_configs without injecting hidden disabled-engine fallbacks" />
+        <export-build_engine_registry PURPOSE="Build the runtime EngineRegistry from built-in engines plus tts_server.engines entry points" />
+      </interface>
+      <depends>M-CONFIG, M-ENGINE-REGISTRY, M-ENGINE-CONTRACTS, M-ENGINE-MODEL-CACHE, M-ENGINE-PIPER, M-ENGINE-QWEN3, M-ENGINE-OMNIVOICE</depends>
+      <target>
+        <source>core/engines/runtime_factory.py</source>
+      </target>
+      <verification-ref>V-M-ENGINE-RUNTIME-SEAMS</verification-ref>
+      <implementation-note>Current runtime composition is outside TTSService: bootstrap calls build_engine_registry(settings), cache-wraps built-in and entry-point engines through CachedEngine, then injects the resulting EngineRegistry into TTSService.</implementation-note>
+    </M-ENGINE-RUNTIME-FACTORY>
+
+    <M-ENGINE-MODEL-CACHE NAME="ModelCache" TYPE="CORE_LOGIC" LAYER="2" ORDER="12A" STATUS="implemented">
+      <contract>
+        <purpose>Cache TTSEngine model handles by engine, model, backend, and resolved path inside the engine runtime layer.</purpose>
+      </contract>
+      <interface>
+        <export-ModelCacheKey PURPOSE="Stable cache key for model handle reuse" />
+        <export-ModelCache PURPOSE="Thread-safe bounded model handle cache" />
+        <export-get_or_load PURPOSE="Return a cached handle or call the loader and store the result" />
+      </interface>
+      <depends>M-ENGINE-CONTRACTS</depends>
+      <target>
+        <source>core/engines/model_cache.py</source>
+      </target>
+      <verification-ref>V-M-ENGINE-RUNTIME-SEAMS</verification-ref>
+    </M-ENGINE-MODEL-CACHE>
+
+    <M-ENGINE-AUDIO-PIPELINE NAME="AudioPipeline" TYPE="CORE_LOGIC" LAYER="2" ORDER="12B" STATUS="implemented">
+      <contract>
+        <purpose>Standardize post-engine audio processing before generated audio is persisted.</purpose>
+      </contract>
+      <interface>
+        <export-AudioPipeline PURPOSE="Post-engine AudioBuffer processing seam" />
+        <export-process PURPOSE="Return processed engine audio for persistence" />
+      </interface>
+      <depends>M-ENGINE-CONTRACTS</depends>
+      <target>
+        <source>core/engines/audio_pipeline.py</source>
+      </target>
+      <verification-ref>V-M-ENGINE-RUNTIME-SEAMS</verification-ref>
+      <implementation-note>AudioPipeline now centralizes WAV conversion, target sample-rate normalization, loudness-style RMS normalization, and peak limiting for TTSEngine output before AudioPersistenceService writes generated bytes.</implementation-note>
+    </M-ENGINE-AUDIO-PIPELINE>
 
     <M-ENGINE-SCHEDULER NAME="EngineScheduler" TYPE="CORE_LOGIC" LAYER="2" ORDER="13" STATUS="implemented">
       <contract>
@@ -647,6 +696,7 @@
         <export-EngineWorkerPoolKey PURPOSE="Deterministic engine/device pool key" />
         <export-EngineWorkerPoolPolicy PURPOSE="Explicit active/queued/timeout policy for one pool" />
         <export-submit_engine_task PURPOSE="Queue a unit of engine work" />
+        <export-is_busy PURPOSE="Expose scheduler-owned busy state for readiness reporting" />
       </interface>
       <depends>M-ERRORS, M-OBSERVABILITY</depends>
       <target>
@@ -657,6 +707,7 @@
         <critical-block>BLOCK_SCHEDULER_DISPATCH</critical-block>
       </observability>
       <verification-ref>V-M-ENGINE-SCHEDULER</verification-ref>
+      <implementation-note>EngineScheduler is now the only runtime synthesis concurrency seam. CoreRuntime no longer carries InferenceGuard, server readiness reports `inference_busy` from `runtime.scheduler.is_busy()`, and bootstrap builds per-engine policies from typed engine configs.</implementation-note>
     </M-ENGINE-SCHEDULER>
 
 
@@ -755,19 +806,66 @@
 
     <M-TTS-COORDINATOR NAME="SynthesisCoordinator" TYPE="CORE_LOGIC" LAYER="2" ORDER="10" STATUS="implemented">
       <contract>
-        <purpose>Turn the current TTS service into a coordinator over normalized requests, planner output, runtime execution, persistence, and observability.</purpose>
+        <purpose>Coordinate normalized requests, planner output, family preparation, scheduler-gated runtime execution, delegated persistence, and observability.</purpose>
       </contract>
       <interface>
-        <export-TTSService PURPOSE="Coordinator-shaped synthesis service built on planner and family adapters" />
+        <export-SynthesisCoordinator PURPOSE="Coordinator over planner, family, scheduler, persistence, and clone preprocessing seams" />
+        <export-TTSService PURPOSE="Transport-facing synthesis facade built on SynthesisRouter and SynthesisCoordinator" />
       </interface>
-      <depends>M-SYNTHESIS-PLANNER, M-RUNTIME-MODEL-REGISTRY, M-INFRASTRUCTURE, M-OBSERVABILITY</depends>
+      <depends>M-SYNTHESIS-PLANNER, M-RUNTIME-MODEL-REGISTRY, M-AUDIO-PERSISTENCE, M-CLONE-PREPROCESSING, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-AUDIO-PIPELINE, M-OBSERVABILITY</depends>
       <target>
         <source>core/services/tts_service.py</source>
         <source>core/contracts/runtime.py</source>
       </target>
       <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
-      <implementation-note>Current code binds planner/coordinator seams to typed runtime registry protocols so service layers depend on explicit contracts instead of concrete registry implementations.</implementation-note>
+      <implementation-note>Current code binds planner/coordinator seams to typed runtime registry protocols, injected EngineRegistry, EngineScheduler, AudioPersistenceService, CloneReferenceAudioPreprocessor, and AudioPipeline so service orchestration no longer owns concrete engine composition, generated-audio persistence, clone reference filesystem staging, or post-engine audio processing details. Production Qwen3 and OmniVoice families now fail closed when the TTSEngine route cannot resolve, while legacy backend execution is isolated in a dedicated compatibility service.</implementation-note>
     </M-TTS-COORDINATOR>
+
+    <M-LEGACY-BACKEND-EXECUTION NAME="LegacyBackendExecutionService" TYPE="CORE_LOGIC" LAYER="2" ORDER="10C" STATUS="implemented">
+      <contract>
+        <purpose>Own the explicit legacy backend compatibility lane for unmigrated or opt-out execution paths outside the synthesis coordinator.</purpose>
+      </contract>
+      <interface>
+        <export-LegacyBackendExecutionService PURPOSE="Thin compatibility adapter for backend.execute-based synthesis lanes" />
+      </interface>
+      <depends>M-CONTRACTS, M-AUDIO-PERSISTENCE, M-OBSERVABILITY, M-BACKENDS-V2</depends>
+      <target>
+        <source>core/services/legacy_backend_execution.py</source>
+      </target>
+      <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
+      <implementation-note>The remaining backend.execute path is no longer owned by TTSService or SynthesisCoordinator internals; it lives in a dedicated legacy compatibility service and is not used for migrated production families.</implementation-note>
+    </M-LEGACY-BACKEND-EXECUTION>
+
+
+    <M-AUDIO-PERSISTENCE NAME="AudioPersistenceService" TYPE="CORE_LOGIC" LAYER="2" ORDER="10A" STATUS="implemented">
+      <contract>
+        <purpose>Persist generated synthesis audio artifacts for legacy backend and TTSEngine execution paths outside the synthesis coordinator.</purpose>
+      </contract>
+      <interface>
+        <export-PersistedAudio PURPOSE="Generated audio artifact plus optional saved-output path" />
+        <export-AudioPersistenceService PURPOSE="Shared persistence helper for backend output dirs and engine audio buffers" />
+      </interface>
+      <depends>M-CONFIG, M-CONTRACTS, M-INFRASTRUCTURE, M-MODELS</depends>
+      <target>
+        <source>core/services/audio_persistence.py</source>
+      </target>
+      <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
+    </M-AUDIO-PERSISTENCE>
+
+    <M-CLONE-PREPROCESSING NAME="CloneReferenceAudioPreprocessor" TYPE="CORE_LOGIC" LAYER="2" ORDER="10B" STATUS="implemented">
+      <contract>
+        <purpose>Stage and normalize reference audio for clone synthesis outside the synthesis coordinator.</purpose>
+      </contract>
+      <interface>
+        <export-PreparedCloneReference PURPOSE="Staged and normalized clone reference metadata" />
+        <export-CloneReferenceAudioPreprocessor PURPOSE="Context-managed clone reference staging and WAV normalization service" />
+      </interface>
+      <depends>M-CONFIG, M-CONTRACTS, M-INFRASTRUCTURE, M-ERRORS</depends>
+      <target>
+        <source>core/services/clone_preprocessing.py</source>
+      </target>
+      <verification-ref>V-M-TTS-COORDINATOR</verification-ref>
+    </M-CLONE-PREPROCESSING>
 
     <M-PROFILE-SCHEMA NAME="RuntimeProfileSchema" TYPE="TYPES" LAYER="0" ORDER="9" STATUS="implemented">
       <contract>
@@ -925,11 +1023,11 @@
       <step-1>Server receives HTTP request, validates input, applies auth and rate limiting</step-1>
       <step-2>Server bootstrap resolves CoreRuntime and calls TTSApplicationService</step-2>
       <step-3>TTSApplicationService dispatches to TTSService with the appropriate command</step-3>
-      <step-4>TTSService acquires inference guard, resolves model via ModelRegistry</step-4>
-      <step-5>TTSService calls backend.synthesize_* through generate_audio()</step-5>
-      <step-6>Audio result is read, optionally persisted, and returned as GenerationResult</step-6>
+      <step-4>TTSService normalizes the request, resolves the execution plan, and dispatches through EngineScheduler-backed runtime execution</step-4>
+      <step-5>Migrated families synthesize through TTSEngine while the remaining legacy lane stays isolated in LegacyBackendExecutionService</step-5>
+      <step-6>AudioPipeline post-processes TTSEngine output and AudioPersistenceService materializes the final GenerationResult</step-6>
       <step-7>Server returns audio bytes in HTTP response</step-7>
-      <evidence>tts.generation.completed log marker, audio bytes in response</evidence>
+      <evidence>[TTSService][_run_engine_generation][BLOCK_PERSIST_OUTPUT] or [LegacyBackendExecutionService][execute][BLOCK_PERSIST_OUTPUT] log marker, plus audio bytes in response</evidence>
     </DF-SYNC-TTS>
 
     <DF-ASYNC-JOB NAME="Async Job Submission and Retrieval" TRIGGER="HTTP POST to */jobs">
@@ -943,11 +1041,11 @@
 
     <DF-CLONE-TTS NAME="Voice Clone with Reference Audio" TRIGGER="Clone request with reference audio file">
       <step-1>Transport adapter receives reference audio and text</step-1>
-      <step-2>TTSService copies reference audio to temporary directory</step-2>
-      <step-3>convert_audio_to_wav_if_needed normalizes format via ffmpeg</step-3>
-      <step-4>Backend synthesizes clone with normalized reference</step-4>
-      <step-5>Temporary files are cleaned up in finally block</step-5>
-      <evidence>tts.clone.reference_audio_prepared, tts.clone.completed log markers</evidence>
+      <step-2>CloneReferenceAudioPreprocessor stages reference audio into an isolated temp directory</step-2>
+      <step-3>CloneReferenceAudioPreprocessor normalizes the reference to the runtime WAV contract when needed</step-3>
+      <step-4>SynthesisCoordinator submits the prepared clone request through the engine-first runtime path</step-4>
+      <step-5>Prepared temporary artifacts are cleaned up when the preprocessing context exits</step-5>
+      <evidence>[TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO] and [TTSService][synthesize_clone][BLOCK_EXECUTE_CLONE] log markers</evidence>
     </DF-CLONE-TTS>
 
     <DF-DEMO-FRONTEND NAME="Standalone Demo Frontend Clone Flow" TRIGGER="Browser interaction with the root-level frontend_demo module and POST /api/v1/tts/clone through the server API">
@@ -987,8 +1085,8 @@
       <step-3>SynthesisPlanner resolves model and backend through the runtime planning contract</step-3>
       <step-4>SynthesisCoordinator acquires the backend-specific model handle through the runtime execution contract</step-4>
       <step-5>Model-family adapter prepares backend execution input and output semantics</step-5>
-      <step-6>Execution backend performs inference and coordinator persists the result</step-6>
-      <evidence>Planner resolution report, backend execution diagnostics, persisted GenerationResult</evidence>
+      <step-6>TTSEngine executes migrated families while LegacyBackendExecutionService isolates the remaining compatibility lane, and AudioPipeline plus AudioPersistenceService materialize the final result</step-6>
+      <evidence>Planner resolution report, TTSEngine or isolated legacy compatibility execution diagnostics, and persisted GenerationResult</evidence>
     </DF-REQUEST-TO-PLAN>
 
     <DF-STARTUP-READINESS NAME="Planned Host-Aware Readiness" TRIGGER="build_runtime() invocation after migration seams land">
@@ -1050,45 +1148,45 @@
   </ImplementationOrder>
 
   <MigrationProgram>
-    <Migration-Phase-0 name="Baseline Freeze" status="planned">
+    <Migration-Phase-0 name="Baseline Freeze" status="done">
       <goal>Lock the migration baseline in GRACE XML artifacts before code architecture changes begin.</goal>
       <step-1>Update development, knowledge-graph, and verification artifacts with target modules, flows, and phase gates.</step-1>
     </Migration-Phase-0>
 
-    <Migration-Phase-1 name="Planning and Family Seams" status="planned">
+    <Migration-Phase-1 name="Planning and Family Seams" status="done">
       <goal>Introduce normalized synthesis contracts, planner seam, and model-family base contract without changing runtime behavior.</goal>
       <step-1 module="M-EXECUTION-PLAN" verification="V-M-EXECUTION-PLAN">Define normalized request, capability, and execution-plan DTOs.</step-1>
       <step-2 module="M-SYNTHESIS-PLANNER" verification="V-M-SYNTHESIS-PLANNER">Add planner seam and initial compatibility implementation.</step-2>
       <step-3 module="M-MODEL-FAMILY" verification="V-M-MODEL-FAMILY">Add model-family base contract.</step-3>
     </Migration-Phase-1>
 
-    <Migration-Phase-2 name="Qwen3 Family Extraction" status="planned">
+    <Migration-Phase-2 name="Qwen3 Family Extraction" status="done">
       <goal>Wrap current Qwen3 semantics in an explicit family adapter.</goal>
       <step-1 module="M-QWEN3-FAMILY" verification="V-M-QWEN3-FAMILY">Move current custom, design, and clone semantics into a Qwen3 family adapter.</step-1>
     </Migration-Phase-2>
 
-    <Migration-Phase-3 name="Coordinator Refactor" status="planned">
+    <Migration-Phase-3 name="Coordinator Refactor" status="done">
       <goal>Turn the current TTS service into a planner-driven synthesis coordinator.</goal>
       <step-1 module="M-TTS-COORDINATOR" verification="V-M-TTS-COORDINATOR">Refactor TTSService into a coordinator over planning, execution, and persistence.</step-1>
     </Migration-Phase-3>
 
-    <Migration-Phase-4 name="Catalog and Manifest Evolution" status="planned">
+    <Migration-Phase-4 name="Catalog and Manifest Evolution" status="done">
       <goal>Move from Qwen3-mode-only model descriptors to family-aware model metadata while preserving v1 compatibility.</goal>
       <step-1 module="M-MODEL-CATALOG" verification="V-M-MODEL-CATALOG">Add family-aware model catalog metadata and stable public model IDs.</step-1>
     </Migration-Phase-4>
 
-    <Migration-Phase-5 name="Registry Split" status="planned">
+    <Migration-Phase-5 name="Registry Split" status="done">
       <goal>Separate declared model metadata, local artifact state, and runtime-loaded model handles.</goal>
       <step-1 module="M-ARTIFACT-REGISTRY" verification="V-M-ARTIFACT-REGISTRY">Add artifact registry for install and validation state.</step-1>
       <step-2 module="M-RUNTIME-MODEL-REGISTRY" verification="V-M-RUNTIME-MODEL-REGISTRY">Add runtime model registry for preload and cache ownership.</step-2>
     </Migration-Phase-5>
 
-    <Migration-Phase-6 name="Backend Contract Evolution" status="planned">
+    <Migration-Phase-6 name="Backend Contract Evolution" status="done">
       <goal>Replace Qwen3-shaped backend calls with runtime-oriented execution contracts.</goal>
       <step-1 module="M-BACKENDS-V2" verification="V-M-BACKENDS-V2">Generalize backend load, inspect, execute, and diagnostics surfaces.</step-1>
     </Migration-Phase-6>
 
-    <Migration-Phase-7 name="Host-Aware Planning" status="planned">
+    <Migration-Phase-7 name="Host-Aware Planning" status="done">
       <goal>Replace platform-order backend choice with explainable capability-based selection.</goal>
       <step-1 module="M-HOST-PROBE" verification="V-M-HOST-PROBE">Add host probe diagnostics.</step-1>
       <step-2 module="M-CAPABILITY-RESOLVER" verification="V-M-CAPABILITY-RESOLVER">Add explicit compatibility resolution and rejection reasons.</step-2>
@@ -1096,13 +1194,13 @@
       <step-4 module="M-PROFILE-RESOLVER" verification="V-M-PROFILE-RESOLVER">Resolve compatibility, dependency packs, expected interpreters, and dedicated-env readiness into launch profiles.</step-4>
     </Migration-Phase-7>
 
-    <Migration-Phase-8 name="Second Family Proof" status="planned">
+    <Migration-Phase-8 name="Second Family Proof" status="done">
       <goal>Prove the architecture with one explicitly selected non-Qwen model family.</goal>
       <step-1>Lock the second family in the execution packet before implementation.</step-1>
       <step-2>Integrate the second family without transport adapter rewrites.</step-2>
     </Migration-Phase-8>
 
-    <Migration-Phase-9 name="Platform Hardening" status="planned">
+    <Migration-Phase-9 name="Platform Hardening" status="done">
       <goal>Make multi-platform support operational with diagnostics, packaging guidance, and smoke evidence.</goal>
       <step-1>Document support matrix and runtime dependency paths per platform.</step-1>
       <step-2>Extend readiness and smoke verification surfaces for supported hosts.</step-2>
@@ -1110,7 +1208,7 @@
       <step-4 module="M-LAUNCHER" verification="V-M-LAUNCHER">Expose inspect, env guidance, execution planning, and profile-aware launch commands through the shared profiles package boundary.</step-4>
     </Migration-Phase-9>
 
-    <Migration-Phase-10 name="Legacy Cleanup" status="planned">
+    <Migration-Phase-10 name="Legacy Cleanup" status="done">
       <goal>Remove transitional seams only after the new architecture is proven by verification evidence.</goal>
       <step-1>Deprecate obsolete internal paths and finalize stable module ownership.</step-1>
     </Migration-Phase-10>

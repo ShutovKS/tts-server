@@ -13,6 +13,7 @@
 #   ENGINE_ENTRY_POINT_GROUP - Importlib entry-point group for external TTSEngine registrations.
 #   EngineRegistryError - Typed registry failure for duplicate registration and unresolved selection paths.
 #   EngineRegistry - Process-local registry for TTSEngine registration, lookup, and deterministic selection.
+#   get_config - Resolve the typed config attached to a registered engine by key or alias.
 #   load_engine_registry - Build an EngineRegistry from explicit engines, built-ins, settings, and optional entry points.
 # END_MODULE_MAP
 #
@@ -39,6 +40,7 @@ ENGINE_ENTRY_POINT_GROUP = "tts_server.engines"
 
 EngineRegistrationSource: TypeAlias = str
 EngineRegistrationCandidate: TypeAlias = TTSEngine | type[TTSEngine]
+EngineRegistrationWrapper: TypeAlias = Callable[[TTSEngine, EngineConfig | None], TTSEngine]
 
 
 @dataclass(frozen=True)
@@ -155,6 +157,12 @@ class EngineRegistry:
     # END_CONTRACT: keys
     def keys(self) -> tuple[str, ...]:
         return tuple(registration.engine.key for registration in self._sorted_registrations())
+
+    def get_config(self, key: str) -> EngineConfig | None:
+        registration = self._lookup_registration(key)
+        if registration is None:
+            return None
+        return registration.config
 
     # START_CONTRACT: resolve_engine
     #   PURPOSE: Resolve the best engine by explicit key or by capability/family/backend/language constraints using deterministic priority and registration order.
@@ -278,6 +286,7 @@ def load_engine_registry(
     settings: EngineSettings | None = None,
     include_entry_points: bool = True,
     entry_points_loader: Callable[[], Iterable[EntryPoint]] | None = None,
+    engine_wrapper: EngineRegistrationWrapper | None = None,
     fail_fast: bool = False,
 ) -> EngineRegistry:
     registry = EngineRegistry()
@@ -310,7 +319,22 @@ def load_engine_registry(
                 source=source,
             )
             continue
-        registry.register(engine, config=config, source=source)
+        if engine_wrapper is not None:
+            engine = engine_wrapper(engine, config)
+        try:
+            registry.register(engine, config=config, source=source)
+        except Exception as exc:
+            if fail_fast or source != "entry_point":
+                raise
+            log_event(
+                LOGGER,
+                level=logging.WARNING,
+                event="[EngineRegistry][load_engine_registry][LOAD_ENTRY_POINTS]",
+                message="Skipping optional engine entry point after registration failure",
+                engine_key=getattr(engine, "key", "<unknown>"),
+                source=source,
+                error=str(exc),
+            )
     # END_BLOCK_REGISTER_ENGINE_CANDIDATES
 
     return registry
@@ -541,6 +565,7 @@ def _normalize_token(value: object) -> str:
 
 __all__ = [
     "ENGINE_ENTRY_POINT_GROUP",
+    "EngineRegistrationWrapper",
     "EngineRegistry",
     "EngineRegistryError",
     "load_engine_registry",

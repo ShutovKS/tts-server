@@ -1,8 +1,8 @@
 # FILE: core/config.py
 # VERSION: 1.5.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Parse and validate environment-based runtime configuration for all components, including explicit opt-in engine-route toggles.
-#   SCOPE: CoreSettings dataclass, pydantic-settings env source, typed settings dict, env helpers, and engine-route feature flags
+#   PURPOSE: Parse and validate environment-based runtime configuration for all components, including legacy engine-route compatibility flags and typed runtime engine settings.
+#   SCOPE: CoreSettings dataclass, pydantic-settings env source, typed settings dict, env helpers, and runtime engine configuration fields
 #   DEPENDS: pydantic, pydantic-settings
 #   LINKS: M-CONFIG
 #   ROLE: CONFIG
@@ -33,12 +33,13 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.5.0 - Task 10: added an explicit Piper engine-route feature flag so the first production TTSEngine can be enabled without changing default runtime behavior]
+#   LAST_CHANGE: [v1.5.1 - Reclassified the Piper engine-route flag as a legacy compatibility setting now that the production Piper TTSEngine is always registered]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
 
 import os
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -82,6 +83,7 @@ class CoreSettingsEnv(TypedDict):
     default_design_model: str | None
     default_clone_model: str | None
     piper_engine_enabled: bool
+    engine_configs: tuple[dict[str, Any], ...]
     backend: str | None
     backend_autoselect: bool
     qwen_fast_enabled: bool
@@ -143,6 +145,7 @@ class CoreSettings:
     default_design_model: str | None = None
     default_clone_model: str | None = None
     piper_engine_enabled: bool = False
+    engine_configs: tuple[dict[str, Any], ...] = ()
     backend: str | None = None
     backend_autoselect: bool = True
     qwen_fast_enabled: bool = True
@@ -258,6 +261,7 @@ class CoreEnvSettings(BaseSettings):
     default_design_model: str | None = None
     default_clone_model: str | None = None
     piper_engine_enabled: bool = False
+    engine_configs: tuple[dict[str, Any], ...] = ()
     backend: str | None = None
     backend_autoselect: bool = True
     qwen_fast_enabled: bool = True
@@ -391,6 +395,21 @@ class CoreEnvSettings(BaseSettings):
     @classmethod
     def _parse_csv(cls, value: Any) -> Any:
         return _coerce_csv_tuple(value)
+
+    @field_validator("engine_configs", mode="before")
+    @classmethod
+    def _parse_engine_configs(cls, value: Any) -> Any:
+        if value is None or value == "":
+            return ()
+        if isinstance(value, str):
+            parsed = json.loads(value)
+        else:
+            parsed = value
+        if isinstance(parsed, dict):
+            parsed = parsed.get("engines", ())
+        if not isinstance(parsed, (list, tuple)):
+            raise TypeError("engine_configs must be a JSON list or object with an engines list")
+        return tuple(dict(item) for item in parsed)
 
     @field_validator(
         "backend_autoselect",

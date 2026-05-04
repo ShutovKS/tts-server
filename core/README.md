@@ -52,8 +52,9 @@ The resulting runtime exposes the shared services consumed by transport adapters
 
 ### Service layer
 
-- [`TTSService`](services/tts_service.py:22) — coordinates inference, model resolution, and backend execution
+- [`TTSService`](services/tts_service.py:22) — coordinates inference and model resolution over injected engine/runtime seams while migrated production families fail closed when their engine route cannot resolve
 - [`ModelRegistry`](services/model_registry.py:20) — discovers and validates local models
+- [`LegacyBackendExecutionService`](services/legacy_backend_execution.py) — explicit compatibility adapter for the remaining backend.execute lane
 
 ### Backend layer
 
@@ -62,6 +63,14 @@ The resulting runtime exposes the shared services consumed by transport adapters
 - [`TorchBackend`](backends/torch_backend.py:15) — PyTorch backend for CPU/CUDA-compatible Qwen setups
 - [`ONNXBackend`](backends/onnx_backend.py) — Piper backend for local ONNX voice inference
 - [`BackendRegistry`](backends/registry.py:14) — backend registration and selection
+
+### Engine runtime layer
+
+- [`EngineRegistry`](engines/registry.py) — process-local `TTSEngine` registration, entry-point discovery, and deterministic engine selection
+- [`build_engine_registry()`](engines/runtime_factory.py) — runtime composition seam that builds the engine registry, applies `CachedEngine`, and keeps concrete engine wiring outside `TTSService`
+- [`EngineScheduler`](engines/scheduler.py) — per-engine/per-device bounded worker pools with explicit queueing, timeout, and busy-state reporting
+- [`ModelCache`](engines/model_cache.py) — bounded model-handle cache used by cached engine wrappers
+- [`AudioPipeline`](engines/audio_pipeline.py) — post-engine audio processing seam that converts outputs to WAV, normalizes sample rate, and runs before persistence
 
 ### Family and planning layer
 
@@ -96,6 +105,7 @@ Common environment variables:
 - `TTS_QWEN_FAST_ENABLED`
 - `TTS_MODEL_PRELOAD_POLICY`
 - `TTS_MODEL_PRELOAD_IDS`
+- `TTS_ENGINE_CONFIGS`
 - `TTS_AUTH_MODE`
 - `TTS_RATE_LIMIT_ENABLED`
 - `TTS_QUOTA_ENABLED`
@@ -139,6 +149,7 @@ For operators, the repository now composes runtime dependency contours from `pro
 
 - Backend autoselection is now host-aware and explainable; MLX is preferred on compatible macOS hosts, Torch is preferred on Linux/Windows CPU/CUDA hosts, and ONNX can be selected for Piper voices.
 - Unsupported family operations now fail intentionally with explicit capability errors instead of falling through into ambiguous runtime failures.
+- Migrated production families (Qwen3, OmniVoice, and Piper) do not silently fall back to `backend.execute`; the remaining backend path is an explicit legacy compatibility lane.
 - Local job execution is repository-local and intended for a single-node runtime.
 - Temporary clone uploads use `TTS_UPLOAD_STAGING_DIR`; adapters should not write temporary clone files into [../.outputs](../.outputs).
 - All transport adapters reuse the same core request and error model.

@@ -1,9 +1,9 @@
 # FILE: core/bootstrap.py
-# VERSION: 1.2.0
+# VERSION: 1.3.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Assemble the full CoreRuntime from settings by wiring all components together via auto-discovery (backend classes via discover_backend_classes(), manifest via load_composite_manifest(), TTSBackend.from_settings() factory) so adding a new backend or model does not require editing this file.
-#   SCOPE: CoreRuntime dataclass, build_runtime factory, sub-component factory helpers, build_backends helper that drives auto-discovery of TTSBackend subclasses, and scheduler wiring for TTS runtime execution
-#   DEPENDS: M-CONFIG, M-BACKENDS, M-MODELS, M-DISCOVERY, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-ENGINE-SCHEDULER
+#   PURPOSE: Assemble the full CoreRuntime from settings by wiring all components together via auto-discovery and injected runtime registries.
+#   SCOPE: CoreRuntime dataclass, build_runtime factory, sub-component factory helpers, build_backends helper that drives auto-discovery of TTSBackend subclasses, EngineRegistry composition, and EngineScheduler wiring for bounded TTS runtime execution
+#   DEPENDS: M-CONFIG, M-BACKENDS, M-MODELS, M-DISCOVERY, M-MODEL-REGISTRY, M-TTS-SERVICE, M-APPLICATION, M-INFRASTRUCTURE, M-METRICS, M-ENGINE-SCHEDULER, M-ENGINE-REGISTRY, M-ENGINE-RUNTIME-FACTORY
 #   LINKS: M-BOOTSTRAP
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -13,13 +13,14 @@
 #   CoreRuntime - Frozen dataclass holding all wired runtime components
 #   build_runtime - Factory function that assembles CoreRuntime from settings via auto-discovered backends + composite manifest
 #   build_backends - Auto-discover concrete TTSBackend subclasses and build an instance per class via TTSBackend.from_settings()
+#   build_engine_registry - Build the runtime EngineRegistry outside service-layer orchestration
 #   build_job_artifact_store - Factory for job artifact store
 #   build_job_metadata_store - Factory for job metadata store
 #   build_job_execution_backend - Factory for job execution backend
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.0 - Task 12: added explicit EngineScheduler wiring for TTSService while preserving the temporary InferenceGuard compatibility seam in the runtime composition]
+#   LAST_CHANGE: [v1.4.0 - Removed InferenceGuard runtime wiring; EngineScheduler is now the only bounded synthesis concurrency seam]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -43,9 +44,11 @@ from core.backends.registry import BackendRegistry
 from core.contracts import RuntimeExecutionRegistry
 from core.config import CoreSettings
 from core.discovery import discover_backend_classes
-from core.engines import EngineScheduler
+from core.engines.registry import EngineRegistry
+from core.engines.config import DisabledEngineConfig
+from core.engines.runtime_factory import build_engine_registry, build_engine_settings
+from core.engines.scheduler import EngineScheduler, EngineWorkerPoolKey, EngineWorkerPoolPolicy
 from core.infrastructure import (
-    InferenceGuard,
     LocalBoundedExecutionManager,
     LocalInMemoryJobStore,
     LocalJobArtifactStore,
@@ -69,7 +72,7 @@ logger = logging.getLogger(__name__)
 
 # START_CONTRACT: CoreRuntime
 #   PURPOSE: Hold the fully assembled shared runtime components for transport adapters.
-#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, registry: ModelRegistry - Model discovery and loading service, model_lifecycle: ModelLifecycleService - Lifecycle facade for delete/refresh/download submissions, result_cache: ResultCache - Process-wide synthesis result cache (NullResultCache when disabled), telemetry: TelemetryState - Active OpenTelemetry runtime state (disabled when otel_enabled is false), tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, inference_guard: InferenceGuard - Temporary shared inference compatibility guard, scheduler: EngineScheduler - Shared scheduler gateway for runtime synthesis execution, metrics: OperationalMetricsRegistry - Operational metrics facade }
+#   INPUTS: { settings: CoreSettings - Parsed runtime settings, backend_registry: BackendRegistry - Selected backend registry, engine_registry: EngineRegistry - Runtime TTSEngine registry, registry: ModelRegistry - Model discovery and loading service, model_lifecycle: ModelLifecycleService - Lifecycle facade for delete/refresh/download submissions, result_cache: ResultCache - Process-wide synthesis result cache (NullResultCache when disabled), telemetry: TelemetryState - Active OpenTelemetry runtime state (disabled when otel_enabled is false), tts_service: TTSService - Core synthesis service, application: TTSApplicationService - Application-level synthesis facade, job_artifact_store: JobArtifactStore - Artifact persistence backend, job_store: JobMetadataStore - Job metadata persistence backend, job_executor: InMemoryJobExecutor - Job execution adapter, job_manager: JobExecutionBackend - Async execution backend, job_execution: JobExecutionGateway - Job orchestration gateway, rate_limiter: RateLimiter - Request throttling service, quota_guard: QuotaGuard - Quota enforcement service, scheduler: EngineScheduler - Shared scheduler gateway for runtime synthesis execution, metrics: OperationalMetricsRegistry - Operational metrics facade }
 #   OUTPUTS: { instance - Immutable runtime composition root }
 #   SIDE_EFFECTS: none
 #   LINKS: M-BOOTSTRAP
@@ -78,6 +81,7 @@ logger = logging.getLogger(__name__)
 class CoreRuntime:
     settings: CoreSettings
     backend_registry: BackendRegistry
+    engine_registry: EngineRegistry
     registry: ModelRegistry
     model_lifecycle: ModelLifecycleService
     result_cache: ResultCache
@@ -91,7 +95,6 @@ class CoreRuntime:
     job_execution: JobExecutionGateway
     rate_limiter: RateLimiter
     quota_guard: QuotaGuard
-    inference_guard: InferenceGuard
     scheduler: EngineScheduler
     metrics: OperationalMetricsRegistry
 
@@ -181,8 +184,20 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
     # START_BLOCK_INIT_INFRASTRUCTURE
     settings.ensure_directories()
     telemetry = configure_telemetry(settings)
-    inference_guard = InferenceGuard()
-    scheduler = EngineScheduler()
+    engine_settings = build_engine_settings(settings)
+    scheduler_policies = {
+        EngineWorkerPoolKey(engine_key=config.name, device_key=config.device)
+        if config.device is not None
+        else config.name: EngineWorkerPoolPolicy(
+            max_active=config.max_active,
+            max_queued=config.max_queued,
+            submit_timeout_seconds=config.submit_timeout_seconds,
+            inference_timeout_seconds=config.inference_timeout_seconds,
+        )
+        for config in engine_settings.enabled_engines
+        if not isinstance(config, DisabledEngineConfig)
+    }
+    scheduler = EngineScheduler(policies=scheduler_policies)
     metrics = OperationalMetricsRegistry()
     # END_BLOCK_INIT_INFRASTRUCTURE
     # START_BLOCK_INIT_BACKENDS
@@ -203,6 +218,10 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         autoselect=settings.backend_autoselect,
         allow_unready_selection=True,
         model_manifest=model_manifest,
+        model_manifest_loader=lambda: load_composite_manifest(
+            base_path=settings.model_manifest_path,
+            models_dir=settings.models_dir,
+        ),
     )
     # END_BLOCK_INIT_BACKENDS
     # START_BLOCK_INIT_SERVICES
@@ -212,6 +231,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         preload_model_ids=settings.model_preload_ids,
         metrics=metrics,
     )
+    engine_registry = build_engine_registry(settings)
     if settings.result_cache_enabled:
         result_cache: ResultCache = FileSystemResultCache(
             settings.result_cache_dir,
@@ -222,14 +242,15 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
     tts_service = TTSService(
         registry=cast(RuntimeExecutionRegistry, registry),
         settings=settings,
-        inference_guard=inference_guard,
         scheduler=scheduler,
+        engine_registry=engine_registry,
         result_cache=result_cache,
     )
     application = TTSApplicationService(tts_service=tts_service)
     model_lifecycle = ModelLifecycleService(
         models_dir=settings.models_dir,
         registry=registry,
+        engine_registry=engine_registry,
     )
     # END_BLOCK_INIT_SERVICES
     # START_BLOCK_INIT_JOB_SYSTEM
@@ -247,6 +268,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
     return CoreRuntime(
         settings=settings,
         backend_registry=backend_registry,
+        engine_registry=engine_registry,
         registry=registry,
         model_lifecycle=model_lifecycle,
         result_cache=result_cache,
@@ -260,7 +282,6 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
         job_execution=job_execution,
         rate_limiter=rate_limiter,
         quota_guard=quota_guard,
-        inference_guard=inference_guard,
         scheduler=scheduler,
         metrics=metrics,
     )
@@ -270,6 +291,7 @@ def build_runtime(settings: CoreSettings) -> CoreRuntime:
 __all__ = [
     "CoreRuntime",
     "build_backends",
+    "build_engine_registry",
     "build_job_artifact_store",
     "build_job_execution_backend",
     "build_job_metadata_store",

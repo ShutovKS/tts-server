@@ -2,7 +2,7 @@
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
 #   PURPOSE: Unit tests for the standalone engine scheduler and worker-pool behavior.
-#   SCOPE: Default single-slot contention, queue-full and timeout handling, shutdown semantics, and exception-safe slot release
+#   SCOPE: Default single-slot contention, scheduler-owned busy state, queue-full and timeout handling, shutdown semantics, and exception-safe slot release
 #   DEPENDS: M-ENGINE-SCHEDULER, M-ERRORS
 #   LINKS: V-M-ENGINE-SCHEDULER
 #   ROLE: TEST
@@ -11,15 +11,17 @@
 #
 # START_MODULE_MAP
 #   test_engine_scheduler_preserves_default_single_slot_busy_behavior - Verifies the default policy matches the current single-slot inference guard semantics.
+#   test_engine_scheduler_reports_busy_while_work_is_admitted - Verifies readiness can report busy state from scheduler-owned pool state.
 #   test_engine_scheduler_does_not_over_release_after_post_enqueue_submit_failure - Verifies a post-enqueue submit failure does not return capacity before the worker-owned task completes.
 #   test_engine_scheduler_raises_queue_full_when_policy_allows_queue_but_capacity_is_exhausted - Verifies queued pools fail with a queue-full error once active and queued capacity are both occupied.
 #   test_engine_scheduler_releases_slot_after_task_exception - Verifies raised task exceptions do not leak worker-pool capacity.
 #   test_engine_scheduler_raises_request_timeout_for_inference_deadline - Verifies inference deadlines produce controlled timeout errors.
 #   test_engine_scheduler_rejects_submit_after_shutdown - Verifies post-shutdown submit fails deterministically.
+#   test_engine_scheduler_uses_device_specific_policy_before_engine_default - Verifies device-keyed policy wins over engine-wide default policy.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Task 11 review-fix: added deterministic coverage for post-enqueue submit failures so queue-slot permits cannot be over-released]
+#   LAST_CHANGE: [v1.1.0 - Added scheduler-owned busy-state coverage for readiness after InferenceGuard wiring removal]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -72,6 +74,124 @@ def test_engine_scheduler_preserves_default_single_slot_busy_behavior() -> None:
 
     assert first_error == []
     assert first_result == ["first-done"]
+
+
+def test_engine_scheduler_reports_busy_while_work_is_admitted() -> None:
+    scheduler = EngineScheduler()
+    started = Event()
+    release = Event()
+
+    def blocking_task() -> str:
+        started.set()
+        assert release.wait(timeout=1.0)
+        return "done"
+
+    thread = Thread(
+        target=lambda: scheduler.submit_engine_task(
+            engine_key="piper",
+            device_key="cpu",
+            call=blocking_task,
+        ),
+        daemon=True,
+    )
+    thread.start()
+    assert started.wait(timeout=1.0)
+
+    assert scheduler.is_busy() is True
+
+    release.set()
+    thread.join(timeout=1.0)
+    assert scheduler.is_busy() is False
+    scheduler.shutdown()
+
+
+def test_engine_scheduler_uses_configured_policy_for_engine_key() -> None:
+    scheduler = EngineScheduler(
+        policies={
+            "piper": EngineWorkerPoolPolicy(max_active=2, max_queued=0),
+        }
+    )
+    started = [Event(), Event()]
+    release = Event()
+    results: list[str] = []
+
+    def blocking_task(index: int) -> str:
+        started[index].set()
+        assert release.wait(timeout=1.0)
+        return f"done-{index}"
+
+    threads = [
+        Thread(
+            target=lambda task_index=index: results.append(
+                scheduler.submit_engine_task(
+                    engine_key="piper",
+                    device_key="cpu",
+                    call=lambda task_index=task_index: blocking_task(task_index),
+                )
+            ),
+            daemon=True,
+        )
+        for index in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    assert all(event.wait(timeout=1.0) for event in started)
+
+    with pytest.raises(InferenceBusyError):
+        scheduler.submit_engine_task(engine_key="piper", device_key="cpu", call=lambda: "overflow")
+
+    release.set()
+    for thread in threads:
+        thread.join(timeout=1.0)
+    scheduler.shutdown()
+
+    assert sorted(results) == ["done-0", "done-1"]
+
+
+def test_engine_scheduler_uses_device_specific_policy_before_engine_default() -> None:
+    scheduler = EngineScheduler(
+        policies={
+            "qwen3-torch": EngineWorkerPoolPolicy(max_active=1, max_queued=0),
+            scheduler_module.EngineWorkerPoolKey(engine_key="qwen3-torch", device_key="cuda:0"): EngineWorkerPoolPolicy(
+                max_active=2,
+                max_queued=0,
+            ),
+        }
+    )
+    started = [Event(), Event()]
+    release = Event()
+    results: list[str] = []
+
+    def blocking_task(index: int) -> str:
+        started[index].set()
+        assert release.wait(timeout=1.0)
+        return f"done-{index}"
+
+    threads = [
+        Thread(
+            target=lambda task_index=index: results.append(
+                scheduler.submit_engine_task(
+                    engine_key="qwen3-torch",
+                    device_key="cuda:0",
+                    call=lambda task_index=task_index: blocking_task(task_index),
+                )
+            ),
+            daemon=True,
+        )
+        for index in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    assert all(event.wait(timeout=1.0) for event in started)
+
+    assert scheduler.submit_engine_task(engine_key="qwen3-torch", device_key="cpu", call=lambda: "cpu-done") == "cpu-done"
+
+    release.set()
+    for thread in threads:
+        thread.join(timeout=1.0)
+    scheduler.shutdown()
+
+    assert sorted(results) == ["done-0", "done-1"]
 
 
 def test_engine_scheduler_does_not_over_release_after_post_enqueue_submit_failure(

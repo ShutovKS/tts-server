@@ -1,9 +1,9 @@
 # FILE: core/services/synthesis_router.py
 # VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Provide the SynthesisRouter unified seam that collapses the public synthesis pipeline (Command -> Router -> backend execution) by dispatching every GenerationCommand variant through a single entry-point and, when configured, transparently short-circuiting identical requests against a swappable ResultCache.
+#   PURPOSE: Provide the SynthesisRouter unified seam that collapses the public synthesis pipeline (Command -> Router -> runtime execution) by dispatching every GenerationCommand variant through a single entry-point and, when configured, transparently short-circuiting identical requests against a swappable ResultCache.
 #   SCOPE: SynthesisRouter class with a unified route(command) entry-point, explicit per-mode helpers route_custom/_design/_clone, and an optional result_cache (NullResultCache by default) that lets identical commands skip the underlying coordinator.
-#   DEPENDS: M-CONFIG, M-MODEL-FAMILY, M-MODEL-REGISTRY, M-INFRASTRUCTURE, M-OBSERVABILITY, M-TTS-SERVICE, M-RESULT-CACHE
+#   DEPENDS: M-CONFIG, M-MODEL-FAMILY, M-MODEL-REGISTRY, M-OBSERVABILITY, M-TTS-SERVICE, M-RESULT-CACHE, M-ENGINE-SCHEDULER
 #   LINKS: M-TTS-SERVICE, M-RESULT-CACHE
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -15,7 +15,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Phase 4.14: accept an optional ResultCache (default NullResultCache) and consult it on each route_* path, so identical custom/design/clone requests can short-circuit the underlying coordinator while existing call-sites remain unchanged]
+#   LAST_CHANGE: [v1.2.0 - Removed InferenceGuard construction dependency from router-owned coordinator wiring]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ from core.contracts.commands import (
 )
 from core.contracts.results import AudioResult, GenerationResult
 from core.errors import TTSGenerationError
-from core.infrastructure.concurrency import InferenceGuard
 from core.model_families import ModelFamilyAdapter
 from core.observability import get_logger, log_event
 from core.planning import SynthesisPlanner
+from core.engines.scheduler import EngineScheduler
 from core.services.result_cache import (
     CachedResult,
     NullResultCache,
@@ -53,7 +53,7 @@ LOGGER = get_logger(__name__)
 
 # START_CONTRACT: SynthesisRouter
 #   PURPOSE: Route any GenerationCommand variant through a single entry-point to the synthesis coordinator so callers (TTSService and tests) do not have to know about per-mode coordinator helpers.
-#   INPUTS: { coordinator: SynthesisCoordinator | None - Optional pre-built coordinator (test injection); when omitted, the router builds one from the remaining wiring fields, registry: RuntimeExecutionRegistry - Runtime registry used to load models and resolve backends, settings: CoreSettings - Shared runtime settings, inference_guard: InferenceGuard - Concurrency guard, planner: SynthesisPlanner - Planner reused by the coordinator, family_adapters: dict[str, ModelFamilyAdapter] - Family-keyed adapters used to prepare execution payloads }
+#   INPUTS: { coordinator: SynthesisCoordinator | None - Optional pre-built coordinator (test injection); when omitted, the router builds one from the remaining wiring fields, registry: RuntimeExecutionRegistry - Runtime registry used to load models and resolve backends, settings: CoreSettings - Shared runtime settings, scheduler: EngineScheduler - Bounded execution gateway, planner: SynthesisPlanner - Planner reused by the coordinator, family_adapters: dict[str, ModelFamilyAdapter] - Family-keyed adapters used to prepare execution payloads }
 #   OUTPUTS: { instance - Router ready to dispatch route(command) calls }
 #   SIDE_EFFECTS: none on construction; route(...) triggers planning, family preparation, guarded inference, and audio persistence inside the underlying coordinator
 #   LINKS: M-TTS-SERVICE
@@ -65,7 +65,7 @@ class SynthesisRouter:
         coordinator: SynthesisCoordinator | None = None,
         registry: RuntimeExecutionRegistry | None = None,
         settings: CoreSettings | None = None,
-        inference_guard: InferenceGuard | None = None,
+        scheduler: EngineScheduler | None = None,
         planner: SynthesisPlanner | None = None,
         family_adapters: dict[str, ModelFamilyAdapter] | None = None,
         result_cache: ResultCache | None = None,
@@ -75,20 +75,20 @@ class SynthesisRouter:
             if (
                 registry is None
                 or settings is None
-                or inference_guard is None
+                or scheduler is None
                 or planner is None
                 or family_adapters is None
             ):
                 raise ValueError(
                     "SynthesisRouter requires either a pre-built coordinator or all of "
-                    "(registry, settings, inference_guard, planner, family_adapters)."
+                    "(registry, settings, scheduler, planner, family_adapters)."
                 )
             from core.services.tts_service import SynthesisCoordinator as _Coord
 
             coordinator = _Coord(
                 registry=registry,
                 settings=settings,
-                inference_guard=inference_guard,
+                scheduler=scheduler,
                 planner=planner,
                 family_adapters=family_adapters,
             )
@@ -175,16 +175,7 @@ class SynthesisRouter:
     # END_CONTRACT: route
     def route(self, command: GenerationCommand) -> GenerationResult:
         # START_BLOCK_DISPATCH_BY_COMMAND_TYPE
-        if isinstance(command, CustomVoiceCommand):
-            mode = "custom"
-            target = self._coordinator.synthesize_custom
-        elif isinstance(command, VoiceDesignCommand):
-            mode = "design"
-            target = self._coordinator.synthesize_design
-        elif isinstance(command, VoiceCloneCommand):
-            mode = "clone"
-            target = self._coordinator.synthesize_clone
-        else:
+        if not isinstance(command, (CustomVoiceCommand, VoiceDesignCommand, VoiceCloneCommand)):
             raise TTSGenerationError(
                 "Unsupported synthesis command type",
                 details={
@@ -196,6 +187,12 @@ class SynthesisRouter:
                     ],
                 },
             )
+        if isinstance(command, CustomVoiceCommand):
+            mode = "custom"
+        elif isinstance(command, VoiceDesignCommand):
+            mode = "design"
+        else:
+            mode = "clone"
         # END_BLOCK_DISPATCH_BY_COMMAND_TYPE
         log_event(
             LOGGER,
@@ -208,7 +205,11 @@ class SynthesisRouter:
             text_length=len(command.text),
             language=command.language,
         )
-        return target(command)
+        if isinstance(command, CustomVoiceCommand):
+            return self._coordinator.synthesize_custom(command)
+        if isinstance(command, VoiceDesignCommand):
+            return self._coordinator.synthesize_design(command)
+        return self._coordinator.synthesize_clone(command)
 
     # START_CONTRACT: route_custom
     #   PURPOSE: Route an explicit CustomVoiceCommand without dispatching by isinstance.

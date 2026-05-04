@@ -15,10 +15,11 @@
 #   test_job_wiring_factories_reject_unknown_backend_ids - Verifies bootstrap factories reject unsupported backend ids
 #   test_job_wiring_factories_keep_local_runtime_defaults - Verifies local bootstrap factories preserve default runtime wiring
 #   test_build_runtime_passes_manifest_path_to_backend_registry - Verifies runtime bootstrap passes explicit manifest configuration to registry construction
+#   test_build_runtime_wires_engine_scheduler_policies_from_engine_configs - Verifies runtime bootstrap passes per-engine worker policy into EngineScheduler
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.2.1 - Added coverage for canonical TTS_CORS_ALLOWED_ORIGINS parsing so transport adapters can read explicit browser origin allowlists from shared config]
+#   LAST_CHANGE: [v1.3.0 - Added runtime engine config parsing and scheduler-policy bootstrap coverage]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -321,6 +322,7 @@ def test_build_runtime_passes_manifest_path_to_backend_registry(tmp_path: Path):
         runtime.backend_registry.model_specs[0].api_name == "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     )
     assert runtime.backend_registry._model_manifest.metadata["catalog"] == "test"
+    assert runtime.engine_registry.keys() == ("qwen3-torch", "omnivoice-torch", "piper-onnx")
     assert cast(Any, runtime.backend_registry._backends["mlx"]).models_dir == (tmp_path / "mlx-models")
     assert cast(Any, runtime.backend_registry._backends["torch"]).models_dir == (tmp_path / "models")
     assert cast(Any, runtime.backend_registry._backends["qwen_fast"]).enabled is True
@@ -337,6 +339,157 @@ def test_build_runtime_passes_manifest_path_to_backend_registry(tmp_path: Path):
     assert runtime.metrics.readiness_summary()["execution"]["submitted"] == 0
     assert runtime.rate_limiter is not None
     assert runtime.quota_guard is not None
+
+    runtime.job_manager.stop()
+
+
+def test_parse_core_settings_from_env_reads_engine_configs(tmp_path: Path):
+    values = parse_core_settings_from_env(
+        {
+            "TTS_MODELS_DIR": str(tmp_path / "models"),
+            "TTS_OUTPUTS_DIR": str(tmp_path / "outputs"),
+            "TTS_VOICES_DIR": str(tmp_path / "voices"),
+            "TTS_ENGINE_CONFIGS": '[{"kind":"torch","name":"qwen3-torch","family":"qwen3_tts","capabilities":["preset_speaker_tts"],"max_active":2,"max_queued":1,"submit_timeout_seconds":0.25,"inference_timeout_seconds":9,"device":"cuda:0","model_cache_size":2}]',
+        }
+    )
+
+    assert values["engine_configs"] == (
+        {
+            "kind": "torch",
+            "name": "qwen3-torch",
+            "family": "qwen3_tts",
+            "capabilities": ["preset_speaker_tts"],
+            "max_active": 2,
+            "max_queued": 1,
+            "submit_timeout_seconds": 0.25,
+            "inference_timeout_seconds": 9,
+            "device": "cuda:0",
+            "model_cache_size": 2,
+        },
+    )
+
+
+def test_build_runtime_wires_engine_scheduler_policies_from_engine_configs(tmp_path: Path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        """
+        {
+          "version": 1,
+          "metadata": {"catalog": "test"},
+          "modes": [
+            {"id": "custom", "label": "Custom Voice", "semantics": "Instruction-guided synthesis with predefined speakers"}
+          ],
+          "models": [
+            {
+              "key": "1",
+              "public_name": "Custom Voice",
+              "folder": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+              "mode": "custom",
+              "output_subfolder": "CustomVoice",
+              "metadata": {"variant": "1.7B"},
+              "mode_metadata": {"id": "custom", "label": "Custom Voice", "semantics": "Instruction-guided synthesis with predefined speakers"},
+              "backend_affinity": ["mlx", "qwen_fast", "torch"],
+              "rollout": {"enabled": true, "stage": "general", "default_preference": 1},
+              "artifact_validation": {
+                "mlx": {"required_rules": [{"name": "config", "any_of": ["config.json"]}]},
+                "torch": {"required_rules": [{"name": "config", "any_of": ["config.json"]}]},
+                "qwen_fast": {"required_rules": [{"name": "config", "any_of": ["config.json"]}]}
+              }
+            }
+          ]
+        }
+        """.strip(),
+        encoding="utf-8",
+    )
+    settings = CoreSettings(
+        models_dir=tmp_path / "models",
+        mlx_models_dir=tmp_path / "mlx-models",
+        outputs_dir=tmp_path / "outputs",
+        voices_dir=tmp_path / "voices",
+        upload_staging_dir=tmp_path / "uploads",
+        model_manifest_path=manifest_path,
+        engine_configs=(
+            {
+                "kind": "torch",
+                "name": "qwen3-torch",
+                "family": "qwen3_tts",
+                "capabilities": ["preset_speaker_tts"],
+                "max_active": 2,
+                "max_queued": 1,
+                "submit_timeout_seconds": 0.25,
+                "inference_timeout_seconds": 9,
+            },
+        ),
+    )
+
+    runtime = build_runtime(settings)
+
+    policy = cast(Any, runtime.scheduler)._policies["qwen3-torch"]
+    assert policy.max_active == 2
+    assert policy.max_queued == 1
+    assert policy.submit_timeout_seconds == 0.25
+    assert policy.inference_timeout_seconds == 9
+
+    runtime.job_manager.stop()
+
+
+def test_build_runtime_wires_device_specific_engine_scheduler_policies(tmp_path: Path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        """
+        {
+          "version": 1,
+          "metadata": {"catalog": "test"},
+          "modes": [
+            {"id": "custom", "label": "Custom Voice", "semantics": "Instruction-guided synthesis with predefined speakers"}
+          ],
+          "models": [
+            {
+              "key": "1",
+              "public_name": "Custom Voice",
+              "folder": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+              "mode": "custom",
+              "output_subfolder": "CustomVoice",
+              "metadata": {"variant": "1.7B"},
+              "mode_metadata": {"id": "custom", "label": "Custom Voice", "semantics": "Instruction-guided synthesis with predefined speakers"},
+              "backend_affinity": ["mlx", "qwen_fast", "torch"],
+              "rollout": {"enabled": true, "stage": "general", "default_preference": 1},
+              "artifact_validation": {
+                "mlx": {"required_rules": [{"name": "config", "any_of": ["config.json"]}]},
+                "torch": {"required_rules": [{"name": "config", "any_of": ["config.json"]}]},
+                "qwen_fast": {"required_rules": [{"name": "config", "any_of": ["config.json"]}]}
+              }
+            }
+          ]
+        }
+        """.strip(),
+        encoding="utf-8",
+    )
+    settings = CoreSettings(
+        models_dir=tmp_path / "models",
+        mlx_models_dir=tmp_path / "mlx-models",
+        outputs_dir=tmp_path / "outputs",
+        voices_dir=tmp_path / "voices",
+        upload_staging_dir=tmp_path / "uploads",
+        model_manifest_path=manifest_path,
+        engine_configs=(
+            {
+                "kind": "torch",
+                "name": "qwen3-torch",
+                "family": "qwen3_tts",
+                "capabilities": ["preset_speaker_tts"],
+                "max_active": 2,
+                "device": "cuda:0",
+            },
+        ),
+    )
+
+    runtime = build_runtime(settings)
+
+    from core.engines.scheduler import EngineWorkerPoolKey
+
+    policy = cast(Any, runtime.scheduler)._policies[EngineWorkerPoolKey(engine_key="qwen3-torch", device_key="cuda:0")]
+    assert policy.max_active == 2
 
     runtime.job_manager.stop()
 

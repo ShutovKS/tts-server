@@ -20,6 +20,7 @@
 #   test_load_engine_registry_skips_failed_optional_entry_point_loads - Verifies optional entry-point failures are logged and isolated in non-fail-fast mode.
 #   test_load_engine_registry_rejects_invalid_entry_point_objects_in_non_fail_fast_mode - Verifies invalid entry-point objects/classes are logged and skipped.
 #   test_load_engine_registry_fail_fast_raises_entry_point_errors - Verifies fail-fast mode raises instead of warning-and-skip behavior.
+#   test_load_engine_registry_skips_duplicate_entry_point_when_builtin_exists - Verifies built-in fallback survives duplicate installed entry-point declarations.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
@@ -346,6 +347,27 @@ def test_load_engine_registry_fail_fast_raises_entry_point_errors() -> None:
                 entry_points_loader=loader,
                 fail_fast=True,
             )
+
+
+def test_load_engine_registry_skips_duplicate_entry_point_when_builtin_exists(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    duplicate_entry = EntryPoint(
+        name="duplicate-entry-engine",
+        value="tests.unit.core.test_engine_registry:_EntryPointEngine",
+        group=ENGINE_ENTRY_POINT_GROUP,
+    )
+
+    with caplog.at_level("WARNING"):
+        registry = load_engine_registry(
+            built_in_engines=(_EntryPointEngine,),
+            include_entry_points=True,
+            entry_points_loader=lambda: [duplicate_entry],
+            fail_fast=False,
+        )
+
+    assert registry.keys() == ("entry-engine",)
+    assert "Skipping optional engine entry point after registration failure" in caplog.text
 
 
 def test_registry_resolve_rejects_unmatched_explicit_constraints() -> None:

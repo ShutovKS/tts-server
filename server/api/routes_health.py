@@ -20,6 +20,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from fastapi import FastAPI, Request
 
 from core.infrastructure.audio_io import check_ffmpeg_available
@@ -29,7 +31,8 @@ from server.schemas.audio import HealthResponse
 
 
 def _build_capability_status(settings, registry_report: dict[str, object]) -> dict[str, object]:
-    models_items = registry_report.get("items", [])
+    raw_items = registry_report.get("items", [])
+    models_items = [item for item in raw_items if isinstance(item, dict)] if isinstance(raw_items, list) else []
     capability_status: dict[str, object] = {}
     capability_labels = {
         "custom": "preset_speaker_tts",
@@ -99,17 +102,21 @@ def register_health_routes(app: FastAPI, logger) -> None:
         with operation_scope("server.health_ready"):
             await enforce_control_plane_admission(request)
             readiness = build_readiness_report(request)
+            checks = cast(dict[str, Any], readiness.checks)
+            models_check = cast(dict[str, Any], checks["models"])
+            preload_check = cast(dict[str, Any], models_check["preload"])
+            ffmpeg_check = cast(dict[str, Any], checks["ffmpeg"])
             log_event(
                 logger,
                 level=20,
                 event="[RoutesHealth][health_ready][HEALTH_READY]",
                 message="Readiness probe evaluated",
                 status=readiness.status,
-                available_models=readiness.checks["models"]["available_models"],
-                runtime_ready_models=readiness.checks["models"]["runtime_ready_models"],
-                loaded_models=readiness.checks["models"]["loaded_models"],
-                preload_status=readiness.checks["models"]["preload"]["status"],
-                ffmpeg_available=readiness.checks["ffmpeg"]["available"],
+                available_models=models_check["available_models"],
+                runtime_ready_models=models_check["runtime_ready_models"],
+                loaded_models=models_check["loaded_models"],
+                preload_status=preload_check["status"],
+                ffmpeg_available=ffmpeg_check["available"],
             )
             return readiness
 
@@ -139,7 +146,7 @@ def build_readiness_report(request: Request) -> HealthResponse:
         "model_preload_ids": list(settings.model_preload_ids),
     }
     runtime = {
-        "inference_busy": request.app.state.runtime.inference_guard.is_busy(),
+        "inference_busy": request.app.state.runtime.scheduler.is_busy(),
         "default_save_output": settings.default_save_output,
         "request_timeout_seconds": settings.request_timeout_seconds,
         "configured_backend": settings.backend,

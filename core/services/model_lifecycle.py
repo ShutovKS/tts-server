@@ -1,9 +1,9 @@
 # FILE: core/services/model_lifecycle.py
 # VERSION: 1.0.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Provide a process-local lifecycle facade for model management — listing, deleting, refreshing, and submitting/observing best-effort downloads — so the HTTP control plane can exercise these operations without reaching into the model registry directly.
-#   SCOPE: ModelDownloadJob descriptor, ModelDownloadStatus literal-string set, default no-op downloader, and ModelLifecycleService with delete_model / submit_download / get_download / list_downloads / refresh helpers backed by the active ModelRegistry and the configured models_dir on disk.
-#   DEPENDS: M-MODEL-REGISTRY, M-MODELS, M-CONFIG
+#   PURPOSE: Provide a process-local lifecycle facade for model management — listing, deleting, refreshing, cache invalidation, and submitting/observing best-effort downloads — so the HTTP control plane can exercise these operations without reaching into the model registry directly.
+#   SCOPE: ModelDownloadJob descriptor, ModelDownloadStatus literal-string set, default no-op downloader, and ModelLifecycleService with delete_model / submit_download / get_download / list_downloads / refresh helpers backed by the active ModelRegistry, optional EngineRegistry cache invalidation, and the configured models_dir on disk.
+#   DEPENDS: M-MODEL-REGISTRY, M-MODELS, M-CONFIG, M-ENGINE-REGISTRY
 #   LINKS: M-MODEL-LIFECYCLE
 #   ROLE: RUNTIME
 #   MAP_MODE: EXPORTS
@@ -19,7 +19,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Phase 4.13: introduced ModelLifecycleService with delete/submit_download/get_download/list_downloads/refresh helpers and the default no-downloader-configured fallback so transports can manage models without reaching into the registry directly]
+#   LAST_CHANGE: [v1.1.0 - Added engine cache invalidation during refresh so model-lifecycle reload clears CachedEngine hot state together with registry/catalog refresh]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from core.engines.registry import EngineRegistry
 from core.models.catalog import ModelSpec
 from core.observability import get_logger, log_event
 
@@ -86,8 +87,8 @@ def default_downloader(job: ModelDownloadJob, target_dir: Path) -> ModelDownload
 
 
 # START_CONTRACT: ModelLifecycleService
-#   PURPOSE: Process-local lifecycle facade exposing model deletion, refresh, and best-effort download orchestration to transports.
-#   INPUTS: { models_dir: Path - Filesystem root where model folders live, registry: Any - Active ModelRegistry-like object exposing model_specs and reload_manifest hooks, downloader: DownloaderCallable | None - Optional injected downloader; defaults to default_downloader }
+#   PURPOSE: Process-local lifecycle facade exposing model deletion, refresh, cache invalidation, and best-effort download orchestration to transports.
+#   INPUTS: { models_dir: Path - Filesystem root where model folders live, registry: Any - Active ModelRegistry-like object exposing model_specs and reload_manifest hooks, engine_registry: EngineRegistry | None - Optional runtime engine registry whose cacheable engines should be invalidated on refresh, downloader: DownloaderCallable | None - Optional injected downloader; defaults to default_downloader }
 #   OUTPUTS: { instance - Lifecycle service instance }
 #   SIDE_EFFECTS: Mutates the local filesystem under models_dir when deleting models or running downloaders, and runs downloads on background threads.
 #   LINKS: M-MODEL-LIFECYCLE
@@ -98,10 +99,12 @@ class ModelLifecycleService:
         *,
         models_dir: Path,
         registry: Any,
+        engine_registry: EngineRegistry | None = None,
         downloader: DownloaderCallable | None = None,
     ) -> None:
         self._models_dir = Path(models_dir)
         self._registry = registry
+        self._engine_registry = engine_registry
         self._downloader: DownloaderCallable = downloader or default_downloader
         self._jobs: dict[str, ModelDownloadJob] = {}
         self._lock = threading.RLock()
@@ -179,12 +182,13 @@ class ModelLifecycleService:
     # START_CONTRACT: refresh
     #   PURPOSE: Best-effort reload hook used after the on-disk model layout changes so transports can request a re-discovery without restarting the server.
     #   INPUTS: {}
-    #   OUTPUTS: { dict[str, Any] - Refresh outcome with keys "supported" (bool), "model_count" (int), and optionally "method" (str) describing which registry hook was used }
-    #   SIDE_EFFECTS: May invoke the registry's reload_manifest/refresh hook when one is available; emits a "[ModelLifecycle][refresh][...]" log event either way.
+    #   OUTPUTS: { dict[str, Any] - Refresh outcome with keys "supported" (bool), "model_count" (int), optionally "method" (str), and cache invalidation counts }
+    #   SIDE_EFFECTS: May invoke the registry's reload_manifest/refresh hook, clears cacheable engine runtime state when an engine registry is supplied, and emits a "[ModelLifecycle][refresh][...]" log event either way.
     #   LINKS: M-MODEL-LIFECYCLE
     # END_CONTRACT: refresh
     def refresh(self) -> dict[str, Any]:
         # START_BLOCK_REFRESH_REGISTRY
+        cleared_engine_caches = self._clear_engine_caches()
         for hook_name in ("reload_manifest", "refresh", "rebuild"):
             hook = getattr(self._registry, hook_name, None)
             if callable(hook):
@@ -197,8 +201,14 @@ class ModelLifecycleService:
                     message="Registry refresh hook invoked",
                     method=hook_name,
                     model_count=count,
+                    cleared_engine_caches=cleared_engine_caches,
                 )
-                return {"supported": True, "method": hook_name, "model_count": count}
+                return {
+                    "supported": True,
+                    "method": hook_name,
+                    "model_count": count,
+                    "cleared_engine_caches": cleared_engine_caches,
+                }
         count = len(self._model_specs())
         log_event(
             LOGGER,
@@ -206,9 +216,25 @@ class ModelLifecycleService:
             event="[ModelLifecycle][refresh][BLOCK_NO_REFRESH_HOOK]",
             message="Registry exposes no refresh hook; returning current snapshot",
             model_count=count,
+            cleared_engine_caches=cleared_engine_caches,
         )
-        return {"supported": False, "model_count": count}
+        return {
+            "supported": False,
+            "model_count": count,
+            "cleared_engine_caches": cleared_engine_caches,
+        }
         # END_BLOCK_REFRESH_REGISTRY
+
+    def _clear_engine_caches(self) -> int:
+        if self._engine_registry is None:
+            return 0
+        cleared = 0
+        for engine in self._engine_registry.registered_engines:
+            clear_cache = getattr(engine, "clear_cache", None)
+            if callable(clear_cache):
+                clear_cache()
+                cleared += 1
+        return cleared
 
     # START_CONTRACT: submit_download
     #   PURPOSE: Submit a best-effort download for a registered model and run it on a background thread so the HTTP control plane returns immediately.

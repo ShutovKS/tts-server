@@ -67,7 +67,7 @@ def _make_request(settings: ServerSettings, registry) -> SimpleNamespace:
                     }
                 ),
                 runtime=SimpleNamespace(
-                    inference_guard=SimpleNamespace(is_busy=lambda: False),
+                    scheduler=SimpleNamespace(is_busy=lambda: False),
                 ),
             )
         )

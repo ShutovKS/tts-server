@@ -14,11 +14,11 @@
 #   EngineWorkerPoolPolicy - Explicit worker-pool policy describing active concurrency, queue depth, and timeout behavior.
 #   EngineSchedulerStoppedError - Typed scheduler-local error raised after shutdown.
 #   WorkerPool - Per-key bounded worker pool that executes submitted callables.
-#   EngineScheduler - Process-local scheduler facade that manages per-engine/per-device pools.
+#   EngineScheduler - Process-local scheduler facade that manages per-engine/per-device pools and exposes scheduler-owned busy state.
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.1 - Task 11 review-fix: made queue-slot ownership explicit so only pre-enqueue submit failures release permits and worker-owned tasks release exactly once]
+#   LAST_CHANGE: [v1.1.0 - Added scheduler-owned busy reporting so readiness no longer depends on InferenceGuard]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from queue import Queue
 from threading import BoundedSemaphore, Condition, Event, Lock, Thread
-from typing import TypeVar
+from typing import TypeAlias, TypeVar
 
 from core.errors import CoreError, InferenceBusyError, JobQueueFullError, RequestTimeoutError
 from core.observability import log_event
@@ -85,6 +85,9 @@ class EngineWorkerPoolPolicy:
         return cls()
 
 
+EngineSchedulerPolicyMap: TypeAlias = dict[str | EngineWorkerPoolKey, EngineWorkerPoolPolicy]
+
+
 # START_CONTRACT: EngineSchedulerStoppedError
 #   PURPOSE: Report deterministic submit failures after the scheduler or a worker pool has been shut down.
 #   INPUTS: { reason: str - Human-readable shutdown reason }
@@ -121,6 +124,7 @@ class WorkerPool:
     _queue_slots: BoundedSemaphore = field(init=False, repr=False)
     _workers: list[Thread] = field(init=False, repr=False)
     _started: bool = field(init=False, default=False, repr=False)
+    _inflight: int = field(init=False, default=0, repr=False)
 
     def __post_init__(self) -> None:
         self._queue = deque()
@@ -254,6 +258,7 @@ class WorkerPool:
                 if self._stop_event.is_set():
                     raise EngineSchedulerStoppedError("Engine scheduler worker pool is shut down")
                 self._queue.append(task)
+                self._inflight += 1
                 slot_owned_by_submit = False
                 self._condition.notify()
             log_event(
@@ -292,6 +297,9 @@ class WorkerPool:
                 self._execute_task(task)
             finally:
                 # START_BLOCK_RELEASE_SCHEDULER_SLOT
+                with self._condition:
+                    self._inflight = max(0, self._inflight - 1)
+                    self._condition.notify_all()
                 self._queue_slots.release()
                 # END_BLOCK_RELEASE_SCHEDULER_SLOT
 
@@ -363,17 +371,26 @@ class WorkerPool:
         task.result_queue.put((outcome, payload))
         # END_BLOCK_HANDLE_EXECUTION_OUTCOME
 
+    def is_busy(self) -> bool:
+        with self._condition:
+            return self._inflight > 0
+
 
 # START_CONTRACT: EngineScheduler
-#   PURPOSE: Manage per-engine/per-device worker pools under explicit policy objects while keeping runtime integration separate from the current TTSService path.
+#   PURPOSE: Manage per-engine/per-device worker pools under explicit policy objects while exposing scheduler-owned busy state for readiness.
 #   INPUTS: { default_policy: EngineWorkerPoolPolicy - Default policy applied when a submitter does not supply a per-call override }
 #   OUTPUTS: { instance - Process-local engine scheduler facade }
 #   SIDE_EFFECTS: Creates worker pools lazily and manages their lifetime until shutdown
 #   LINKS: M-ENGINE-SCHEDULER
 # END_CONTRACT: EngineScheduler
 class EngineScheduler:
-    def __init__(self, default_policy: EngineWorkerPoolPolicy | None = None) -> None:
+    def __init__(
+        self,
+        default_policy: EngineWorkerPoolPolicy | None = None,
+        policies: EngineSchedulerPolicyMap | None = None,
+    ) -> None:
         self._default_policy = default_policy or EngineWorkerPoolPolicy.single_slot()
+        self._policies = dict(policies or {})
         self._pools: dict[EngineWorkerPoolKey, WorkerPool] = {}
         self._lock = Lock()
         self._shutdown = False
@@ -419,6 +436,11 @@ class EngineScheduler:
         for pool in pools:
             pool.shutdown(wait=wait)
 
+    def is_busy(self) -> bool:
+        with self._lock:
+            pools = list(self._pools.values())
+        return any(pool.is_busy() for pool in pools)
+
     def _get_or_create_pool(
         self,
         key: EngineWorkerPoolKey,
@@ -431,7 +453,10 @@ class EngineScheduler:
             existing = self._pools.get(key)
             if existing is not None:
                 return existing
-            created = WorkerPool(key=key, policy=policy or self._default_policy)
+            created = WorkerPool(
+                key=key,
+                policy=policy or self._policies.get(key) or self._policies.get(key.engine_key) or self._default_policy,
+            )
             self._pools[key] = created
             return created
 
@@ -439,6 +464,7 @@ class EngineScheduler:
 __all__ = [
     "EngineScheduler",
     "EngineSchedulerStoppedError",
+    "EngineSchedulerPolicyMap",
     "EngineWorkerPoolKey",
     "EngineWorkerPoolPolicy",
     "WorkerPool",

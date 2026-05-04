@@ -39,11 +39,11 @@
 #   test_local_job_artifact_handler_cleans_up_staged_paths - Verifies artifact handler removes staged files
 #   test_local_adapters_conform_to_explicit_job_ports - Verifies local adapters satisfy declared job protocols
 #   test_build_job_wiring_uses_local_defaults - Verifies bootstrap wiring selects local job defaults
-#   test_build_runtime_uses_local_job_ports_by_default - Verifies runtime bootstrap exposes local job ports by default
+#   test_build_runtime_uses_local_job_ports_by_default - Verifies runtime bootstrap exposes local job ports and scheduler by default
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Task 12: extended bootstrap assertions to verify the shared EngineScheduler is exposed alongside the temporary InferenceGuard compatibility seam]
+#   LAST_CHANGE: [v1.2.0 - Updated bootstrap assertions after InferenceGuard runtime wiring was removed in favor of EngineScheduler-only bounded execution]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations

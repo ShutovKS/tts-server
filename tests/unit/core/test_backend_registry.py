@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import platform
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -45,6 +46,7 @@ from core.errors import (
     ModelNotAvailableError,
 )
 from core.models.catalog import MODEL_SPECS, ModelSpec
+from core.models.manifest import ModelManifest
 from core.registry.artifacts import ArtifactRegistry
 from core.registry.model_catalog import ModelCatalogRegistry
 from core.services.model_registry import ModelRegistry
@@ -482,15 +484,53 @@ def test_model_registry_exposes_split_registry_runtime_state():
     assert runtime_state["preload_status"] == "loaded"
 
 
+def test_model_registry_reload_manifest_refreshes_specs_and_reapplies_preload_policy():
+    backend = StubBackend(key="torch", available=True, platform_supported=True)
+    manifest_one = cast(
+        ModelManifest,
+        type("_ManifestOne", (), {"enabled_models": lambda self: (MODEL_SPECS["1"],)})(),
+    )
+    manifest_two = cast(
+        ModelManifest,
+        type("_ManifestTwo", (), {"enabled_models": lambda self: (MODEL_SPECS["1"], MODEL_SPECS["3"]) })(),
+    )
+    manifest_queue: list[ModelManifest] = [manifest_two]
+    backend_registry = BackendRegistry(
+        [backend],
+        requested_backend="torch",
+        autoselect=True,
+        model_manifest=manifest_one,
+        model_manifest_loader=lambda: manifest_queue.pop(0),
+    )
+
+    registry = ModelRegistry(
+        backend_registry=backend_registry,
+        preload_policy="listed",
+        preload_model_ids=(MODEL_SPECS["1"].api_name,),
+    )
+
+    registry.reload_manifest()
+
+    assert [spec.api_name for spec in registry.model_specs] == [
+        MODEL_SPECS["1"].api_name,
+        MODEL_SPECS["3"].api_name,
+    ]
+    assert registry.preload_report()["policy"] == "listed"
+    assert registry.preload_report()["loaded_model_ids"] == [MODEL_SPECS["1"].api_name]
+
+
 def test_artifact_registry_inspects_model_via_routed_backend():
     selected_backend = StubBackend(key="torch", available=True, platform_supported=True)
     routed_backend = StubBackend(key="onnx", available=True, platform_supported=True)
     catalog = ModelCatalogRegistry((MODEL_SPECS["1"],))
     artifact_registry = ArtifactRegistry(
         catalog=catalog,
-        backend_registry=RoutedBackendRegistryStub(
-            routed_backend=routed_backend,
-            selected_backend=selected_backend,
+        backend_registry=cast(
+            Any,
+            RoutedBackendRegistryStub(
+                routed_backend=routed_backend,
+                selected_backend=selected_backend,
+            ),
         ),
     )
 
@@ -525,7 +565,7 @@ def test_runtime_model_registry_uses_public_preload_report_contract():
     )
 
     preload = registry.runtime_models.preload_report()
-    preload["loaded_model_ids"].append("mutated")
+    cast(list[str], preload["loaded_model_ids"]).append("mutated")
 
     assert registry.preload_report()["loaded_model_ids"] == [MODEL_SPECS["1"].api_name]
     assert registry.runtime_models.preload_report()["loaded_model_ids"] == [

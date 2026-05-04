@@ -20,7 +20,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from core.backends.base import TTSBackend
@@ -60,6 +60,7 @@ class BackendRegistry:
         allow_unready_selection: bool = False,
         model_manifest_path=None,
         model_manifest: ModelManifest | None = None,
+        model_manifest_loader: Callable[[], ModelManifest] | None = None,
     ):
         if not backends:
             raise ValueError("At least one backend must be registered")
@@ -67,12 +68,15 @@ class BackendRegistry:
         self._requested_backend = requested_backend
         self._autoselect = autoselect
         self._allow_unready_selection = allow_unready_selection
+        self._model_manifest_loader = model_manifest_loader
         if model_manifest is not None:
             self._model_manifest = model_manifest
         elif model_manifest_path is not None:
             self._model_manifest = get_model_manifest(model_manifest_path)
+            self._model_manifest_loader = lambda: get_model_manifest(model_manifest_path)
         else:
             self._model_manifest = get_model_manifest()
+            self._model_manifest_loader = get_model_manifest
         self._host_probe = HostProbe()
         self._host_snapshot = self._host_probe.probe()
         self._capability_resolver = CapabilityResolver()
@@ -410,6 +414,21 @@ class BackendRegistry:
     @property
     def host_snapshot(self):
         return self._host_snapshot
+
+    # START_CONTRACT: reload_manifest
+    #   PURPOSE: Replace the active model manifest from the configured loader so runtime registries can rebuild discovery state after on-disk model changes.
+    #   INPUTS: {}
+    #   OUTPUTS: { None }
+    #   SIDE_EFFECTS: Replaces the in-memory model manifest with a freshly loaded manifest snapshot.
+    #   LINKS: M-BACKENDS, M-MODEL-REGISTRY
+    # END_CONTRACT: reload_manifest
+    def reload_manifest(self) -> None:
+        if self._model_manifest_loader is None:
+            raise BackendNotAvailableError(
+                "Model manifest loader is not configured for runtime refresh",
+                details={"reason": "manifest_reload_not_configured"},
+            )
+        self._model_manifest = self._model_manifest_loader()
 
 
 __all__ = [

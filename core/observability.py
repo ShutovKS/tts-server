@@ -29,8 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterator
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from time import perf_counter
 from typing import Any
 
@@ -48,7 +47,7 @@ _OPERATION: ContextVar[str] = ContextVar("operation", default="system")
 class OperationScope:
     def __init__(self, operation: str):
         self.operation = operation
-        self._token = None
+        self._token: Token[str] | None = None
         self._span_cm: Any | None = None
         self._span: Any | None = None
 
@@ -104,22 +103,22 @@ class Timer:
 # START_CONTRACT: bind_request_context
 #   PURPOSE: Bind a request identifier into the current context for downstream logging.
 #   INPUTS: { request_id: str - Correlation identifier for the active request }
-#   OUTPUTS: { object - Context token required to reset the request binding }
+#   OUTPUTS: { Token[str] - Context token required to reset the request binding }
 #   SIDE_EFFECTS: Modifies the request ID context variable for the current execution context
 #   LINKS: M-OBSERVABILITY
 # END_CONTRACT: bind_request_context
-def bind_request_context(request_id: str) -> object:
+def bind_request_context(request_id: str) -> Token[str]:
     return _REQUEST_ID.set(request_id)
 
 
 # START_CONTRACT: reset_request_context
 #   PURPOSE: Restore the previous request identifier after a scoped request binding completes.
-#   INPUTS: { token: object - Context token previously returned by bind_request_context }
+#   INPUTS: { token: Token[str] - Context token previously returned by bind_request_context }
 #   OUTPUTS: { None - Completes the request context reset }
 #   SIDE_EFFECTS: Modifies the request ID context variable for the current execution context
 #   LINKS: M-OBSERVABILITY
 # END_CONTRACT: reset_request_context
-def reset_request_context(token: object) -> None:
+def reset_request_context(token: Token[str]) -> None:
     _REQUEST_ID.reset(token)
 
 
@@ -148,11 +147,11 @@ def get_operation() -> str:
 # START_CONTRACT: operation_scope
 #   PURPOSE: Create an operation scope helper for structured context propagation.
 #   INPUTS: { operation: str - Operation name to bind for the scope }
-#   OUTPUTS: { Iterator[OperationScope] - Context manager for operation propagation }
+#   OUTPUTS: { OperationScope - Context manager for operation propagation }
 #   SIDE_EFFECTS: none
 #   LINKS: M-OBSERVABILITY
 # END_CONTRACT: operation_scope
-def operation_scope(operation: str) -> Iterator[OperationScope]:
+def operation_scope(operation: str) -> OperationScope:
     return OperationScope(operation)
 
 

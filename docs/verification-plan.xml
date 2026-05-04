@@ -30,8 +30,8 @@
         <log-marker>[RoutesTTS][tts_clone][BLOCK_LOG_CLONE_REQUEST]</log-marker>
         <log-marker>[TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO]</log-marker>
         <log-marker>[TTSService][synthesize_clone][BLOCK_EXECUTE_CLONE]</log-marker>
-        <log-marker>[TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]</log-marker>
-        <trace-sequence>[RoutesTTS][tts_clone][BLOCK_LOG_CLONE_REQUEST] -> [TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO] -> [TTSService][synthesize_clone][BLOCK_EXECUTE_CLONE] -> [TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]</trace-sequence>
+        <log-marker>[TTSService][_run_engine_generation][BLOCK_PERSIST_OUTPUT]</log-marker>
+        <trace-sequence>[RoutesTTS][tts_clone][BLOCK_LOG_CLONE_REQUEST] -> [TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO] -> [TTSService][synthesize_clone][BLOCK_EXECUTE_CLONE] -> [TTSService][_run_engine_generation][BLOCK_PERSIST_OUTPUT]</trace-sequence>
       </required-signals>
     </VF-002>
 
@@ -52,17 +52,17 @@
     </VF-004>
     <VF-011 NAME="EnginePlanningReadiness" USE_CASES="UC-008" DATA_FLOW="DF-BACKEND-SELECTION,DF-REQUEST-TO-PLAN" PRIORITY="high">
       <scenario>Engine planning surfaces can resolve a family, engine, and backend path through current registry, config, and scheduler layers without breaking transport behavior.</scenario>
-      <expected-outcome>Engine registry and typed config evidence show the planned engine vocabulary, TTSEngine, and worker pool while current runtime paths remain intact.</expected-outcome>
+      <expected-outcome>Engine registry and typed config evidence show the planned engine vocabulary, TTSEngine, entry-point discovery, injected runtime composition, scheduler-owned busy state, and worker pool while current runtime paths remain intact.</expected-outcome>
       <required-signals>
         <trace-sequence>Discovery resolves engine-related modules -> engine config parses typed settings -> engine registry resolves engine strategy -> scheduler keeps worker pool dispatch explicit</trace-sequence>
       </required-signals>
     </VF-011>
 
     <VF-005 NAME="RequestToPlanFlow" USE_CASES="UC-001,UC-002,UC-003" DATA_FLOW="DF-REQUEST-TO-PLAN" PRIORITY="high">
-      <scenario>A normalized synthesis request is resolved through planner, family adapter, runtime model registry, and backend execution without transport-specific branching.</scenario>
-      <expected-outcome>Planner produces an execution plan, the family adapter prepares backend execution inputs, and the coordinator returns a persisted GenerationResult while preserving observability markers.</expected-outcome>
+      <scenario>A normalized synthesis request is resolved through planner, family adapter, runtime model registry, and engine-first execution without transport-specific branching.</scenario>
+      <expected-outcome>Planner produces an execution plan, the family adapter prepares execution inputs, migrated families run through TTSEngine, the legacy backend lane stays isolated behind its compatibility service, and the coordinator returns a persisted GenerationResult while preserving observability markers.</expected-outcome>
       <required-signals>
-        <trace-sequence>Synthesis coordinator normalizes request -> planner resolves capability and backend -> runtime model registry provides handle -> backend executes -> coordinator persists output</trace-sequence>
+        <trace-sequence>Synthesis coordinator normalizes request -> planner resolves capability and backend -> runtime model registry provides handle -> TTSEngine or isolated legacy compatibility lane executes -> AudioPipeline and persistence materialize the result</trace-sequence>
       </required-signals>
     </VF-005>
 
@@ -331,16 +331,18 @@
 
     <V-M-ENGINE-CONFIG MODULE="M-ENGINE-CONFIG" PRIORITY="medium">
       <test-files>
-        <file>tests/unit/core/test_engine_config.py</file>
+        <file>tests/unit/core/test_engine_runtime_seams.py</file>
+        <file>tests/unit/core/test_config_and_bootstrap.py</file>
       </test-files>
       <module-checks>
-        <check-1>python -m pytest tests/unit/core/test_engine_config.py -m unit</check-1>
+        <check-1>python -m pytest tests/unit/core/test_engine_runtime_seams.py tests/unit/core/test_config_and_bootstrap.py -m unit</check-1>
       </module-checks>
       <scenarios>
-        <scenario-1 kind="success">Engine configuration parsing keeps the planned registry and scheduler settings explicit in typed config.</scenario-1>
+        <scenario-1 kind="success">Engine configuration parsing keeps registry, scheduler, device, and model-cache settings explicit in typed config.</scenario-1>
         <scenario-2 kind="success">Known enabled engine variants parse through a discriminated union while keeping typed shared fields and a family-specific `params` escape hatch.</scenario-2>
         <scenario-3 kind="success">Explicit disabled engine configs parse deterministically and remain identifiable as disabled for live registry filtering.</scenario-3>
-        <scenario-4 kind="failure">Unknown engine config kinds, missing required shared fields, and duplicate aliases fail validation deterministically.</scenario-4>
+        <scenario-4 kind="failure">Unknown engine config kinds, missing required shared fields, invalid runtime policy values, and duplicate aliases fail validation deterministically.</scenario-4>
+        <scenario-5 kind="success">CoreSettings parses `TTS_ENGINE_CONFIGS` JSON into engine config payloads and bootstrap turns enabled configs into EngineScheduler policies.</scenario-5>
       </scenarios>
     </V-M-ENGINE-CONFIG>
 
@@ -348,6 +350,7 @@
       <test-files>
         <file>tests/unit/core/test_engine_registry.py</file>
         <file>tests/unit/core/test_engine_proof_family.py</file>
+        <file>tests/unit/core/test_engine_runtime_seams.py</file>
       </test-files>
       <module-checks>
         <check-1>python -m pytest tests/unit/core/test_engine_registry.py -m unit</check-1>
@@ -362,6 +365,7 @@
         <scenario-6 kind="failure">Fail-fast registry loading raises the original optional entry-point exception instead of warning-and-skip behavior.</scenario-6>
         <scenario-7 kind="success">A test-only proof family TTSEngine can be registered through EngineRegistry, discovered by explicit config matching, and produce deterministic fake audio plus a reusable model handle through the engine path.</scenario-7>
         <scenario-8 kind="failure">Invalid proof-family config payloads are rejected deterministically before registration, and the proof family name remains absent from server/api/routes_tts.py, core/services/tts_service.py, and core/backends/torch_backend/dispatcher.py.</scenario-8>
+        <scenario-9 kind="success">The registry loader wrapper hook can apply the same cache-decorating TTSEngine wrapper to built-in, explicit, and entry-point registrations before they are exposed for selection.</scenario-9>
       </scenarios>
       <required-log-markers>
         <marker-1>[EngineRegistry][load_engine_registry][REGISTER_ENGINE_CANDIDATES]</marker-1>
@@ -376,12 +380,12 @@
         <file>tests/unit/core/test_tts_service.py</file>
       </test-files>
       <module-checks>
-        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_piper_engine.py tests/unit/core/test_onnx_backend.py tests/unit/core/test_tts_service.py -m unit</check-1>
+        <check-1>python -m pytest tests/unit/core/test_piper_engine.py tests/unit/core/test_onnx_backend.py tests/unit/core/test_tts_service.py -m unit</check-1>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">PiperOnnxEngine loads manifest-compatible `model.onnx` and `model.onnx.json` artifacts and produces deterministic WAV bytes under fake Piper runtime conditions.</scenario-1>
         <scenario-2 kind="failure">When the Piper model directory is present but required artifacts are missing, the engine raises a controlled ModelLoadError with explicit missing_artifacts metadata.</scenario-2>
-        <scenario-3 kind="success">TTSService routes Piper custom synthesis through EngineRegistry only when the explicit runtime flag is enabled and otherwise preserves the legacy backend.execute fallback path.</scenario-3>
+        <scenario-3 kind="success">TTSService routes Piper custom synthesis through EngineRegistry and the migrated Piper TTSEngine path regardless of the legacy runtime flag.</scenario-3>
         <scenario-4 kind="success">The Piper engine path remains custom-only and does not widen design or clone capability claims during the first production engine migration step.</scenario-4>
       </scenarios>
     </V-M-ENGINE-PIPER>
@@ -392,7 +396,7 @@
         <file>tests/unit/core/test_qwen3_family_adapter.py</file>
       </test-files>
       <module-checks>
-        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_qwen3_engine.py tests/unit/core/test_tts_service.py tests/unit/core/test_qwen3_family_adapter.py -m unit</check-1>
+        <check-1>python -m pytest tests/unit/core/test_qwen3_engine.py tests/unit/core/test_tts_service.py tests/unit/core/test_qwen3_family_adapter.py -m unit</check-1>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Qwen3TorchEngine loads a Torch/Qwen runtime handle and produces deterministic in-memory WAV bytes for voice-design synthesis under a fake qwen_tts runtime.</scenario-1>
@@ -408,7 +412,7 @@
         <file>tests/unit/core/test_model_families.py</file>
       </test-files>
       <module-checks>
-        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_omnivoice_engine.py tests/unit/core/test_tts_service.py tests/unit/core/test_model_families.py -m unit</check-1>
+        <check-1>python -m pytest tests/unit/core/test_omnivoice_engine.py tests/unit/core/test_tts_service.py tests/unit/core/test_model_families.py -m unit</check-1>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">OmniVoiceTorchEngine loads a Torch/omnivoice runtime handle and produces deterministic in-memory WAV bytes for voice-design synthesis under a fake omnivoice runtime.</scenario-1>
@@ -424,8 +428,8 @@
         <file>tests/unit/core/test_engine_scheduler.py</file>
       </test-files>
       <module-checks>
-        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_engine_scheduler.py -m unit</check-1>
-        <check-2>.venv311/bin/python -m pytest tests/unit/core/test_engine_scheduler.py -m unit -k "single_slot or queue_full or timeout or shutdown or exception_release"</check-2>
+        <check-1>python -m pytest tests/unit/core/test_engine_scheduler.py -m unit</check-1>
+        <check-2>python -m pytest tests/unit/core/test_engine_scheduler.py -m unit -k "single_slot or queue_full or timeout or shutdown or exception_release"</check-2>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Default scheduler policy preserves current single-slot semantics for same-engine and same-device contention by raising a controlled busy error instead of queueing silently.</scenario-1>
@@ -433,11 +437,30 @@
         <scenario-3 kind="failure">Inference deadlines surface RequestTimeoutError with structured engine/device/timeout details and do not leak scheduler capacity for later work.</scenario-3>
         <scenario-4 kind="failure">Worker-call exceptions release scheduler capacity so a later task on the same engine/device key can proceed immediately.</scenario-4>
         <scenario-5 kind="failure">After scheduler shutdown, submit attempts fail deterministically with a typed scheduler shutdown error.</scenario-5>
+        <scenario-6 kind="success">Bootstrap-created EngineScheduler policies reflect per-engine config values for active slots, queue depth, submit wait, inference deadline, and device-specific pool selection when a runtime engine config declares a device.</scenario-6>
       </scenarios>
       <required-log-markers>
         <marker-1>[EngineScheduler][submit][BLOCK_SCHEDULER_DISPATCH]</marker-1>
       </required-log-markers>
     </V-M-ENGINE-SCHEDULER>
+
+    <V-M-ENGINE-RUNTIME-SEAMS MODULE="M-ENGINE-RUNTIME-FACTORY" PRIORITY="high">
+      <test-files>
+        <file>tests/unit/core/test_engine_runtime_seams.py</file>
+        <file>tests/unit/core/test_tts_service.py</file>
+        <file>tests/unit/core/test_config_and_bootstrap.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_engine_runtime_seams.py tests/unit/core/test_tts_service.py tests/unit/core/test_config_and_bootstrap.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">ModelCache reuses cached ModelHandle instances, evicts deterministically when capacity is exceeded, and remains hidden behind engine/runtime composition.</scenario-1>
+        <scenario-2 kind="success">build_engine_registry wraps built-in TTSEngine registrations with CachedEngine and the registry loader wrapper hook supports the same behavior for entry-point engines.</scenario-2>
+        <scenario-3 kind="success">AudioPipeline normalizes TTSEngine output into WAV bytes at the runtime target sample rate and TTSService applies it before persisting engine-generated audio.</scenario-3>
+        <scenario-4 kind="success">Runtime factory preserves operator engine configs and always registers the migrated built-in engine set without reintroducing concrete engine composition inside TTSService.</scenario-4>
+        <scenario-5 kind="success">Migrated production families fail instead of silently falling back to backend.execute when the TTSEngine route cannot resolve, while the remaining backend.execute lane stays isolated in the explicit legacy compatibility service.</scenario-5>
+      </scenarios>
+    </V-M-ENGINE-RUNTIME-SEAMS>
 
     <V-M-ENGINE-STATIC-COUPLING MODULE="M-ENGINE-REGISTRY" PRIORITY="medium">
       <test-files>
@@ -446,7 +469,7 @@
         <file>tests/unit/core/test_torch_backend_dispatcher.py</file>
       </test-files>
       <module-checks>
-        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_engine_proof_family.py tests/unit/core/test_tts_service.py tests/unit/core/test_torch_backend_dispatcher.py -m unit -k "proof_family_not_hardcoded or builds_family_adapters_from_discovery or default_discovery_filters_test_local_family_adapters or build_family_adapter_map_rejects_duplicate_keys or default_family_strategy_registry"</check-1>
+        <check-1>python -m pytest tests/unit/core/test_engine_proof_family.py tests/unit/core/test_tts_service.py tests/unit/core/test_torch_backend_dispatcher.py -m unit -k "proof_family_not_hardcoded or builds_family_adapters_from_discovery or default_discovery_filters_test_local_family_adapters or build_family_adapter_map_rejects_duplicate_keys or default_family_strategy_registry"</check-1>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">A test-only proof family can be introduced through EngineRegistry without adding family-specific tokens to `server/api/routes_tts.py`, `core/services/tts_service.py`, or `core/backends/torch_backend/dispatcher.py`.</scenario-1>
@@ -530,6 +553,20 @@
       </scenarios>
     </V-M-RUNTIME-MODEL-REGISTRY>
 
+    <V-M-MODEL-LIFECYCLE MODULE="M-MODEL-LIFECYCLE" PRIORITY="medium">
+      <test-files>
+        <file>tests/unit/core/test_model_lifecycle.py</file>
+      </test-files>
+      <module-checks>
+        <check-1>python -m pytest tests/unit/core/test_model_lifecycle.py -m unit</check-1>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">ModelLifecycleService deletes registered model folders and reports missing or unknown model ids deterministically.</scenario-1>
+        <scenario-2 kind="success">Refresh prefers reload_manifest when available, reports unsupported when no hook exists, and clears cacheable registered-engine wrappers before returning.</scenario-2>
+        <scenario-3 kind="success">Default and injected downloader paths produce tracked job records that remain observable through get_download/list_downloads.</scenario-3>
+      </scenarios>
+    </V-M-MODEL-LIFECYCLE>
+
     <V-M-CAPABILITY-RESOLVER MODULE="M-CAPABILITY-RESOLVER" PRIORITY="high">
       <test-files>
         <file>tests/unit/core/test_synthesis_planner.py</file>
@@ -582,24 +619,27 @@
         <file>tests/unit/core/test_omnivoice_engine.py</file>
       </test-files>
       <module-checks>
-        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_discovery.py tests/unit/core/test_tts_service.py tests/unit/core/test_qwen3_engine.py tests/unit/core/test_omnivoice_engine.py -m unit</check-1>
-        <check-2>.venv311/bin/python -m pytest tests/unit/core/test_tts_service.py tests/unit/core/test_qwen3_engine.py tests/unit/core/test_omnivoice_engine.py -m unit -k "scheduler_gateway or piper_engine_execution or qwen3_engine_execution or qwen3_clone_through_engine or omnivoice_engine_execution or omnivoice_custom_design_and_clone_through_engine"</check-2>
+        <check-1>python -m pytest tests/unit/core/test_discovery.py tests/unit/core/test_tts_service.py tests/unit/core/test_qwen3_engine.py tests/unit/core/test_omnivoice_engine.py tests/unit/core/test_piper_engine.py -m unit</check-1>
+        <check-2>python -m pytest tests/unit/core/test_tts_service.py tests/unit/core/test_qwen3_engine.py tests/unit/core/test_omnivoice_engine.py tests/unit/core/test_piper_engine.py -m unit -k "scheduler_gateway or piper_engine_execution or qwen3_engine_execution or qwen3_clone_through_engine or omnivoice_engine_execution or omnivoice_custom_design_and_clone_through_engine"</check-2>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Clone synthesis passes the reference audio path to backend generation as a normalized string.</scenario-1>
         <scenario-2 kind="success">Explicit language values are normalized before clone synthesis is executed.</scenario-2>
-        <scenario-3 kind="success">Structured clone logs include the entry marker and persistence marker with mode, model, and language context.</scenario-3>
+        <scenario-3 kind="success">Structured clone logs include the entry marker and the current engine or legacy persistence marker with mode, model, and language context.</scenario-3>
         <scenario-4 kind="success">TTSService builds its family adapter map from discover_family_adapter_classes() so built-in families remain available without direct constructor wiring in the service.</scenario-4>
         <scenario-5 kind="success">Default TTSService construction ignores leaked tests.* family adapter subclasses while still honoring explicit duplicate-key validation when classes are passed directly to _build_family_adapter_map().</scenario-5>
         <scenario-6 kind="success">Legacy backend execution routes through EngineScheduler with the current single-slot default behavior instead of direct InferenceGuard acquire/release calls.</scenario-6>
-        <scenario-7 kind="success">The explicit Piper engine route also submits work through EngineScheduler so both migrated execution lanes share the same busy and timeout gateway.</scenario-7>
+        <scenario-7 kind="success">The production Piper engine route also submits work through EngineScheduler so all migrated execution lanes share the same busy and timeout gateway.</scenario-7>
         <scenario-8 kind="success">Qwen3 design and clone flows resolve through the generic engine seam, so TTSService no longer needs a Qwen3-specific service branch to reach scheduler-gated execution.</scenario-8>
         <scenario-9 kind="success">OmniVoice custom, design, and clone flows resolve through the generic engine seam, so TTSService no longer needs an OmniVoice-specific service branch to reach scheduler-gated execution.</scenario-9>
+        <scenario-10 kind="success">TTSService receives EngineRegistry through constructor injection and no longer imports concrete Qwen3, OmniVoice, or Piper engine classes from the service layer.</scenario-10>
+        <scenario-11 kind="success">Generated-audio persistence and clone reference preprocessing are delegated to dedicated services, leaving SynthesisCoordinator focused on orchestration.</scenario-11>
+        <scenario-12 kind="success">InferenceGuard is no longer part of bootstrap, CoreRuntime, TTSService, or SynthesisRouter runtime wiring; scheduler policy owns busy behavior.</scenario-12>
       </scenarios>
       <required-log-markers>
-        <marker-1>[TTSService][synthesize_clone][SYNTHESIZE_CLONE]</marker-1>
-        <marker-2>[TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO]</marker-2>
-        <marker-3>[TTSService][_run_generation][BLOCK_PERSIST_OUTPUT]</marker-3>
+        <marker-1>[TTSService][synthesize_clone][BLOCK_PREPARE_REFERENCE_AUDIO]</marker-1>
+        <marker-2>[TTSService][synthesize_clone][BLOCK_EXECUTE_CLONE]</marker-2>
+        <marker-3>[LegacyBackendExecutionService][execute][BLOCK_PERSIST_OUTPUT]</marker-3>
         <marker-4>[TTSService][_run_engine_generation][BLOCK_PERSIST_OUTPUT]</marker-4>
       </required-log-markers>
     </V-M-TTS-SERVICE>
@@ -610,14 +650,16 @@
         <file>tests/integration/test_api.py</file>
       </test-files>
       <module-checks>
-        <check-1>.venv311/bin/python -m pytest tests/unit/core/test_tts_service.py tests/integration/test_api.py -m "unit or integration"</check-1>
-        <check-2>.venv311/bin/python -m pytest tests/integration/test_api.py -m integration -k "request_timeout_returns_unified_error_response or async_timeout_is_reported_as_failed_public_state"</check-2>
+        <check-1>python -m pytest tests/unit/core/test_tts_service.py tests/integration/test_api.py -m "unit or integration"</check-1>
+        <check-2>python -m pytest tests/integration/test_api.py -m integration -k "request_timeout_returns_unified_error_response or async_timeout_is_reported_as_failed_public_state"</check-2>
       </module-checks>
       <scenarios>
         <scenario-1 kind="success">Coordinator-shaped service preserves scheduler-gated execution, persistence, and logging while delegating planning and family semantics.</scenario-1>
         <scenario-2 kind="success">Current transport-facing flows remain behaviorally compatible after the scheduler-gateway refactor.</scenario-2>
         <scenario-3 kind="failure">Synchronous timeout handling still returns HTTP 504 with `request_timeout` even though the underlying execution ownership moved from direct guard calls to the scheduler gateway.</scenario-3>
         <scenario-4 kind="failure">Async timeout handling still ends in the existing public `failed` lifecycle with terminal error code `job_execution_timeout` instead of exposing a new public state.</scenario-4>
+        <scenario-5 kind="success">Backend output directories and engine audio buffers are materialized through AudioPersistenceService rather than inline persistence branches in the coordinator.</scenario-5>
+        <scenario-6 kind="success">Clone reference staging and WAV normalization are context-managed by CloneReferenceAudioPreprocessor before family preparation.</scenario-6>
       </scenarios>
     </V-M-TTS-COORDINATOR>
 

@@ -1,8 +1,8 @@
 # FILE: core/backends/base.py
 # VERSION: 1.1.0
 # START_MODULE_CONTRACT
-#   PURPOSE: Define the direct execution contract for TTS inference backends and the from_settings factory hook used by the bootstrap auto-discovery wiring.
-#   SCOPE: TTSBackend abstract class with from_settings factory, LoadedModelHandle dataclass, ExecutionRequest dataclass
+#   PURPOSE: Define the legacy backend compatibility abstraction and bootstrap factory hook that remain while engine-first runtime execution finishes replacing backend-owned synthesis paths.
+#   SCOPE: legacy-oriented TTSBackend abstract class with from_settings factory, LoadedModelHandle dataclass, ExecutionRequest dataclass
 #   DEPENDS: M-ERRORS
 #   LINKS: M-BACKENDS
 #   ROLE: TYPES
@@ -10,13 +10,13 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   TTSBackend - Abstract backend interface with first-class execute contract and a from_settings factory used by bootstrap auto-discovery
+#   TTSBackend - Legacy compatibility backend interface with execute plus readiness/diagnostics helpers used by backend registry and residual compatibility paths
 #   LoadedModelHandle - Handle to a loaded model with metadata
 #   ExecutionRequest - Runtime-oriented execution request carrying family-prepared inputs
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.1.0 - Phase 2.8: added TTSBackend.from_settings classmethod default factory used by bootstrap auto-discovery]
+#   LAST_CHANGE: [v1.2.1 - Explicitly marked TTSBackend as a legacy compatibility abstraction and aligned the default bootstrap factory with keyword-based settings construction]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from core.backends.capabilities import BackendCapabilitySet, BackendDiagnostics
 from core.models.catalog import ModelSpec
@@ -60,9 +60,9 @@ class ExecutionRequest:
 
 
 # START_CONTRACT: TTSBackend
-#   PURPOSE: Define the abstract interface that all concrete TTS inference backends must implement.
+#   PURPOSE: Define the broad legacy compatibility interface retained for backend discovery, readiness, and the shrinking backend.execute compatibility lane.
 #   INPUTS: {}
-#   OUTPUTS: { instance - Abstract backend contract for model loading, readiness, and synthesis }
+#   OUTPUTS: { instance - Abstract legacy backend contract for model loading, readiness, diagnostics, and compatibility synthesis }
 #   SIDE_EFFECTS: none
 #   LINKS: M-BACKENDS
 # END_CONTRACT: TTSBackend
@@ -216,7 +216,7 @@ class TTSBackend(ABC):
     #   PURPOSE: Build a backend instance from CoreSettings using a uniform factory signature so bootstrap auto-discovery can instantiate any TTSBackend subclass without per-backend wiring.
     #   INPUTS: { settings: CoreSettings - Runtime settings, metrics: OperationalMetricsRegistry | None - Optional shared metrics facade }
     #   OUTPUTS: { TTSBackend - Constructed backend instance ready to be registered }
-    #   SIDE_EFFECTS: Default implementation calls cls(settings.models_dir, metrics=metrics); subclasses with non-default constructor signatures override to map their own settings.
+    #   SIDE_EFFECTS: Default implementation calls cls(models_dir=settings.models_dir, metrics=metrics); subclasses with non-default constructor signatures override to map their own settings.
     #   LINKS: M-BACKENDS, M-BOOTSTRAP
     # END_CONTRACT: from_settings
     @classmethod
@@ -226,7 +226,7 @@ class TTSBackend(ABC):
         *,
         metrics: OperationalMetricsRegistry | None = None,
     ) -> TTSBackend:
-        return cls(settings.models_dir, metrics=metrics)
+        return cast(Any, cls)(models_dir=settings.models_dir, metrics=metrics)
 
 
 __all__ = [

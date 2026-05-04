@@ -14,7 +14,7 @@
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
-#   LAST_CHANGE: [v1.0.0 - Task 10: added the first production TTSEngine for Piper ONNX synthesis behind an explicit runtime opt-in]
+#   LAST_CHANGE: [v1.1.0 - Promoted Piper ONNX synthesis into the always-registered production TTSEngine runtime set]
 # END_CHANGE_SUMMARY
 
 from __future__ import annotations
